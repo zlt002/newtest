@@ -1,0 +1,18 @@
+.ccui-visual-canvas {
+  --gjs-canvas-top: 0px;
+  --gjs-left-width: 0px;
+}
+
+.ccui-visual-canvas .gjs-pn-options,
+.ccui-visual-canvas .gjs-pn-commands,
+.ccui-visual-canvas .gjs-pn-devices,
+.ccui-visual-canvas .gjs-pn-devices-c,
+.ccui-visual-canvas .gjs-pn-views,
+.ccui-visual-canvas .gjs-pn-views-container {
+  display: none !important;
+}
+
+.ccui-visual-canvas .gjs-cv-canvas {
+  top: 0;
+  height: 100%;
+}

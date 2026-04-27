@@ -1,0 +1,223 @@
+import { GitBranch, GitCommit, RefreshCw } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { ConfirmationRequest, FileStatusCode, GitStatusResponse } from '../../types/types';
+import { getAllChangedFiles, hasChangedFiles } from '../../utils/gitPanelUtils';
+import CommitComposer from './CommitComposer';
+import FileChangeList from './FileChangeList';
+import FileStatusLegend from './FileStatusLegend';
+
+type ChangesViewProps = {
+  isMobile: boolean;
+  projectPath: string;
+  gitStatus: GitStatusResponse | null;
+  isLoading: boolean;
+  isCreatingInitialCommit: boolean;
+  onCreateInitialCommit: () => Promise<boolean>;
+  onOpenFile: (filePath: string) => Promise<void>;
+  onDiscardFile: (filePath: string) => Promise<void>;
+  onDeleteFile: (filePath: string) => Promise<void>;
+  onCommitChanges: (message: string, files: string[]) => Promise<boolean>;
+  onGenerateCommitMessage: (files: string[]) => Promise<string | null>;
+  onRequestConfirmation: (request: ConfirmationRequest) => void;
+};
+
+export default function ChangesView({
+  isMobile,
+  projectPath,
+  gitStatus,
+  isLoading,
+  isCreatingInitialCommit,
+  onCreateInitialCommit,
+  onOpenFile,
+  onDiscardFile,
+  onDeleteFile,
+  onCommitChanges,
+  onGenerateCommitMessage,
+  onRequestConfirmation,
+}: ChangesViewProps) {
+  const { t } = useTranslation('gitPanel');
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+
+  const changedFiles = useMemo(() => getAllChangedFiles(gitStatus), [gitStatus]);
+
+  useEffect(() => {
+    if (!gitStatus || gitStatus.error) {
+      setSelectedFiles(new Set());
+      return;
+    }
+
+    // Remove any selected files that no longer exist in the status
+    setSelectedFiles((prev) => {
+      const allFiles = new Set(getAllChangedFiles(gitStatus));
+      const next = new Set([...prev].filter((f) => allFiles.has(f)));
+      return next;
+    });
+  }, [gitStatus]);
+
+  const toggleFileSelected = useCallback((filePath: string) => {
+    setSelectedFiles((previous) => {
+      const next = new Set(previous);
+      if (next.has(filePath)) {
+        next.delete(filePath);
+      } else {
+        next.add(filePath);
+      }
+      return next;
+    });
+  }, []);
+
+  const requestFileAction = useCallback(
+    (filePath: string, status: FileStatusCode) => {
+      if (status === 'U') {
+        onRequestConfirmation({
+          type: 'delete',
+          message: t('changes.deleteUntrackedConfirmation', { filePath }),
+          onConfirm: async () => {
+            await onDeleteFile(filePath);
+          },
+        });
+        return;
+      }
+
+      onRequestConfirmation({
+        type: 'discard',
+        message: t('changes.discardConfirmation', { filePath }),
+        onConfirm: async () => {
+          await onDiscardFile(filePath);
+        },
+      });
+    },
+    [onDeleteFile, onDiscardFile, onRequestConfirmation],
+  );
+
+  const commitSelectedFiles = useCallback(
+    (message: string) => {
+      return onCommitChanges(message, Array.from(selectedFiles));
+    },
+    [onCommitChanges, selectedFiles],
+  );
+
+  const generateMessageForSelection = useCallback(() => {
+    return onGenerateCommitMessage(Array.from(selectedFiles));
+  }, [onGenerateCommitMessage, selectedFiles]);
+
+  const unstagedFiles = useMemo(
+    () => new Set(changedFiles.filter((f) => !selectedFiles.has(f))),
+    [changedFiles, selectedFiles],
+  );
+
+  return (
+    <>
+      <CommitComposer
+        isMobile={isMobile}
+        projectPath={projectPath}
+        selectedFileCount={selectedFiles.size}
+        isHidden={false}
+        onCommit={commitSelectedFiles}
+        onGenerateMessage={generateMessageForSelection}
+        onRequestConfirmation={onRequestConfirmation}
+      />
+
+      {!gitStatus?.error && <FileStatusLegend isMobile={isMobile} />}
+
+      <div className={`flex-1 overflow-y-auto ${isMobile ? 'pb-mobile-nav' : ''}`}>
+        {isLoading ? (
+          <div className="flex h-32 items-center justify-center">
+            <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : gitStatus?.hasCommits === false ? (
+          <div className="flex flex-col items-center justify-center p-8 text-center">
+            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/50">
+              <GitBranch className="h-7 w-7 text-muted-foreground/50" />
+            </div>
+            <h3 className="mb-2 text-lg font-medium text-foreground">{t('emptyState.noCommitsYet')}</h3>
+            <p className="mb-6 max-w-md text-sm text-muted-foreground">
+              {t('emptyState.noCommitsDescription')}
+            </p>
+            <button
+              onClick={() => void onCreateInitialCommit()}
+              disabled={isCreatingInitialCommit}
+              className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isCreatingInitialCommit ? (
+                <>
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  <span>{t('changes.creatingInitialCommit')}</span>
+                </>
+              ) : (
+                <>
+                  <GitCommit className="h-4 w-4" />
+                  <span>{t('changes.createInitialCommit')}</span>
+                </>
+              )}
+            </button>
+          </div>
+        ) : !gitStatus || !hasChangedFiles(gitStatus) ? (
+          <div className="flex h-32 flex-col items-center justify-center text-muted-foreground">
+            <GitCommit className="mb-2 h-10 w-10 opacity-40" />
+            <p className="text-sm">{t('emptyState.noChangesDetected')}</p>
+          </div>
+        ) : (
+          <div className={isMobile ? 'pb-4' : ''}>
+            {/* STAGED section */}
+            <div className="flex items-center justify-between border-b border-border/60 bg-muted/30 px-3 py-1.5">
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {t('changes.staged')} ({selectedFiles.size})
+              </span>
+              {selectedFiles.size > 0 && (
+                <button
+                  onClick={() => setSelectedFiles(new Set())}
+                  className="text-xs text-primary transition-colors hover:text-primary/80"
+                >
+                  {t('changes.unstageAll')}
+                </button>
+              )}
+            </div>
+            {selectedFiles.size === 0 ? (
+              <div className="px-3 py-2 text-xs italic text-muted-foreground">{t('changes.noStagedFiles')}</div>
+            ) : (
+              <FileChangeList
+                gitStatus={gitStatus}
+                selectedFiles={selectedFiles}
+                isMobile={isMobile}
+                filePaths={selectedFiles}
+                onToggleSelected={toggleFileSelected}
+                onOpenFile={(filePath) => { void onOpenFile(filePath); }}
+                onRequestFileAction={requestFileAction}
+              />
+            )}
+
+            {/* CHANGES section */}
+            <div className="flex items-center justify-between border-b border-border/60 bg-muted/30 px-3 py-1.5">
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {t('changes.changes')} ({unstagedFiles.size})
+              </span>
+              {unstagedFiles.size > 0 && (
+                <button
+                  onClick={() => setSelectedFiles(new Set(changedFiles))}
+                  className="text-xs text-primary transition-colors hover:text-primary/80"
+                >
+                  {t('changes.stageAll')}
+                </button>
+              )}
+            </div>
+            {unstagedFiles.size === 0 ? (
+              <div className="px-3 py-2 text-xs italic text-muted-foreground">{t('changes.allChangesStaged')}</div>
+            ) : (
+              <FileChangeList
+                gitStatus={gitStatus}
+                selectedFiles={selectedFiles}
+                isMobile={isMobile}
+                filePaths={unstagedFiles}
+                onToggleSelected={toggleFileSelected}
+                onOpenFile={(filePath) => { void onOpenFile(filePath); }}
+                onRequestFileAction={requestFileAction}
+              />
+            )}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}

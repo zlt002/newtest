@@ -1,0 +1,62 @@
+import { useTranslation } from 'react-i18next';
+import SessionProviderLogo from '../../../llm-logo-provider/SessionProviderLogo';
+import type { AppTab, Project, ProjectSession } from '../../../../types/app';
+import { sanitizeDisplayText } from '../../../chat/utils/protocolNoise.js';
+
+type MainContentTitleProps = {
+  activeTab: AppTab;
+  selectedProject: Project;
+  selectedSession: ProjectSession | null;
+};
+
+function getTabTitle(activeTab: AppTab, t: (key: string) => string) {
+  return activeTab === 'preview' ? t('tabs.chat') : 'Project';
+}
+
+function getSessionTitle(session: ProjectSession): string {
+  return sanitizeDisplayText(session.summary as string, 'New Session');
+}
+
+export default function MainContentTitle({
+  activeTab,
+  selectedProject,
+  selectedSession,
+}: MainContentTitleProps) {
+  const { t } = useTranslation();
+
+  const showSessionIcon = activeTab === 'chat' && Boolean(selectedSession);
+  const showChatNewSession = activeTab === 'chat' && !selectedSession;
+
+  return (
+    <div className="scrollbar-hide flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
+      {showSessionIcon && (
+        <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center">
+          <SessionProviderLogo provider="claude" className="h-4 w-4" />
+        </div>
+      )}
+
+      <div className="min-w-0 flex-1">
+        {activeTab === 'chat' && selectedSession ? (
+          <div className="min-w-0">
+            <h2 className="scrollbar-hide overflow-x-auto whitespace-nowrap text-sm font-semibold leading-tight text-foreground">
+              {getSessionTitle(selectedSession)}
+            </h2>
+            <div className="truncate text-[11px] leading-tight text-muted-foreground">{selectedProject.displayName}</div>
+          </div>
+        ) : showChatNewSession ? (
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold leading-tight text-foreground">{t('mainContent.newSession')}</h2>
+            <div className="truncate text-xs leading-tight text-muted-foreground">{selectedProject.displayName}</div>
+          </div>
+        ) : (
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold leading-tight text-foreground">
+              {getTabTitle(activeTab, t)}
+            </h2>
+            <div className="truncate text-[11px] leading-tight text-muted-foreground">{selectedProject.displayName}</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
