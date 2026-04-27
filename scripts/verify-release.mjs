@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs';
+import { readdir } from 'node:fs/promises';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import {
   FORBIDDEN_PATHS,
   PRUNE_TARGETS as PRUNED_DEPENDENCY_PATHS,
@@ -9,6 +11,33 @@ import {
   REQUIRED_PATHS,
 } from './release-manifest.mjs';
 import { collectPrunableFiles } from './windows-lite-optimization.mjs';
+
+async function findBetterSqlite3BinaryCandidates(rootDir) {
+  const betterSqlite3Root = resolve(rootDir, 'node_modules', 'better-sqlite3');
+  const directCandidates = [
+    resolve(betterSqlite3Root, 'build', 'Release', 'better_sqlite3.node'),
+    resolve(betterSqlite3Root, 'build', 'Debug', 'better_sqlite3.node'),
+    resolve(betterSqlite3Root, 'build', 'better_sqlite3.node'),
+  ];
+
+  const bindingRoot = resolve(betterSqlite3Root, 'lib', 'binding');
+  if (!existsSync(bindingRoot)) {
+    return directCandidates;
+  }
+
+  const bindingEntries = await readdir(bindingRoot, { withFileTypes: true });
+  return [
+    ...directCandidates,
+    ...bindingEntries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => resolve(bindingRoot, entry.name, 'better_sqlite3.node')),
+  ];
+}
+
+async function hasBetterSqlite3Binary(rootDir) {
+  const candidates = await findBetterSqlite3BinaryCandidates(rootDir);
+  return candidates.some((candidatePath) => existsSync(candidatePath));
+}
 
 async function main() {
   const rootDir = resolve(process.cwd(), RELEASE_ROOT);
@@ -57,6 +86,11 @@ async function main() {
     }
   }
 
+  if (!(await hasBetterSqlite3Binary(rootDir))) {
+    console.error('[error] Missing better-sqlite3 native binary in the release package');
+    process.exit(1);
+  }
+
   const prunableFiles = await collectPrunableFiles(rootDir);
   if (prunableFiles.length > 0) {
     console.error('[error] release package still contains removable type or sourcemap files');
@@ -67,6 +101,16 @@ async function main() {
   console.log('release verification passed');
 }
 
-await main();
+const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 
-export { FORBIDDEN_PATHS, PRUNED_DEPENDENCY_PATHS, RELEASE_ROOT, REQUIRED_PATHS };
+if (isDirectRun) {
+  await main();
+}
+
+export {
+  FORBIDDEN_PATHS,
+  PRUNED_DEPENDENCY_PATHS,
+  RELEASE_ROOT,
+  REQUIRED_PATHS,
+  hasBetterSqlite3Binary,
+};

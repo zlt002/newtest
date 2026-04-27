@@ -29,8 +29,8 @@ async function main() {
   const releaseDir = resolve(process.cwd(), RELEASE_ROOT);
 
   await mkdir(releaseDir, { recursive: true });
-  await runNpm(['install', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], releaseDir);
-  await runNpm(['prune', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], releaseDir);
+  await runNpm(['install', '--omit=dev', '--no-audit', '--no-fund'], releaseDir);
+  await runNpm(['prune', '--omit=dev', '--no-audit', '--no-fund'], releaseDir);
 }
 
 await main();
