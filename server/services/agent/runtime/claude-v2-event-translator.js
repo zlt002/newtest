@@ -3,6 +3,7 @@
 // SDK-mapped events 只做薄映射；product-only 事件只保留无法直接归类的兜底状态。
 import { createAgentEventEnvelope } from '../domain/agent-event.js';
 import { createClaudeStreamToolPreviewTracker } from '../../../utils/claude-stream-tool-preview.js';
+import { normalizeTodoWriteInput } from '../../../utils/todo-write.js';
 
 // 从 Claude SDK 的 message 结构中提取纯文本内容。
 // 这样上层只会拿到项目自己的 event payload，而不是 SDK 私有结构。
@@ -48,6 +49,18 @@ function normalizeToolName(...candidates) {
   }
 
   return null;
+}
+
+function normalizeToolInput(toolName, input) {
+  if (!input || typeof input !== 'object') {
+    return input || {};
+  }
+
+  if (toolName === 'TodoWrite') {
+    return normalizeTodoWriteInput(input);
+  }
+
+  return input;
 }
 
 function buildEvent(base, sequence, type, payload = {}) {
@@ -167,11 +180,12 @@ function isAssistantTextEvent(sdkMessage) {
 function translateClaudeV2EventInternal(base, sdkMessage, sequence) {
   const nestedToolUseBlock = getNestedToolUseBlock(sdkMessage);
   if (nestedToolUseBlock) {
+    const toolName = normalizeToolName(nestedToolUseBlock.name);
     return [
       buildSdkMappedEvent(base, sequence, 'tool.call.started', sdkMessage, {
         toolId: nestedToolUseBlock.id || null,
-        toolName: normalizeToolName(nestedToolUseBlock.name),
-        input: nestedToolUseBlock.input || {},
+        toolName,
+        input: normalizeToolInput(toolName, nestedToolUseBlock.input || {}),
       }),
     ];
   }
@@ -386,21 +400,23 @@ function translateClaudeV2EventInternal(base, sdkMessage, sequence) {
   }
 
   if (sdkMessage.type === 'tool_use') {
+    const toolName = normalizeToolName(sdkMessage.name);
     return [
       buildSdkMappedEvent(base, sequence, 'tool.call.started', sdkMessage, {
         toolId: sdkMessage.id || null,
-        toolName: normalizeToolName(sdkMessage.name),
-        input: sdkMessage.input || {},
+        toolName,
+        input: normalizeToolInput(toolName, sdkMessage.input || {}),
       }),
     ];
   }
 
   if (sdkMessage.type === 'tool_use_partial') {
+    const toolName = normalizeToolName(sdkMessage.toolName);
     return [
       buildSdkMappedEvent(base, sequence, 'tool.call.delta', sdkMessage, {
         toolId: sdkMessage.toolCallId || sdkMessage.toolId || null,
-        toolName: normalizeToolName(sdkMessage.toolName),
-        input: sdkMessage.toolInput || {},
+        toolName,
+        input: normalizeToolInput(toolName, sdkMessage.toolInput || {}),
       }),
     ];
   }

@@ -171,6 +171,35 @@ test('translateClaudeV2Event maps assistant message content tool_use blocks into
   assert.equal(events[0].payload.toolName, 'Write');
 });
 
+test('translateClaudeV2Event normalizes TodoWrite tool input when todos arrive as a JSON string', () => {
+  const events = translateClaudeV2Event({
+    runId: 'run-todo-1',
+    sessionId: 'sess-todo-1',
+    sequence: 11,
+    sdkEvent: {
+      type: 'tool_use',
+      id: 'tool-todo-1',
+      name: 'TodoWrite',
+      input: {
+        todos: JSON.stringify([
+          { content: 'Write spec', status: 'pending', activeForm: 'Write spec' },
+          { content: 'Review draft', status: 'in_progress', activeForm: 'Review draft' },
+        ]),
+      },
+    },
+  });
+
+  assert.equal(events.length, 1);
+  assert.equal(events[0].type, 'tool.call.started');
+  assert.equal(events[0].payload.toolName, 'TodoWrite');
+  assert.deepEqual(events[0].payload.input, {
+    todos: [
+      { content: 'Write spec', status: 'pending', activeForm: 'Write spec' },
+      { content: 'Review draft', status: 'in_progress', activeForm: 'Review draft' },
+    ],
+  });
+});
+
 test('translateClaudeV2Event maps user message content tool_result blocks into tool completion events', () => {
   const events = translateClaudeV2Event({
     runId: 'run-nested-2',

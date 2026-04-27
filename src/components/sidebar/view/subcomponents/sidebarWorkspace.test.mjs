@@ -131,6 +131,27 @@ test('SidebarProjectItem.tsx starts a new session without re-selecting the proje
   assert.doesNotMatch(source, /onProjectSelect\(project\);\s*onNewSession\(project\);/);
 });
 
+test('Sidebar project click opens files workspace only for the currently selected project', async () => {
+  const sidebarSource = await fs.readFile(
+    path.join(process.cwd(), 'src/components/sidebar/view/Sidebar.tsx'),
+    'utf8',
+  );
+  const projectListSource = await fs.readFile(
+    path.join(process.cwd(), 'src/components/sidebar/view/subcomponents/SidebarProjectList.tsx'),
+    'utf8',
+  );
+  const projectItemSource = await fs.readFile(
+    path.join(process.cwd(), 'src/components/sidebar/view/subcomponents/SidebarProjectItem.tsx'),
+    'utf8',
+  );
+
+  assert.match(sidebarSource, /const handleOpenSelectedProjectFiles = \(\) => \{\s*setWorkspaceView\('files'\);/);
+  assert.match(projectListSource, /onOpenSelectedProjectFiles=\{onOpenSelectedProjectFiles\}/);
+  assert.match(projectItemSource, /onOpenSelectedProjectFiles: \(\) => void;/);
+  assert.match(projectItemSource, /const handleProjectClick = \(\) => \{\s*if \(isSelected\) \{\s*onOpenSelectedProjectFiles\(\);/);
+  assert.match(projectItemSource, /toggleProject\(\);/);
+});
+
 test('SidebarProjectSessions.tsx starts a new session without re-selecting the project first', async () => {
   const sourcePath = path.join(process.cwd(), 'src/components/sidebar/view/subcomponents/SidebarProjectSessions.tsx');
   const source = await fs.readFile(sourcePath, 'utf8');

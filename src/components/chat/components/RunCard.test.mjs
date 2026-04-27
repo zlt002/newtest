@@ -99,7 +99,6 @@ test('RunCard renders related files extracted from structured process payloads a
             },
           },
         ],
-        previewItems: [],
         activeInteraction: null,
         startedAt: '2026-04-26T10:00:00.000Z',
         updatedAt: '2026-04-26T10:00:05.000Z',
@@ -120,4 +119,59 @@ test('RunCard process modal uses a layer above the right pane editor overlay', a
 
   assert.match(source, /data-chat-v2-run-card-process-modal="true"/);
   assert.match(source, /className="fixed inset-0 z-\[10000\] flex items-center justify-center p-4"/);
+});
+
+test('RunCard process preview renders TodoWrite items as a compact todo list', () => {
+  const markup = renderToStaticMarkup(
+    React.createElement(RunCard, {
+      card: {
+        sessionId: 'sess-todo-1',
+        anchorMessageId: 'user-todo-1',
+        cardStatus: 'running',
+        headline: '执行中',
+        finalResponse: '',
+        responseMessages: [],
+        processItems: [
+          {
+            id: 'todo-use-1',
+            timestamp: '2026-04-27T19:55:08.000Z',
+            kind: 'tool_use',
+            title: '工具调用 · TodoWrite',
+            body: '{ "todos": [{ "content": "检查项目文件结构和主要文件内容", "status": "in_progress" }] }',
+            payload: {
+              toolName: 'TodoWrite',
+              input: {
+                todos: [
+                  {
+                    content: '检查项目文件结构和主要文件内容',
+                    status: 'in_progress',
+                    activeForm: '检查项目文件结构和主要文件内容',
+                  },
+                  {
+                    content: '确认是否存在 Claude Agent SDK 依赖',
+                    status: 'pending',
+                    activeForm: '确认是否存在 Claude Agent SDK 依赖',
+                  },
+                ],
+              },
+            },
+          },
+        ],
+        activeInteraction: null,
+        startedAt: '2026-04-27T19:55:00.000Z',
+        updatedAt: '2026-04-27T19:55:08.000Z',
+        completedAt: null,
+        defaultExpanded: false,
+        source: 'sdk-live',
+      },
+    }),
+  );
+
+  assert.match(markup, /data-chat-v2-run-card-process-preview-todo="true"/);
+  assert.match(markup, /检查项目文件结构和主要文件内容/);
+  assert.match(markup, /确认是否存在 Claude Agent SDK 依赖/);
+  assert.match(markup, /in progress/);
+  assert.match(markup, /pending/);
+  assert.doesNotMatch(markup, /&quot;todos&quot;/);
+  assert.doesNotMatch(markup, /\s\|\s/);
 });

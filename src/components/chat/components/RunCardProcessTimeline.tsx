@@ -1,6 +1,7 @@
 import React from 'react';
 import type { RunCardProcessItem } from '../types/runCard.js';
 import { RuntimeMarkdown } from './RuntimeMarkdown';
+import { TodoListContent } from '../tools/components/ContentRenderers/TodoListContent.tsx';
 
 type ProcessGroupKey = 'primary' | 'status' | 'auxiliary';
 
@@ -118,6 +119,73 @@ function tryFormatJson(body: string): string | null {
   }
 }
 
+function normalizeTodoToolName(value: unknown) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function isTodoToolName(value: unknown) {
+  const normalized = normalizeTodoToolName(value);
+  return normalized === 'todowrite' || normalized === 'todoread';
+}
+
+function isTodoItem(value: unknown): value is { content: string; status: string; priority?: string; activeForm?: string } {
+  return Boolean(
+    value
+    && typeof value === 'object'
+    && typeof (value as Record<string, unknown>).content === 'string'
+    && typeof (value as Record<string, unknown>).status === 'string'
+  );
+}
+
+function extractTodoItems(value: unknown): Array<{ content: string; status: string; priority?: string; activeForm?: string }> | null {
+  if (Array.isArray(value)) {
+    const todos = value.filter(isTodoItem);
+    return todos.length > 0 ? todos : null;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    try {
+      return extractTodoItems(JSON.parse(trimmed));
+    } catch {
+      return null;
+    }
+  }
+
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  return extractTodoItems(record.todos)
+    || extractTodoItems(record.newTodos)
+    || extractTodoItems(record.oldTodos)
+    || extractTodoItems(record.input)
+    || extractTodoItems(record.output)
+    || extractTodoItems(record.result)
+    || extractTodoItems(record.toolInput)
+    || extractTodoItems(record.payload)
+    || null;
+}
+
+function extractTodoItemsFromProcessItem(item: RunCardProcessItem) {
+  const payload = item.payload && typeof item.payload === 'object' ? item.payload as Record<string, unknown> : null;
+  const toolName = payload?.toolName
+    || payload?.tool_name
+    || payload?.name
+    || item.title;
+
+  if (!isTodoToolName(toolName)) {
+    return null;
+  }
+
+  return extractTodoItems(payload) || extractTodoItems(item.body);
+}
+
 /**
  * Detect and strip cat -n style line numbers (e.g. "1  # Title", "2  ", "3  ## Sub")
  * so that markdown content from read_file results can render correctly.
@@ -183,6 +251,19 @@ function ProcessBody({ body, variant = 'neutral' }: ProcessBodyProps) {
   }
 
   return <div className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-current">{body}</div>;
+}
+
+function ProcessItemBody({ item, variant = 'neutral' }: { item: RunCardProcessItem; variant?: 'neutral' | 'emerald' | 'slate' }) {
+  const todos = extractTodoItemsFromProcessItem(item);
+  if (todos && todos.length > 0) {
+    return (
+      <div className="mt-1">
+        <TodoListContent todos={todos} isResult={item.kind === 'tool_result'} />
+      </div>
+    );
+  }
+
+  return <ProcessBody body={item.body} variant={variant} />;
 }
 
 function formatTimestamp(timestamp: string) {
@@ -262,7 +343,7 @@ function renderSingleItem(item: RunCardProcessItem) {
         <div className="text-[11px] opacity-70">{formatTimestamp(item.timestamp)}</div>
       </div>
       <div className="text-xs font-medium text-neutral-500">{item.title}</div>
-      <ProcessBody body={item.body} variant="neutral" />
+      <ProcessItemBody item={item} variant="neutral" />
     </div>
   );
 }
@@ -283,7 +364,7 @@ function renderToolChain(entry: TimelineToolChainEntry) {
             <div className="text-[11px] text-emerald-700/80">{formatTimestamp(entry.use.timestamp)}</div>
           </div>
           <div className="text-xs font-medium text-emerald-700/80">{entry.use.title}</div>
-          <ProcessBody body={entry.use.body} variant="emerald" />
+          <ProcessItemBody item={entry.use} variant="emerald" />
         </div>
         <div className="bg-slate-50 px-4 py-3 text-slate-800">
           <div className="mb-2 flex items-center justify-between gap-3">
@@ -293,7 +374,7 @@ function renderToolChain(entry: TimelineToolChainEntry) {
             <div className="text-[11px] text-slate-500">{formatTimestamp(entry.result.timestamp)}</div>
           </div>
           <div className="text-xs font-medium text-slate-500">{entry.result.title}</div>
-          <ProcessBody body={entry.result.body} variant="slate" />
+          <ProcessItemBody item={entry.result} variant="slate" />
         </div>
       </div>
     </div>

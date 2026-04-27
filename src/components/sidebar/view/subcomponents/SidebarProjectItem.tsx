@@ -32,6 +32,7 @@ type SidebarProjectItemProps = {
   onEditingNameChange: (name: string) => void;
   onToggleProject: (projectName: string) => void;
   onProjectSelect: (project: Project) => void;
+  onOpenSelectedProjectFiles: () => void;
   onToggleStarProject: (projectName: string) => void;
   onStartEditingProject: (project: Project) => void;
   onCancelEditingProject: () => void;
@@ -72,6 +73,7 @@ export default function SidebarProjectItem({
   onEditingNameChange,
   onToggleProject,
   onProjectSelect,
+  onOpenSelectedProjectFiles,
   onToggleStarProject,
   onStartEditingProject,
   onCancelEditingProject,
@@ -101,6 +103,14 @@ export default function SidebarProjectItem({
   const desktopMenuRef = useRef<HTMLDivElement | null>(null);
 
   const toggleProject = () => onToggleProject(project.name);
+  const handleProjectClick = () => {
+    if (isSelected) {
+      onOpenSelectedProjectFiles();
+      return;
+    }
+
+    toggleProject();
+  };
   const toggleStarProject = () => onToggleStarProject(project.name);
 
   const saveProjectName = () => {
@@ -187,7 +197,7 @@ export default function SidebarProjectItem({
                 !isSelected &&
                 'bg-yellow-50/50 dark:bg-yellow-900/5 border-yellow-200/30 dark:border-yellow-800/30',
             )}
-            onClick={toggleProject}
+            onClick={handleProjectClick}
           >
             <div className="flex justify-between items-center">
               <div className="flex flex-1 gap-3 items-center min-w-0">
@@ -333,7 +343,7 @@ export default function SidebarProjectItem({
           <button
             type="button"
             className="flex flex-1 gap-3 items-center min-w-0 text-left"
-            onClick={toggleProject}
+            onClick={handleProjectClick}
             title={!isEditing && projectPath ? projectPath : undefined}
           >
             {isExpanded ? (

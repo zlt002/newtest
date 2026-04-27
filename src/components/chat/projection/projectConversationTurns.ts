@@ -294,9 +294,22 @@ function mergeBodySegments(left: AssistantTurnViewModel, right: AssistantTurnVie
 
 function mergeActivityItems(left: AssistantTurnViewModel, right: AssistantTurnViewModel) {
   const byId = new Map(left.activityItems.map((item) => [item.id, item]));
+  const seenSignatures = new Set(
+    left.activityItems.map((item) => [
+      item.kind,
+      normalizeComparableText(item.title),
+      normalizeComparableText(item.body),
+    ].join(':')),
+  );
   for (const item of right.activityItems) {
-    if (!byId.has(item.id)) {
+    const signature = [
+      item.kind,
+      normalizeComparableText(item.title),
+      normalizeComparableText(item.body),
+    ].join(':');
+    if (!byId.has(item.id) && !seenSignatures.has(signature)) {
       byId.set(item.id, item);
+      seenSignatures.add(signature);
     }
   }
 

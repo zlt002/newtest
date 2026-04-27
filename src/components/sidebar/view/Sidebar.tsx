@@ -147,6 +147,10 @@ function Sidebar({
     window.location.reload();
   };
 
+  const handleOpenSelectedProjectFiles = () => {
+    setWorkspaceView('files');
+  };
+
   const projectListProps: SidebarProjectListProps = {
     projects,
     filteredProjects,
@@ -168,6 +172,7 @@ function Sidebar({
     onEditingNameChange: setEditingName,
     onToggleProject: toggleProject,
     onProjectSelect: handleProjectSelect,
+    onOpenSelectedProjectFiles: handleOpenSelectedProjectFiles,
     onToggleStarProject: toggleStarProject,
     onStartEditingProject: startEditing,
     onCancelEditingProject: cancelEditing,

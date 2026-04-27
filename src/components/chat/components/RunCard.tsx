@@ -36,6 +36,100 @@ function normalizePreviewText(value: string) {
   return value.replace(/\s+/g, ' ').trim();
 }
 
+function normalizeTodoToolName(value: unknown) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function isTodoToolName(value: unknown) {
+  const normalized = normalizeTodoToolName(value);
+  return normalized === 'todowrite' || normalized === 'todoread';
+}
+
+function isTodoItem(value: unknown): value is { content: string; status: string } {
+  return Boolean(
+    value
+    && typeof value === 'object'
+    && typeof (value as Record<string, unknown>).content === 'string'
+    && typeof (value as Record<string, unknown>).status === 'string'
+  );
+}
+
+function extractTodoItems(value: unknown): Array<{ content: string; status: string }> | null {
+  if (Array.isArray(value)) {
+    const todos = value.filter(isTodoItem);
+    return todos.length > 0 ? todos : null;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    try {
+      return extractTodoItems(JSON.parse(trimmed));
+    } catch {
+      return null;
+    }
+  }
+
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  return extractTodoItems(record.todos)
+    || extractTodoItems(record.newTodos)
+    || extractTodoItems(record.oldTodos)
+    || extractTodoItems(record.input)
+    || extractTodoItems(record.output)
+    || extractTodoItems(record.result)
+    || extractTodoItems(record.toolInput)
+    || extractTodoItems(record.payload)
+    || null;
+}
+
+function summarizeTodoPreviewItem(item: { body: string; title: string; payload?: unknown }) {
+  const payload = item.payload && typeof item.payload === 'object' ? item.payload as Record<string, unknown> : null;
+  const toolName = payload?.toolName
+    || payload?.tool_name
+    || payload?.name
+    || item.title;
+
+  if (!isTodoToolName(toolName)) {
+    return normalizePreviewText(item.body);
+  }
+
+  const todos = extractTodoItems(payload) || extractTodoItems(item.body);
+  if (!todos || todos.length === 0) {
+    return normalizePreviewText(item.body);
+  }
+
+  return todos
+    .slice(0, 3)
+    .map((todo) => `${todo.status} · ${todo.content}`)
+    .join(' | ');
+}
+
+function getTodoPreviewItems(item: { body: string; title: string; payload?: unknown }) {
+  const payload = item.payload && typeof item.payload === 'object' ? item.payload as Record<string, unknown> : null;
+  const toolName = payload?.toolName
+    || payload?.tool_name
+    || payload?.name
+    || item.title;
+
+  if (!isTodoToolName(toolName)) {
+    return null;
+  }
+
+  const todos = extractTodoItems(payload) || extractTodoItems(item.body);
+  return todos && todos.length > 0 ? todos.slice(0, 3) : null;
+}
+
+function formatTodoStatus(status: string) {
+  return status.replace(/_/g, ' ');
+}
+
 function normalizeFilePath(value: string) {
   return value.replace(/\\/g, '/').trim();
 }
@@ -292,28 +386,54 @@ export function RunCard({
               className="max-h-72 space-y-2 overflow-y-auto pr-1"
             >
               {processPreviewItems.map((item) => (
-                <div
-                  key={item.id}
-                  data-chat-v2-run-card-process-item={item.kind}
-                  className="flex min-w-0 items-center gap-2 text-[11px] text-neutral-700"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="shrink-0 rounded-full border border-neutral-200 bg-neutral-50 px-2 py-0.5  uppercase tracking-[0.08em] text-neutral-500">
-                      {resolveProcessPreviewLabel(item.title)}
-                    </span>
-                    <span className="text-neutral-400">
-                      {item.timestamp ? new Date(item.timestamp).toLocaleTimeString('zh-CN', {
-                        hour12: false,
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        second: '2-digit',
-                      }) : ''}
-                    </span>
-                  </div>
-                  <div className="min-w-0 flex-1 truncate text-neutral-700">
-                    {normalizePreviewText(item.body)}
-                  </div>
-                </div>
+                (() => {
+                  const todoPreviewItems = getTodoPreviewItems(item);
+                  return (
+                    <div
+                      key={item.id}
+                      data-chat-v2-run-card-process-item={item.kind}
+                      className={`min-w-0 text-[11px] text-neutral-700 ${todoPreviewItems ? 'space-y-2 rounded-xl border border-neutral-200 bg-white px-3 py-2' : 'flex items-center gap-2'}`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="shrink-0 rounded-full border border-neutral-200 bg-neutral-50 px-2 py-0.5  uppercase tracking-[0.08em] text-neutral-500">
+                          {resolveProcessPreviewLabel(item.title)}
+                        </span>
+                        <span className="text-neutral-400">
+                          {item.timestamp ? new Date(item.timestamp).toLocaleTimeString('zh-CN', {
+                            hour12: false,
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                          }) : ''}
+                        </span>
+                      </div>
+                      {todoPreviewItems ? (
+                        <div
+                          data-chat-v2-run-card-process-preview-todo="true"
+                          className="space-y-1.5"
+                        >
+                          {todoPreviewItems.map((todo, index) => (
+                            <div
+                              key={`${item.id}:todo:${index}`}
+                              className="flex min-w-0 items-center gap-2 text-neutral-700"
+                            >
+                              <span className="shrink-0 rounded-full border border-neutral-200 bg-neutral-50 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.06em] text-neutral-500">
+                                {formatTodoStatus(todo.status)}
+                              </span>
+                              <span className="min-w-0 truncate text-[12px] text-neutral-700">
+                                {todo.content}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="min-w-0 flex-1 truncate text-neutral-700">
+                          {summarizeTodoPreviewItem(item)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()
               ))}
             </div>
           </section>

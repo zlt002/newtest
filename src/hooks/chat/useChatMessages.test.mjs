@@ -562,6 +562,35 @@ test('normalizedToChatMessages renders tool_use messages as standalone tool entr
   assert.equal(chatMessages[0].toolResult?.content, '文件内容');
 });
 
+test('normalizedToChatMessages keeps TodoWrite todo arrays available for tool rendering', () => {
+  const todos = [
+    { content: 'Write spec', status: 'pending', activeForm: 'Write spec' },
+    { content: 'Review draft', status: 'in_progress', activeForm: 'Review draft' },
+  ];
+
+  const chatMessages = normalizedToChatMessages([
+    {
+      id: 'tool-use-todo-1',
+      kind: 'tool_use',
+      provider: 'claude',
+      sessionId: 'session-1',
+      timestamp: '2026-04-27T10:00:00.000Z',
+      toolName: 'TodoWrite',
+      toolId: 'tool-todo-1',
+      toolInput: { todos },
+      toolResult: {
+        isError: false,
+        content: 'Todo list updated',
+      },
+    },
+  ]);
+
+  assert.equal(chatMessages.length, 1);
+  assert.equal(chatMessages[0].isToolUse, true);
+  assert.equal(chatMessages[0].toolName, 'TodoWrite');
+  assert.deepEqual(JSON.parse(String(chatMessages[0].toolInput)), { todos });
+});
+
 test('normalizedToChatMessages renders orchestration summaries as orchestration cards with task titles', () => {
   const chatMessages = normalizedToChatMessages([
     {
