@@ -72,6 +72,32 @@ function normalizeRuntimeCommands(commands) {
   return normalizeCommandEntries(commands, { ensureLeadingSlash: true });
 }
 
+function mergeNormalizedCommandEntries(primary = [], secondary = [], { ensureLeadingSlash = false } = {}) {
+  const merged = [];
+  const seen = new Set();
+
+  const pushEntries = (entries) => {
+    for (const entry of Array.isArray(entries) ? entries : []) {
+      const normalizedEntry = normalizeCommandEntries([entry], { ensureLeadingSlash })[0];
+      if (!normalizedEntry) {
+        continue;
+      }
+      const normalizedName = normalizeSlashCommandName(normalizedEntry.name);
+      const dedupeKey = normalizedName || String(normalizedEntry.name || '');
+      if (!dedupeKey || seen.has(dedupeKey)) {
+        continue;
+      }
+      seen.add(dedupeKey);
+      merged.push(normalizedEntry);
+    }
+  };
+
+  pushEntries(primary);
+  pushEntries(secondary);
+
+  return merged;
+}
+
 async function readInitializationMetadata(session, entry = null) {
   const queryInitialization = session?.query?.initialization;
   const initialization = queryInitialization && typeof queryInitialization.then === 'function'
@@ -190,8 +216,8 @@ async function readCommandCatalog(entry, session) {
     const normalizedRuntime = normalizeRuntimeCommands(catalog.runtime);
     const catalogWithNormalizedData = {
       ...catalog,
-      runtime: normalizedRuntime.length > 0 ? normalizedRuntime : initializationCatalog.runtime,
-      skills: normalizedSkills.length > 0 ? normalizedSkills : initializationCatalog.skills,
+      runtime: mergeNormalizedCommandEntries(normalizedRuntime, initializationCatalog.runtime, { ensureLeadingSlash: true }),
+      skills: mergeNormalizedCommandEntries(normalizedSkills, initializationCatalog.skills),
     };
     return catalogWithNormalizedData;
   }

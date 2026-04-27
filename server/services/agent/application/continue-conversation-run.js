@@ -1,6 +1,7 @@
 // 在已绑定 runtime session 的 conversation 上继续创建新 run。
 import { buildClaudeV2RuntimeOptions } from '../runtime/claude-v2-request-builder.js';
 import { extractUserInputText } from './user-message-text.js';
+import { loadClaudePluginsSync } from '../../../utils/claude-plugin-config.js';
 
 function getLiveSession(runtime, sessionId) {
   if (typeof runtime.hasLiveSession === 'function' && !runtime.hasLiveSession(sessionId)) {
@@ -47,6 +48,7 @@ export async function continueConversationRun({
   toolsSettings,
   writer,
   hooks,
+  plugins,
 }) {
   const normalizedSessionId = String(sessionId || '').trim() || null;
   if (!normalizedSessionId) {
@@ -66,6 +68,9 @@ export async function continueConversationRun({
     toolsSettings,
     writer,
     hooks,
+    plugins: Array.isArray(plugins)
+      ? plugins
+      : loadClaudePluginsSync({ projectPath: typeof projectPath === 'string' ? projectPath.trim() : '' }),
   });
   const liveSession = getLiveSession(runtime, normalizedSessionId);
   if (liveSession) {

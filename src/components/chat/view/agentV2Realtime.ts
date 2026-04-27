@@ -130,6 +130,7 @@ export function createAgentV2RealtimeCoordinator({
         sendMessage({
           type: CLIENT_EVENT_TYPES.CHAT_USER_MESSAGE,
           sessionId,
+          projectPath,
           message,
           ...(Array.isArray(contextFilePaths) && contextFilePaths.length > 0 ? { contextFilePaths } : {}),
         });

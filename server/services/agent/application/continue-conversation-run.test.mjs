@@ -175,3 +175,26 @@ test('continueConversationRun does not consult the repo session table when sessi
   assert.equal(result.sessionRecord, null);
   assert.equal(result.session.sessionId, 'sess-no-session-read');
 });
+
+test('continueConversationRun forwards resolved Claude plugins to runtime.resume', async () => {
+  const repo = createInMemoryAgentV2Repository();
+  await repo.createSession({ sessionId: 'sess-existing', title: '继续会话' });
+  let resumeOptions = null;
+  const runtime = {
+    resume(sessionId, options) {
+      resumeOptions = options;
+      return { sessionId, options };
+    },
+  };
+
+  await continueConversationRun({
+    repo,
+    runtime,
+    sessionId: 'sess-existing',
+    prompt: 'follow up',
+    model: 'claude-opus-4-7',
+    plugins: [{ type: 'local', path: '/tmp/plugins/superpowers/5.0.7' }],
+  });
+
+  assert.deepEqual(resumeOptions?.plugins, [{ type: 'local', path: '/tmp/plugins/superpowers/5.0.7' }]);
+});

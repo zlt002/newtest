@@ -26,6 +26,29 @@ interface SlashCommandOutput extends SlashCommandItem {
   sourceType: string;
 }
 
+function buildSearchTokens(name: string | undefined): string[] {
+  const normalizedName = normalizeCommandName(name);
+  if (!normalizedName) {
+    return [];
+  }
+
+  const tokens = new Set([normalizedName]);
+  const colonParts = normalizedName.split(':').map((part) => part.trim()).filter(Boolean);
+  const slashParts = normalizedName.split('/').map((part) => part.trim()).filter(Boolean);
+
+  if (colonParts.length > 1) {
+    tokens.add(colonParts[colonParts.length - 1]);
+    tokens.add(colonParts.join(' '));
+  }
+
+  if (slashParts.length > 1) {
+    tokens.add(slashParts[slashParts.length - 1]);
+    tokens.add(slashParts.join(' '));
+  }
+
+  return [...tokens];
+}
+
 function normalizeCommandList(commands: SlashCommandItem[] | undefined): SlashCommandItem[] {
   return Array.isArray(commands) ? commands : [];
 }
@@ -115,8 +138,12 @@ export function buildSlashCommandsFromResponse(data: SlashCommandData = {}): Sla
               type: 'skill',
               group: 'skills',
               skillName: normalizedName || command.name,
+              searchTokens: buildSearchTokens(command.name),
             }
-          : command.metadata,
+          : {
+              ...(command.metadata && typeof command.metadata === 'object' ? command.metadata : {}),
+              searchTokens: buildSearchTokens(command.name),
+            },
       };
     }),
     ...normalized.skills.map((skill) => ({
@@ -129,6 +156,7 @@ export function buildSlashCommandsFromResponse(data: SlashCommandData = {}): Sla
         type: 'skill',
         group: 'skills',
         skillName: skill.name,
+        searchTokens: buildSearchTokens(skill.name),
       },
     })).filter((skill) => !runtimeCommandNames.has(normalizeCommandName(skill.name))),
   ] as SlashCommandOutput[];

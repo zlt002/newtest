@@ -830,9 +830,10 @@ test('useSlashCommands.ts lazy-loads command catalog behind cache instead of fet
   assert.match(source, /const slashCommandCache = new Map/);
   assert.match(source, /const slashCommandRequests = new Map/);
   assert.match(source, /const ensureSlashCommandsLoaded = useCallback\(async \(\) =>/);
+  assert.match(source, /const refreshSlashCommands = useCallback\(async \(\) =>/);
   assert.match(source, /const cachedCommands = readCachedSlashCommands/);
-  assert.match(source, /if \(isOpening\) \{\s*void ensureSlashCommandsLoaded\(\);/s);
-  assert.match(source, /if \(match\) \{\s*void ensureSlashCommandsLoaded\(\);/s);
+  assert.match(source, /if \(isOpening\) \{\s*void \(sessionId \? refreshSlashCommands\(\) : ensureSlashCommandsLoaded\(\)\);/s);
+  assert.match(source, /if \(match\) \{\s*void \(sessionId \? refreshSlashCommands\(\) : ensureSlashCommandsLoaded\(\)\);/s);
   assert.doesNotMatch(source, /useEffect\(\(\) => \{\s*const fetchCommands = async \(\) =>/);
 });
 

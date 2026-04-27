@@ -66,3 +66,26 @@ test('startConversationRun only writes the run record before handing off to runt
   ]);
   assert.equal('mcpEnabled' in runtimeCalls[0], false);
 });
+
+test('startConversationRun forwards resolved Claude plugins to runtime.create', async () => {
+  let runtimeOptions = null;
+  const repo = createInMemoryRunStateStore();
+  const runtime = {
+    create(options) {
+      runtimeOptions = options;
+      return { sessionId: 'sess-runtime' };
+    },
+  };
+
+  await startConversationRun({
+    repo,
+    runtime,
+    title: '对话 3',
+    prompt: 'plugin test',
+    model: 'claude-opus-4-7',
+    projectPath: '/Users/demo/html',
+    plugins: [{ type: 'local', path: '/tmp/plugins/superpowers/5.0.7' }],
+  });
+
+  assert.deepEqual(runtimeOptions?.plugins, [{ type: 'local', path: '/tmp/plugins/superpowers/5.0.7' }]);
+});

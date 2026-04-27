@@ -10,6 +10,7 @@ import {
 } from '../../shared/claudeCommandRegistry.js';
 import { defaultAgentV2Runtime } from '../services/agent/default-services.js';
 import { parseFrontmatter } from '../utils/frontmatter.js';
+import { loadClaudePluginsSync } from '../utils/claude-plugin-config.js';
 
 async function getAllMCPServers() {
   try {
@@ -115,6 +116,45 @@ const claudeModelValueSet = new Set(claudeModelValues);
 const localExecutableCommandNames = new Set(['/model']);
 
 const isLocallyExecutableCommand = (commandName) => localExecutableCommandNames.has(commandName);
+
+const normalizeCatalogEntryName = (entry, { ensureLeadingSlash = false } = {}) => {
+  const rawName = typeof entry === 'string'
+    ? entry
+    : (entry && typeof entry === 'object' ? entry.name : '');
+  const normalized = typeof rawName === 'string' ? rawName.trim().replace(/^\//, '') : '';
+  if (!normalized) {
+    return '';
+  }
+  return ensureLeadingSlash ? `/${normalized}` : normalized;
+};
+
+const mergeCatalogEntries = (primary = [], secondary = [], { ensureLeadingSlash = false } = {}) => {
+  const merged = [];
+  const seen = new Set();
+
+  const pushEntries = (entries) => {
+    for (const entry of Array.isArray(entries) ? entries : []) {
+      const normalizedName = normalizeCatalogEntryName(entry, { ensureLeadingSlash });
+      if (!normalizedName || seen.has(normalizedName)) {
+        continue;
+      }
+      seen.add(normalizedName);
+      if (entry && typeof entry === 'object') {
+        merged.push({
+          ...entry,
+          ...(typeof entry.name === 'string' ? { name: normalizedName } : {}),
+        });
+        continue;
+      }
+      merged.push({ name: normalizedName });
+    }
+  };
+
+  pushEntries(primary);
+  pushEntries(secondary);
+
+  return merged;
+};
 
 const formatCommandTable = (commands) =>
   commands
@@ -788,9 +828,26 @@ Use \`/cost\` for price estimation and \`/context\` for context pressure guidanc
 router.post('/list', async (req, res) => {
   try {
     const { projectPath, sessionId, toolsSettings } = req.body;
-    const runtimeCatalog = (sessionId || projectPath)
-      ? await defaultAgentV2Runtime.getCommandCatalog(sessionId || null, { projectPath, toolsSettings })
-      : { localUi: [], runtime: [], skills: [] };
+    const plugins = loadClaudePluginsSync({ projectPath });
+    let runtimeCatalog = { localUi: [], runtime: [], skills: [] };
+
+    if (sessionId || projectPath) {
+      const liveSession = sessionId ? defaultAgentV2Runtime.getLiveSession?.(sessionId) : null;
+      if (liveSession && typeof liveSession.refreshCommandCatalog === 'function') {
+        const probeCatalog = projectPath
+          ? await defaultAgentV2Runtime.getCommandCatalog(null, { projectPath, toolsSettings, plugins })
+          : { localUi: [], runtime: [], skills: [] };
+        const liveCatalog = await liveSession.refreshCommandCatalog();
+        runtimeCatalog = {
+          localUi: [],
+          runtime: mergeCatalogEntries(probeCatalog.runtime, liveCatalog.runtime, { ensureLeadingSlash: true }),
+          skills: mergeCatalogEntries(probeCatalog.skills, liveCatalog.skills),
+        };
+      } else {
+        runtimeCatalog = await defaultAgentV2Runtime.getCommandCatalog(sessionId || null, { projectPath, toolsSettings, plugins });
+      }
+    }
+
     const runtimeCommands = Array.isArray(runtimeCatalog.runtime) ? runtimeCatalog.runtime : [];
     const runtimeSkills = Array.isArray(runtimeCatalog.skills) ? runtimeCatalog.skills : [];
     const localUiCommands = [...builtInCommands];

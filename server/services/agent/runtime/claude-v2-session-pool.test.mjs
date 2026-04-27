@@ -647,6 +647,64 @@ test('session pool splits query.initialization.commands into runtime commands an
   });
 });
 
+test('session pool merges init-only runtime commands with commandCatalog runtime for live sessions', async () => {
+  const fakeSdk = {
+    unstable_v2_createSession() {
+      return {
+        query: {
+          initialization: Promise.resolve({
+            commands: [
+              { name: 'batch', description: 'Batch workflow', argumentHint: '' },
+              { name: 'superpowers:brainstorming', description: 'Brainstorm skill', argumentHint: '' },
+            ],
+          }),
+        },
+        async commandCatalog() {
+          return {
+            localUi: [],
+            runtime: [{ name: '/batch', description: 'Batch workflow', argumentHint: '' }],
+            skills: [],
+          };
+        },
+        async send() {},
+        async *stream() {
+          yield {
+            type: 'system',
+            subtype: 'init',
+            session_id: 'sess-live-init-merge',
+            slash_commands: ['batch', 'superpowers:brainstorming'],
+            skills: [],
+          };
+        },
+        get sessionId() {
+          return 'sess-live-init-merge';
+        },
+        close() {},
+      };
+    },
+    unstable_v2_resumeSession() {
+      throw new Error('not used');
+    },
+  };
+
+  const pool = createClaudeV2SessionPool(fakeSdk);
+  const session = pool.create({ cwd: '/tmp/project' });
+  for await (const _message of session.stream()) {
+    // wait until init captured
+  }
+
+  const catalog = await pool.getCommandCatalog('sess-live-init-merge');
+
+  assert.deepEqual(catalog, {
+    localUi: [],
+    runtime: [
+      { name: '/batch', description: 'Batch workflow', argumentHint: '' },
+      { name: '/superpowers:brainstorming', description: 'Brainstorm skill', argumentHint: '' },
+    ],
+    skills: [],
+  });
+});
+
 test('session pool falls back to initialization commands as runtime when SDK lacks catalog helpers', async () => {
   const fakeSdk = {
     unstable_v2_createSession() {

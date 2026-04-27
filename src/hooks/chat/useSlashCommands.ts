@@ -134,6 +134,13 @@ const writeCachedSlashCommands = (cacheKey: string, commands: SlashCommand[]) =>
   });
 };
 
+const invalidateCachedSlashCommands = (cacheKey: string | null) => {
+  if (!cacheKey) {
+    return;
+  }
+  slashCommandCache.delete(cacheKey);
+};
+
 export function useSlashCommands({
   selectedProject,
   sessionId,
@@ -247,6 +254,12 @@ export function useSlashCommands({
     }
   }, [selectedProjectName, selectedProjectPath, sessionId, slashCommandCacheKey, toolsSettings]);
 
+  const refreshSlashCommands = useCallback(async () => {
+    invalidateCachedSlashCommands(slashCommandCacheKey);
+    slashCommandRequests.delete(slashCommandCacheKey || '');
+    return await ensureSlashCommandsLoaded();
+  }, [ensureSlashCommandsLoaded, slashCommandCacheKey]);
+
   useEffect(() => {
     if (!selectedProjectName || !selectedProjectPath || !slashCommandCacheKey) {
       setSlashCommands([]);
@@ -278,6 +291,7 @@ export function useSlashCommands({
     return new Fuse(slashCommands, {
       keys: [
         { name: 'name', weight: 2 },
+        { name: 'metadata.searchTokens', weight: 1.5 },
         { name: 'description', weight: 1 },
       ],
       threshold: 0.4,
@@ -369,12 +383,12 @@ export function useSlashCommands({
     setSelectedCommandIndex(-1);
 
     if (isOpening) {
-      void ensureSlashCommandsLoaded();
+      void (sessionId ? refreshSlashCommands() : ensureSlashCommandsLoaded());
       setFilteredCommands(slashCommands);
     }
 
     textareaRef.current?.focus();
-  }, [ensureSlashCommandsLoaded, showCommandMenu, slashCommands, textareaRef]);
+  }, [ensureSlashCommandsLoaded, refreshSlashCommands, sessionId, showCommandMenu, slashCommands, textareaRef]);
 
   const handleCommandInputChange = useCallback(
     (newValue: string, cursorPos: number) => {
@@ -401,7 +415,7 @@ export function useSlashCommands({
       }
 
       if (match) {
-        void ensureSlashCommandsLoaded();
+        void (sessionId ? refreshSlashCommands() : ensureSlashCommandsLoaded());
       }
 
       const slashPos = (match.index || 0) + match[1].length;
@@ -416,7 +430,7 @@ export function useSlashCommands({
         setCommandQuery(query);
       }, COMMAND_QUERY_DEBOUNCE_MS);
     },
-    [ensureSlashCommandsLoaded, resetCommandMenuState, clearCommandQueryTimer],
+    [ensureSlashCommandsLoaded, refreshSlashCommands, sessionId, resetCommandMenuState, clearCommandQueryTimer],
   );
 
   const handleCommandMenuKeyDown = useCallback(

@@ -240,7 +240,7 @@ export default function RightPane({
   }
 
   const renderTabs = () => (
-    <div className="flex h-10 flex-shrink-0 items-center gap-1 overflow-hidden border-b border-border/60 bg-background px-2">
+    <div className="flex h-10 flex-shrink-0 items-center gap-1 overflow-visible border-b border-border/60 bg-background px-2">
       <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden" ref={tabsViewportRef}>
         {visibleTabs.map((tab) => {
           const isActive = tab.id === activeTabId;

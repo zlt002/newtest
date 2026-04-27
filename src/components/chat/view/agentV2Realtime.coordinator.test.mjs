@@ -29,6 +29,7 @@ test('submitRun sends chat_user_message for existing sessions', () => {
   assert.deepEqual(sent, [{
     type: 'chat_user_message',
     sessionId: 'sess-1',
+    projectPath: '/workspace/demo',
     message: {
       role: 'user',
       content: '继续总结改动',

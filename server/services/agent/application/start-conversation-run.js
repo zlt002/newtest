@@ -1,6 +1,7 @@
 // 新建 session run，并向 runtime 请求新的 Claude session。
 import { buildClaudeV2RuntimeOptions } from '../runtime/claude-v2-request-builder.js';
 import { extractUserInputText } from './user-message-text.js';
+import { loadClaudePluginsSync } from '../../../utils/claude-plugin-config.js';
 
 export async function startConversationRun({
   repo,
@@ -15,6 +16,7 @@ export async function startConversationRun({
   toolsSettings,
   writer,
   hooks,
+  plugins,
 }) {
   const normalizedProjectPath = typeof projectPath === 'string' ? projectPath.trim() : '';
   if (!normalizedProjectPath) {
@@ -34,6 +36,7 @@ export async function startConversationRun({
     toolsSettings,
     writer,
     hooks,
+    plugins: Array.isArray(plugins) ? plugins : loadClaudePluginsSync({ projectPath: normalizedProjectPath }),
   });
   const session = runtime.create(runtimeOptions);
 

@@ -35,6 +35,7 @@ test('buildSlashCommandsFromResponse keeps local UI, runtime commands, and skill
     type: 'skill',
     group: 'skills',
     skillName: 'analysis',
+    searchTokens: ['analysis'],
   });
 });
 
@@ -75,6 +76,26 @@ test('buildSlashCommandsFromResponse does not duplicate skills that already exis
     type: 'skill',
     group: 'skills',
     skillName: 'analysis',
+    searchTokens: ['analysis'],
+  });
+});
+
+test('buildSlashCommandsFromResponse adds colon-suffix search tokens for plugin-style skill names', () => {
+  const commands = buildSlashCommandsFromResponse({
+    runtime: [
+      { name: '/superpowers:brainstorming', description: 'Brainstorm skill. (user)' },
+    ],
+  });
+
+  assert.deepEqual(commands[0].metadata, {
+    type: 'skill',
+    group: 'skills',
+    skillName: 'superpowers:brainstorming',
+    searchTokens: [
+      'superpowers:brainstorming',
+      'brainstorming',
+      'superpowers brainstorming',
+    ],
   });
 });
 
@@ -99,6 +120,7 @@ test('buildSlashCommandsFromResponse keeps runtime /model commands in runtime sh
       group: 'claude-runtime',
       executeLocally: true,
       injected: true,
+      searchTokens: ['model'],
     },
     type: 'claude-runtime',
     sourceType: 'claude-runtime',

@@ -505,6 +505,7 @@ test('agent v2 realtime coordinator sends chat_user_message payload through webs
   assert.deepEqual(sent, [{
     type: 'chat_user_message',
     sessionId: 'sess-1',
+    projectPath: '/workspace/demo',
     message: {
       role: 'user',
       content: '请帮我总结改动',

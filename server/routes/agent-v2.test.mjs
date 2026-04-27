@@ -487,13 +487,12 @@ test('commands list returns local UI commands and runtime command catalog entrie
   const originalGetCommandCatalog = defaultAgentV2Runtime.getCommandCatalog;
   defaultAgentV2Runtime.getCommandCatalog = async (sessionId, options = {}) => {
     assert.equal(sessionId, 'sess-1');
-    assert.deepEqual(options, {
-      projectPath: '/tmp/project',
-      toolsSettings: {
-        allowedTools: ['Read', 'Skill'],
-        skipPermissions: true,
-      },
+    assert.equal(options.projectPath, '/tmp/project');
+    assert.deepEqual(options.toolsSettings, {
+      allowedTools: ['Read', 'Skill'],
+      skipPermissions: true,
     });
+    assert.ok(Array.isArray(options.plugins));
     return {
       localUi: [],
       runtime: [
@@ -643,12 +642,11 @@ test('commands list does not 500 when command catalog falls back from a stale se
   const originalGetCommandCatalog = defaultAgentV2Runtime.getCommandCatalog;
   defaultAgentV2Runtime.getCommandCatalog = async (sessionId, options = {}) => {
     assert.equal(sessionId, 'sess-stale');
-    assert.deepEqual(options, {
-      projectPath: '/tmp/project',
-      toolsSettings: {
-        allowedTools: ['Read'],
-      },
+    assert.equal(options.projectPath, '/tmp/project');
+    assert.deepEqual(options.toolsSettings, {
+      allowedTools: ['Read'],
     });
+    assert.ok(Array.isArray(options.plugins));
     return {
       localUi: [],
       runtime: [
@@ -687,6 +685,142 @@ test('commands list does not 500 when command catalog falls back from a stale se
     ]);
     assert.deepEqual(body.skills, []);
   } finally {
+    defaultAgentV2Runtime.getCommandCatalog = originalGetCommandCatalog;
+    await closeServer(server);
+  }
+});
+
+test('commands list loads enabled Claude plugins and forwards them to the runtime catalog probe', async () => {
+  const originalGetCommandCatalog = defaultAgentV2Runtime.getCommandCatalog;
+  const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
+  const tempHome = await mkdtemp(path.join(os.tmpdir(), 'ccui-home-'));
+  const tempProject = await mkdtemp(path.join(os.tmpdir(), 'ccui-project-'));
+  const claudeDir = path.join(tempHome, '.claude');
+  const pluginsDir = path.join(claudeDir, 'plugins');
+
+  await mkdir(pluginsDir, { recursive: true });
+  await writeFile(
+    path.join(claudeDir, 'settings.json'),
+    JSON.stringify({
+      enabledPlugins: {
+        'superpowers@claude-plugins-official': true,
+      },
+    }),
+  );
+  await writeFile(
+    path.join(pluginsDir, 'installed_plugins.json'),
+    JSON.stringify({
+      version: 2,
+      plugins: {
+        'superpowers@claude-plugins-official': [
+          { scope: 'user', installPath: '/tmp/plugins/superpowers/5.0.7' },
+        ],
+      },
+    }),
+  );
+
+  defaultAgentV2Runtime.getCommandCatalog = async (sessionId, options = {}) => {
+    assert.equal(sessionId, 'sess-plugins');
+    assert.deepEqual(options.plugins, [{ type: 'local', path: '/tmp/plugins/superpowers/5.0.7' }]);
+    return { localUi: [], runtime: [], skills: [] };
+  };
+  process.env.HOME = tempHome;
+  process.env.USERPROFILE = tempHome;
+
+  const app = express();
+  app.use(express.json());
+  app.use('/api/commands', commandsRouter);
+  const { server, port } = await listenServer(app);
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/commands/list`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        projectPath: tempProject,
+        sessionId: 'sess-plugins',
+      }),
+    });
+
+    assert.equal(response.status, 200);
+  } finally {
+    defaultAgentV2Runtime.getCommandCatalog = originalGetCommandCatalog;
+    process.env.HOME = originalHome;
+    process.env.USERPROFILE = originalUserProfile;
+    await closeServer(server);
+    await rm(tempHome, { recursive: true, force: true });
+    await rm(tempProject, { recursive: true, force: true });
+  }
+});
+
+test('commands list refreshes the live session catalog before returning runtime slash commands', async () => {
+  const originalGetLiveSession = defaultAgentV2Runtime.getLiveSession;
+  const originalGetCommandCatalog = defaultAgentV2Runtime.getCommandCatalog;
+  let refreshCalls = 0;
+  let probeCalls = 0;
+
+  defaultAgentV2Runtime.getLiveSession = (sessionId) => {
+    assert.equal(sessionId, 'sess-live-refresh');
+    return {
+      async refreshCommandCatalog() {
+        refreshCalls += 1;
+        return {
+          localUi: [],
+          runtime: [
+            { name: '/superpowers:brainstorming', description: 'Brainstorm with superpowers', argumentHint: '' },
+          ],
+          skills: [],
+        };
+      },
+    };
+  };
+  defaultAgentV2Runtime.getCommandCatalog = async (sessionId) => {
+    assert.equal(sessionId, null);
+    probeCalls += 1;
+    return {
+      localUi: [],
+      runtime: [
+        { name: '/compact', description: 'Compact conversation', argumentHint: '' },
+      ],
+      skills: [
+        { name: 'analysis', description: 'Analyze codebase', argumentHint: '' },
+      ],
+    };
+  };
+
+  const app = express();
+  app.use(express.json());
+  app.use('/api/commands', commandsRouter);
+  const { server, port } = await listenServer(app);
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/commands/list`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        projectPath: '/tmp/project',
+        sessionId: 'sess-live-refresh',
+      }),
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(body.runtime, [
+      { name: '/compact', description: 'Compact conversation', argumentHint: '' },
+      { name: '/superpowers:brainstorming', description: 'Brainstorm with superpowers', argumentHint: '' },
+    ]);
+    assert.deepEqual(body.skills, [
+      { name: 'analysis', description: 'Analyze codebase', argumentHint: '' },
+    ]);
+    assert.equal(refreshCalls, 1);
+    assert.equal(probeCalls, 1);
+  } finally {
+    defaultAgentV2Runtime.getLiveSession = originalGetLiveSession;
     defaultAgentV2Runtime.getCommandCatalog = originalGetCommandCatalog;
     await closeServer(server);
   }

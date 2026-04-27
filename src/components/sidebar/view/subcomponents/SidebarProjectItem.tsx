@@ -189,8 +189,8 @@ export default function SidebarProjectItem({
             )}
             onClick={toggleProject}
           >
-            <div className="flex items-center justify-between">
-              <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="flex justify-between items-center">
+              <div className="flex flex-1 gap-3 items-center min-w-0">
                 <div
                   className={cn(
                     'flex justify-center items-center w-8 h-8 transition-colors',
@@ -198,19 +198,19 @@ export default function SidebarProjectItem({
                   )}
                 >
                   {isExpanded ? (
-                    <FolderOpen className="h-4 w-4 text-primary" />
+                    <FolderOpen className="w-4 h-4 text-primary" />
                   ) : (
-                    <Folder className="h-4 w-4 text-muted-foreground" />
+                    <Folder className="w-4 h-4 text-muted-foreground" />
                   )}
                 </div>
 
-                <div className="min-w-0 flex-1">
+                <div className="flex-1 min-w-0">
                   {isEditing ? (
                     <input
                       type="text"
                       value={editingName}
                       onChange={(event) => onEditingNameChange(event.target.value)}
-                      className="w-full rounded-lg border-2 border-primary/40 bg-background px-3 py-2 text-sm text-foreground shadow-sm transition-all duration-200 focus:border-primary focus:shadow-md focus:outline-none"
+                      className="px-3 py-2 w-full text-sm rounded-lg border-2 shadow-sm transition-all duration-200 border-primary/40 bg-background text-foreground focus:border-primary focus:shadow-md focus:outline-none"
                       placeholder={t('projects.projectNamePlaceholder')}
                       autoFocus
                       autoComplete="off"
@@ -232,8 +232,8 @@ export default function SidebarProjectItem({
                     />
                   ) : (
                     <>
-                      <div className="flex min-w-0 flex-1 items-center justify-between">
-                        <h3 className="truncate text-sm font-medium text-foreground">{project.displayName}</h3>
+                      <div className="flex flex-1 justify-between items-center min-w-0">
+                        <h3 className="text-sm font-medium truncate text-foreground">{project.displayName}</h3>
                       </div>
                       <p className="text-xs text-muted-foreground">{sessionCountLabel}</p>
                     </>
@@ -241,26 +241,26 @@ export default function SidebarProjectItem({
                 </div>
               </div>
 
-              <div className="flex items-center gap-1">
+              <div className="flex gap-1 items-center">
                 {isEditing ? (
                   <>
                     <button
-                      className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-500 shadow-sm transition-all duration-150 active:scale-90 active:shadow-none dark:bg-green-600"
+                      className="flex justify-center items-center w-8 h-8 bg-green-500 rounded-lg shadow-sm transition-all duration-150 active:scale-90 active:shadow-none dark:bg-green-600"
                       onClick={(event) => {
                         event.stopPropagation();
                         saveProjectName();
                       }}
                     >
-                      <Check className="h-4 w-4 text-white" />
+                      <Check className="w-4 h-4 text-white" />
                     </button>
                     <button
-                      className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-500 shadow-sm transition-all duration-150 active:scale-90 active:shadow-none dark:bg-gray-600"
+                      className="flex justify-center items-center w-8 h-8 bg-gray-500 rounded-lg shadow-sm transition-all duration-150 active:scale-90 active:shadow-none dark:bg-gray-600"
                       onClick={(event) => {
                         event.stopPropagation();
                         onCancelEditingProject();
                       }}
                     >
-                      <X className="h-4 w-4 text-white" />
+                      <X className="w-4 h-4 text-white" />
                     </button>
                   </>
                 ) : (
@@ -289,30 +289,30 @@ export default function SidebarProjectItem({
                     </button>
 
                     <button
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 bg-red-500/10 active:scale-90 dark:border-red-800 dark:bg-red-900/30"
+                      className="flex justify-center items-center w-8 h-8 rounded-lg border border-red-200 bg-red-500/10 active:scale-90 dark:border-red-800 dark:bg-red-900/30"
                       onClick={(event) => {
                         event.stopPropagation();
                         onDeleteProject(project);
                       }}
                     >
-                      <Trash2 className="h-4 w-4 text-red-600 dark:text-red-400" />
+                      <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
                     </button>
 
                     <button
-                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 active:scale-90 dark:border-primary/30 dark:bg-primary/20"
+                      className="flex justify-center items-center w-8 h-8 rounded-lg border border-primary/20 bg-primary/10 active:scale-90 dark:border-primary/30 dark:bg-primary/20"
                       onClick={(event) => {
                         event.stopPropagation();
                         onStartEditingProject(project);
                       }}
                     >
-                      <Edit3 className="h-4 w-4 text-primary" />
+                      <Edit3 className="w-4 h-4 text-primary" />
                     </button>
 
-                    <div className="flex h-6 w-6 items-center justify-center bg-muted/30">
+                    <div className="flex justify-center items-center w-6 h-6 bg-muted/30">
                       {isExpanded ? (
-                        <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                        <ChevronDown className="w-3 h-3 text-muted-foreground" />
                       ) : (
-                        <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                        <ChevronRight className="w-3 h-3 text-muted-foreground" />
                       )}
                     </div>
                   </>
@@ -324,7 +324,7 @@ export default function SidebarProjectItem({
 
         <div
           className={cn(
-            'group/project hidden md:flex w-full items-center justify-between p-2 transition-colors hover:bg-accent/50',
+            'group/project hidden md:flex w-full items-center justify-between py-2 transition-colors hover:bg-accent/50',
             projectVisualTone.containerClassName,
           )}
           ref={desktopMenuRef}
@@ -332,7 +332,7 @@ export default function SidebarProjectItem({
         >
           <button
             type="button"
-            className="flex min-w-0 flex-1 items-center gap-3 text-left"
+            className="flex flex-1 gap-3 items-center min-w-0 text-left"
             onClick={toggleProject}
             title={!isEditing && projectPath ? projectPath : undefined}
           >
@@ -341,13 +341,13 @@ export default function SidebarProjectItem({
             ) : (
               <Folder className={cn('h-4 w-4 flex-shrink-0', projectVisualTone.iconClassName)} />
             )}
-            <div className="min-w-0 flex-1 text-left">
+            <div className="flex-1 min-w-0 text-left">
               {isEditing ? (
                 <input
                   type="text"
                   value={editingName}
                   onChange={(event) => onEditingNameChange(event.target.value)}
-                  className="w-full rounded border border-border bg-background px-2 py-1 text-sm text-foreground focus:ring-2 focus:ring-primary/20"
+                  className="px-2 py-1 w-full text-sm rounded border border-border bg-background text-foreground focus:ring-2 focus:ring-primary/20"
                   placeholder={t('projects.projectNamePlaceholder')}
                   autoFocus
                   onClick={(event) => event.stopPropagation()}
@@ -362,7 +362,7 @@ export default function SidebarProjectItem({
                 />
               ) : (
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex gap-2 items-center">
                     <div
                       className={cn(
                         'truncate text-sm font-semibold transition-colors',
@@ -387,28 +387,28 @@ export default function SidebarProjectItem({
             </div>
           </button>
 
-          <div className="relative flex flex-shrink-0 items-center gap-1 pl-2">
+          <div className="flex relative flex-shrink-0 items-center pl-2">
             {isEditing ? (
               <>
                 <button
                   type="button"
-                  className="flex h-6 w-6 cursor-pointer items-center justify-center rounded text-green-600 transition-colors hover:bg-green-50 hover:text-green-700 dark:hover:bg-green-900/20"
+                  className="flex justify-center items-center w-6 h-6 text-green-600 rounded transition-colors cursor-pointer hover:bg-green-50 hover:text-green-700 dark:hover:bg-green-900/20"
                   onClick={(event) => {
                     event.stopPropagation();
                     saveProjectName();
                   }}
                 >
-                  <Check className="h-3 w-3" />
+                  <Check className="w-3 h-3" />
                 </button>
                 <button
                   type="button"
-                  className="flex h-6 w-6 cursor-pointer items-center justify-center rounded text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700 dark:hover:bg-gray-800"
+                  className="flex justify-center items-center w-6 h-6 text-gray-500 rounded transition-colors cursor-pointer hover:bg-gray-50 hover:text-gray-700 dark:hover:bg-gray-800"
                   onClick={(event) => {
                     event.stopPropagation();
                     onCancelEditingProject();
                   }}
                 >
-                  <X className="h-3 w-3" />
+                  <X className="w-3 h-3" />
                 </button>
               </>
             ) : (
@@ -426,19 +426,19 @@ export default function SidebarProjectItem({
                     setIsDesktopMenuOpen((prev) => !prev);
                   }}
                 >
-                  <Ellipsis className="h-4 w-4 text-muted-foreground" />
+                  <Ellipsis className="w-4 h-4 text-muted-foreground" />
                 </button>
                 <button
                   type="button"
                   aria-label={t('sessions.newSession')}
-                  className="touch:opacity-100 flex h-7 w-7 items-center justify-center rounded-md opacity-0 transition-all duration-200 hover:bg-accent focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 group-hover/project:opacity-100"
+                  className="flex justify-center items-center w-7 h-7 rounded-md opacity-0 transition-all duration-200 touch:opacity-100 hover:bg-accent focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 group-hover/project:opacity-100"
                   onClick={(event) => {
                     event.stopPropagation();
                     onNewSession(project);
                   }}
                   title={t('sessions.newSession')}
                 >
-                  <Plus className="h-4 w-4 text-muted-foreground" />
+                  <Plus className="w-4 h-4 text-muted-foreground" />
                 </button>
                 {isDesktopMenuOpen && (
                   <div className="absolute right-0 top-[calc(100%+4px)] z-20 min-w-[144px] overflow-hidden rounded-md border border-border bg-popover p-1 shadow-lg">
