@@ -44,6 +44,13 @@ test('windows-lite x64 prune targets remove Windows arm64 ripgrep vendor only', 
   );
 });
 
+test('windows-lite prune targets keep better-sqlite3 in the runtime package', () => {
+  assert.ok(
+    !WINDOWS_LITE_PRUNE_TARGETS.includes('node_modules/better-sqlite3'),
+    'better-sqlite3 is a required runtime dependency and must not be pruned'
+  );
+});
+
 test('collectPrunableFiles finds type and sourcemap files under node_modules', async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'windows-lite-prune-'));
   const packageDir = path.join(tempRoot, 'node_modules', 'example-package');

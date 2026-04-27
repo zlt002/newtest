@@ -13,7 +13,6 @@ const WINDOWS_LITE_BASE_PRUNE_TARGETS = [
   'node_modules/@openai',
   'node_modules/@xterm',
   'node_modules/bcrypt',
-  'node_modules/better-sqlite3',
   'node_modules/fsevents',
   'node_modules/node-pty',
   'node_modules/sqlite3',
