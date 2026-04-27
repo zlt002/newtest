@@ -30,6 +30,15 @@ const WINDOWS_LITE_ARCH_PRUNE_TARGETS = {
 };
 
 const PRUNABLE_NODE_MODULE_FILE_SUFFIXES = ['.d.ts', '.map'];
+const PRUNABLE_NODE_MODULE_PATH_SEGMENTS = [
+  '/node_modules/better-sqlite3/deps/',
+  '/node_modules/better-sqlite3/src/',
+];
+const PRUNABLE_NODE_MODULE_PATH_PATTERNS = [
+  /\/node_modules\/better-sqlite3\/build\/Release\/obj(\.target|\/)/,
+  /\/node_modules\/better-sqlite3\/build\/Release\/sqlite3\.(a|lib)$/,
+  /\/node_modules\/better-sqlite3\/build\/Release\/test_extension\.node$/,
+];
 
 function normalizeWindowsLiteTargetArch(targetArch = 'universal') {
   return WINDOWS_LITE_ARCH_PRUNE_TARGETS[targetArch] ? targetArch : 'universal';
@@ -61,7 +70,11 @@ async function collectPrunableFiles(rootDir, currentDir = rootDir) {
       continue;
     }
 
-    if (PRUNABLE_NODE_MODULE_FILE_SUFFIXES.some((suffix) => absolutePath.endsWith(suffix))) {
+    if (
+      PRUNABLE_NODE_MODULE_FILE_SUFFIXES.some((suffix) => absolutePath.endsWith(suffix)) ||
+      PRUNABLE_NODE_MODULE_PATH_SEGMENTS.some((segment) => relativePath.includes(segment)) ||
+      PRUNABLE_NODE_MODULE_PATH_PATTERNS.some((pattern) => pattern.test(relativePath))
+    ) {
       files.push(absolutePath);
     }
   }

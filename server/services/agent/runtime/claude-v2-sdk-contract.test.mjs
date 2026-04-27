@@ -6,7 +6,7 @@ import path from 'node:path';
 import {
   assertClaudeAgentSdkVersionState,
   loadClaudeAgentSdkVersionState,
-} from '../../../scripts/check-claude-agent-sdk-version.mjs';
+} from '../../../../scripts/check-claude-agent-sdk-version.mjs';
 
 const SDK_ROOT = path.resolve(process.cwd(), 'node_modules/@anthropic-ai/claude-agent-sdk');
 const SDK_DTS_PATH = path.join(SDK_ROOT, 'sdk.d.ts');
@@ -15,16 +15,16 @@ const SDK_TOOLS_DTS_PATH = path.join(SDK_ROOT, 'sdk-tools.d.ts');
 const smokeEnabled = /^(1|true|yes)$/i.test(process.env.CLAUDE_AGENT_SDK_SMOKE ?? '');
 const smokeTest = smokeEnabled ? test : test.skip;
 
-test('Claude Agent SDK is pinned exactly to 0.2.116', async () => {
+test('Claude Agent SDK is pinned exactly to 0.2.112', async () => {
   const state = await loadClaudeAgentSdkVersionState(process.cwd());
 
   assert.deepEqual(state, {
-    packageJsonSpec: '0.2.116',
-    packageLockSpec: '0.2.116',
-    lockfileVersion: '0.2.116',
+    packageJsonSpec: '0.2.112',
+    packageLockSpec: '0.2.112',
+    lockfileVersion: '0.2.112',
     lockfileResolved:
-      'https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk/-/claude-agent-sdk-0.2.116.tgz',
-    installedVersion: '0.2.116',
+      'https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk/-/claude-agent-sdk-0.2.112.tgz',
+    installedVersion: '0.2.112',
   });
 
   assert.doesNotThrow(() => assertClaudeAgentSdkVersionState(state));
@@ -52,15 +52,15 @@ test('Claude Agent SDK contract exposes the official hook event surface', async 
 
   assert.match(
     sdkDts,
-    /export declare const HOOK_EVENTS: readonly \["PreToolUse", "PostToolUse", "PostToolUseFailure", "Notification", "UserPromptSubmit", "UserPromptExpansion", "SessionStart", "SessionEnd", "Stop", "StopFailure", "SubagentStart", "SubagentStop", "PreCompact", "PostCompact", "PermissionRequest", "PermissionDenied", "Setup", "TeammateIdle", "TaskCreated", "TaskCompleted", "Elicitation", "ElicitationResult", "ConfigChange", "WorktreeCreate", "WorktreeRemove", "InstructionsLoaded", "CwdChanged", "FileChanged"\]/,
+    /export declare const HOOK_EVENTS: readonly \["PreToolUse", "PostToolUse", "PostToolUseFailure", "Notification", "UserPromptSubmit", "SessionStart", "SessionEnd", "Stop", "StopFailure", "SubagentStart", "SubagentStop", "PreCompact", "PostCompact", "PermissionRequest", "PermissionDenied", "Setup", "TeammateIdle", "TaskCreated", "TaskCompleted", "Elicitation", "ElicitationResult", "ConfigChange", "WorktreeCreate", "WorktreeRemove", "InstructionsLoaded", "CwdChanged", "FileChanged"\]/,
   );
   assert.match(
     sdkDts,
-    /export declare type HookEvent = 'PreToolUse' \| 'PostToolUse' \| 'PostToolUseFailure' \| 'Notification' \| 'UserPromptSubmit' \| 'UserPromptExpansion' \| 'SessionStart' \| 'SessionEnd' \| 'Stop' \| 'StopFailure' \| 'SubagentStart' \| 'SubagentStop' \| 'PreCompact' \| 'PostCompact' \| 'PermissionRequest' \| 'PermissionDenied' \| 'Setup' \| 'TeammateIdle' \| 'TaskCreated' \| 'TaskCompleted' \| 'Elicitation' \| 'ElicitationResult' \| 'ConfigChange' \| 'WorktreeCreate' \| 'WorktreeRemove' \| 'InstructionsLoaded' \| 'CwdChanged' \| 'FileChanged';/,
+    /export declare type HookEvent = 'PreToolUse' \| 'PostToolUse' \| 'PostToolUseFailure' \| 'Notification' \| 'UserPromptSubmit' \| 'SessionStart' \| 'SessionEnd' \| 'Stop' \| 'StopFailure' \| 'SubagentStart' \| 'SubagentStop' \| 'PreCompact' \| 'PostCompact' \| 'PermissionRequest' \| 'PermissionDenied' \| 'Setup' \| 'TeammateIdle' \| 'TaskCreated' \| 'TaskCompleted' \| 'Elicitation' \| 'ElicitationResult' \| 'ConfigChange' \| 'WorktreeCreate' \| 'WorktreeRemove' \| 'InstructionsLoaded' \| 'CwdChanged' \| 'FileChanged';/,
   );
   assert.match(
     sdkDts,
-    /export declare type HookInput = PreToolUseHookInput \| PostToolUseHookInput \| PostToolUseFailureHookInput \| PermissionDeniedHookInput \| NotificationHookInput \| UserPromptSubmitHookInput \| UserPromptExpansionHookInput \| SessionStartHookInput \| SessionEndHookInput \| StopHookInput \| StopFailureHookInput \| SubagentStartHookInput \| SubagentStopHookInput \| PreCompactHookInput \| PostCompactHookInput \| PermissionRequestHookInput \| SetupHookInput \| TeammateIdleHookInput \| TaskCreatedHookInput \| TaskCompletedHookInput \| ElicitationHookInput \| ElicitationResultHookInput \| ConfigChangeHookInput \| InstructionsLoadedHookInput \| WorktreeCreateHookInput \| WorktreeRemoveHookInput \| CwdChangedHookInput \| FileChangedHookInput;/,
+    /export declare type HookInput = PreToolUseHookInput \| PostToolUseHookInput \| PostToolUseFailureHookInput \| PermissionDeniedHookInput \| NotificationHookInput \| UserPromptSubmitHookInput \| SessionStartHookInput \| SessionEndHookInput \| StopHookInput \| StopFailureHookInput \| SubagentStartHookInput \| SubagentStopHookInput \| PreCompactHookInput \| PostCompactHookInput \| PermissionRequestHookInput \| SetupHookInput \| TeammateIdleHookInput \| TaskCreatedHookInput \| TaskCompletedHookInput \| ElicitationHookInput \| ElicitationResultHookInput \| ConfigChangeHookInput \| InstructionsLoadedHookInput \| WorktreeCreateHookInput \| WorktreeRemoveHookInput \| CwdChangedHookInput \| FileChangedHookInput;/,
   );
 });
 

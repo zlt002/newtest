@@ -51,6 +51,50 @@ test('windows-lite prune targets keep better-sqlite3 in the runtime package', ()
   );
 });
 
+test('collectPrunableFiles finds removable better-sqlite3 build artifacts and sources', async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'windows-lite-better-sqlite3-'));
+  const packageDir = path.join(tempRoot, 'node_modules', 'better-sqlite3');
+
+  await mkdir(path.join(packageDir, 'build', 'Release', 'obj', 'gen', 'sqlite3'), { recursive: true });
+  await mkdir(path.join(packageDir, 'build', 'Release', 'obj.target', 'sqlite3', 'gen', 'sqlite3'), { recursive: true });
+  await mkdir(path.join(packageDir, 'deps', 'sqlite3'), { recursive: true });
+  await mkdir(path.join(packageDir, 'lib'), { recursive: true });
+
+  const removableFiles = [
+    path.join(packageDir, 'build', 'Release', 'obj', 'gen', 'sqlite3', 'sqlite3.c'),
+    path.join(packageDir, 'build', 'Release', 'obj.target', 'sqlite3', 'gen', 'sqlite3', 'sqlite3.o'),
+    path.join(packageDir, 'build', 'Release', 'sqlite3.a'),
+    path.join(packageDir, 'deps', 'sqlite3', 'sqlite3.c'),
+  ];
+
+  const keepFiles = [
+    path.join(packageDir, 'build', 'Release', 'better_sqlite3.node'),
+    path.join(packageDir, 'lib', 'database.js'),
+  ];
+
+  for (const filePath of removableFiles) {
+    await writeFile(filePath, 'artifact\n', 'utf8');
+  }
+
+  for (const filePath of keepFiles) {
+    await writeFile(filePath, 'runtime\n', 'utf8');
+  }
+
+  const prunableFiles = await collectPrunableFiles(tempRoot);
+
+  assert.deepEqual(
+    prunableFiles
+      .map((filePath) => path.relative(tempRoot, filePath).replaceAll('\\', '/'))
+      .sort(),
+    [
+      'node_modules/better-sqlite3/build/Release/obj.target/sqlite3/gen/sqlite3/sqlite3.o',
+      'node_modules/better-sqlite3/build/Release/obj/gen/sqlite3/sqlite3.c',
+      'node_modules/better-sqlite3/build/Release/sqlite3.a',
+      'node_modules/better-sqlite3/deps/sqlite3/sqlite3.c',
+    ]
+  );
+});
+
 test('collectPrunableFiles finds type and sourcemap files under node_modules', async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'windows-lite-prune-'));
   const packageDir = path.join(tempRoot, 'node_modules', 'example-package');

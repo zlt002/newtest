@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PACKAGE_NAME = '@anthropic-ai/claude-agent-sdk';
-const EXPECTED_VERSION = '0.2.116';
+const EXPECTED_VERSION = '0.2.112';
 
 function readJsonFile(filePath) {
   return readFile(filePath, 'utf8').then((content) => JSON.parse(content));
