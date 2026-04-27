@@ -130,13 +130,23 @@ const expandWorkspacePath = (inputPath) => {
   return inputPath;
 };
 
-function normalizeProjectRelativeMarkdownPath(filePath) {
+function normalizeProjectRelativeMarkdownPath(filePath, projectRoot) {
   if (typeof filePath !== 'string') {
     throw new Error('Markdown annotation paths must be project-relative');
   }
 
+  // If absolute path is provided, convert it to project-relative path
   if (/^[A-Za-z]:[\\/]/.test(filePath)) {
-    throw new Error('Markdown annotation paths must be project-relative');
+    if (!projectRoot) {
+      throw new Error('Markdown annotation paths must be project-relative');
+    }
+    const resolved = path.resolve(filePath);
+    const resolvedRoot = path.resolve(projectRoot);
+    const relative = path.relative(resolvedRoot, resolved);
+    if (relative.startsWith('..') || path.isAbsolute(relative)) {
+      throw new Error('Path must be under project root');
+    }
+    return relative.replace(/\\/g, '/');
   }
 
   const normalizedInput = filePath.replace(/\\/g, '/');
@@ -158,12 +168,12 @@ function normalizeProjectRelativeMarkdownPath(filePath) {
   return normalizedPath;
 }
 
-function getMarkdownAnnotationFilePath(filePath) {
-  return path.join('.ccui', 'annotations', `${normalizeProjectRelativeMarkdownPath(filePath)}.annotations.json`);
+function getMarkdownAnnotationFilePath(filePath, projectRoot) {
+  return path.join('.ccui', 'annotations', `${normalizeProjectRelativeMarkdownPath(filePath, projectRoot)}.annotations.json`);
 }
 
 function resolveMarkdownAnnotationsFilePath(projectRoot, filePath) {
-  const resolved = path.resolve(projectRoot, getMarkdownAnnotationFilePath(filePath));
+  const resolved = path.resolve(projectRoot, getMarkdownAnnotationFilePath(filePath, projectRoot));
   const normalizedRoot = path.resolve(projectRoot);
   const relative = path.relative(normalizedRoot, resolved);
 
@@ -174,10 +184,10 @@ function resolveMarkdownAnnotationsFilePath(projectRoot, filePath) {
   return resolved;
 }
 
-function createEmptyMarkdownAnnotationsFile(filePath) {
+function createEmptyMarkdownAnnotationsFile(filePath, projectRoot) {
   return {
     version: 1,
-    filePath: normalizeProjectRelativeMarkdownPath(filePath),
+    filePath: normalizeProjectRelativeMarkdownPath(filePath, projectRoot),
     annotations: []
   };
 }
@@ -648,11 +658,11 @@ router.get('/projects/:projectName/markdown-annotations', authenticateToken, asy
       await assertMarkdownAnnotationsPathWithinProject(projectRoot, resolvedPath, { mustExist: true });
       const rawContent = await fsPromises.readFile(resolvedPath, 'utf8');
       const parsedContent = JSON.parse(rawContent);
-      validateMarkdownAnnotationsStructure(parsedContent, normalizeProjectRelativeMarkdownPath(filePath));
+      validateMarkdownAnnotationsStructure(parsedContent, normalizeProjectRelativeMarkdownPath(filePath, projectRoot));
       res.json(parsedContent);
     } catch (error) {
       if (error.code === 'ENOENT') {
-        res.json(createEmptyMarkdownAnnotationsFile(filePath));
+        res.json(createEmptyMarkdownAnnotationsFile(filePath, projectRoot));
         return;
       }
 
@@ -704,7 +714,7 @@ router.put('/projects/:projectName/markdown-annotations', authenticateToken, asy
       return res.status(403).json({ error: error.message });
     }
 
-    const normalizedFilePath = normalizeProjectRelativeMarkdownPath(filePath);
+    const normalizedFilePath = normalizeProjectRelativeMarkdownPath(filePath, projectRoot);
     try {
       validateMarkdownAnnotationsStructure(annotationFile, normalizedFilePath);
     } catch (error) {
