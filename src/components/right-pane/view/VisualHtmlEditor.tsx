@@ -633,7 +633,7 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
     applyCurrentEditorDocument(nextHtml, 'design');
     setCanvasDocument(createWorkspaceDocument(nextHtml));
     editor.stopCommand('preview');
-    editor.select?.(null);
+    editor.select?.();
     setIsPreviewActive(true);
   }, [applyCurrentEditorDocument, cancelPendingDesignDocumentSync, collectCanvasHtml, isPreviewActive]);
 

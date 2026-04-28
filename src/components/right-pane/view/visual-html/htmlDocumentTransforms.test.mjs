@@ -1,10 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
+
+import { register } from 'node:module';
+
+const loaderSource = `
+export async function resolve(specifier, context, nextResolve) {
+  if ((specifier.startsWith('./') || specifier.startsWith('../')) && specifier.endsWith('.js')) {
+    try {
+      return await nextResolve(specifier.slice(0, -3) + '.ts', context);
+    } catch {
+      return nextResolve(specifier, context);
+    }
+  }
+
+  return nextResolve(specifier, context);
+}
+`;
+
+register(`data:text/javascript,${encodeURIComponent(loaderSource)}`, import.meta.url);
+
+const {
   createDocumentSnapshot,
   createWorkspaceDocument,
   buildSavedHtml,
-} from './htmlDocumentTransforms.ts';
+} = await import('./htmlDocumentTransforms.ts');
 
 test('createWorkspaceDocument extracts body html and styles from a full html document', () => {
   const result = createWorkspaceDocument(`<!doctype html>
@@ -73,4 +92,52 @@ test('buildSavedHtml formats nested body html instead of keeping it on one long 
     html,
     /<body>\n<div class="card"><div class="title">Welcome back<\/div><div class="desc">Sign in<\/div><\/div>\n<\/body>/,
   );
+});
+
+test('buildSavedHtml preserves body scripts when visual canvas html omits them', () => {
+  const source = `<!doctype html>
+<html>
+<head></head>
+<body>
+  <h2 onclick="showModal()">员工信息登记</h2>
+  <div id="infoModal"></div>
+  <script>
+    function showModal() {
+      document.getElementById('infoModal').style.display = 'flex';
+    }
+  </script>
+</body>
+</html>`;
+  const workspaceDocument = createWorkspaceDocument(source);
+
+  assert.doesNotMatch(workspaceDocument.bodyHtml, /<script>/);
+
+  const html = buildSavedHtml({
+    snapshot: workspaceDocument.snapshot,
+    bodyHtml: '<h2 onclick="showModal()">员工信息登记</h2><div id="infoModal"></div>',
+    css: '',
+  });
+
+  assert.match(html, /<script>/);
+  assert.match(html, /function showModal\(\)/);
+});
+
+test('buildSavedHtml restores inline event attributes stripped by the visual canvas', () => {
+  const source = `<!doctype html>
+<html>
+<head></head>
+<body>
+  <h2 id="title" onclick="showModal()" title="点击查看详情">员工信息登记</h2>
+  <script>function showModal() {}</script>
+</body>
+</html>`;
+  const workspaceDocument = createWorkspaceDocument(source);
+
+  const html = buildSavedHtml({
+    snapshot: workspaceDocument.snapshot,
+    bodyHtml: '<h2 id="title" title="点击查看详情">员工信息登记</h2>',
+    css: '',
+  });
+
+  assert.match(html, /<h2[^>]+id="title"[^>]+onclick="showModal\(\)"/);
 });
