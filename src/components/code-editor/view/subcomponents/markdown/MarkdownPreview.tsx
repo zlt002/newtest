@@ -21,8 +21,13 @@ import {
   resolveRenderedSelectionToSourceRange,
   sliceMarkdownSourceByRange,
 } from '../../../utils/markdownSourceTextMapping';
+import {
+  isMarkdownAnnotationDocumentChanged,
+  shouldCaptureLegacyAnnotationBaselineHash,
+} from '../../../utils/markdownAnnotationHashState.ts';
 import { decorateMarkdownAnnotationChildren } from '../../../utils/markdownAnnotationDecorations';
 import { isEventFromMarkdownAnnotationOverlay } from '../../../utils/markdownAnnotationOverlayGuards';
+import { buildStableTextHash } from '../../../utils/markdownAnnotationHashes.ts';
 import MarkdownAnnotationBanner from './MarkdownAnnotationBanner';
 import MarkdownAnnotationComposer from './MarkdownAnnotationComposer';
 import MarkdownAnnotationContextMenu from './MarkdownAnnotationContextMenu';
@@ -155,11 +160,14 @@ const createHighlightedBlock = <Tag extends keyof JSX.IntrinsicElements>(tag: Ta
       tag,
       { ...props, ...sourcePositionProps },
       decorateMarkdownAnnotationChildren({
+        content: markdownContent,
         children,
         annotations,
         markdownSource,
         sourceStartLine,
         sourceStartColumn,
+        sourceEndLine,
+        sourceEndColumn,
         focusedAnnotationId: focusedAnnotationId ?? null,
         onActivate: onActivateAnnotation ?? null,
       }),
@@ -186,7 +194,20 @@ const createMarkdownPreviewComponents = (
   focusedAnnotationId: string | null,
   onActivateAnnotation: ((annotationId: string) => void) | null,
 ): Components => ({
-  code: MarkdownCodeBlock,
+  code: ({ node, inline, className, children, ...props }) => (
+    <MarkdownCodeBlock
+      {...props}
+      node={node}
+      inline={inline}
+      className={className}
+      annotations={annotations}
+      focusedAnnotationId={focusedAnnotationId}
+      onActivateAnnotation={onActivateAnnotation}
+      markdownContent={content}
+    >
+      {children}
+    </MarkdownCodeBlock>
+  ),
   p: ({ node, children, ...props }) => <Paragraph {...props} node={node} annotations={annotations} focusedAnnotationId={focusedAnnotationId} onActivateAnnotation={onActivateAnnotation} markdownContent={content}>{children}</Paragraph>,
   h1: ({ node, children, ...props }) => <Heading1 {...props} node={node} annotations={annotations} focusedAnnotationId={focusedAnnotationId} onActivateAnnotation={onActivateAnnotation} markdownContent={content}>{children}</Heading1>,
   h2: ({ node, children, ...props }) => <Heading2 {...props} node={node} annotations={annotations} focusedAnnotationId={focusedAnnotationId} onActivateAnnotation={onActivateAnnotation} markdownContent={content}>{children}</Heading2>,
@@ -363,16 +384,6 @@ const getMarkdownSourceNode = (
   };
 };
 
-const buildQuoteHash = (value: string): string => {
-  let hash = 0;
-
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
-  }
-
-  return hash.toString(16).padStart(8, '0');
-};
-
 export default function MarkdownPreview({
   content,
   annotationState,
@@ -398,8 +409,10 @@ export default function MarkdownPreview({
   const [selectionHint, setSelectionHint] = useState<string | null>(null);
   const [selectionHintPosition, setSelectionHintPosition] = useState<PreviewPosition | null>(null);
   const [focusedAnnotationId, setFocusedAnnotationId] = useState<string | null>(null);
+  const [legacyBaselineHash, setLegacyBaselineHash] = useState<string | null>(null);
   const annotations = annotationState?.annotations ?? [];
   const annotationFile = annotationState?.annotationFile ?? null;
+  const contentHash = useMemo(() => buildStableTextHash(content), [content]);
   const saveAnnotation = annotationState?.saveAnnotation;
   const saveAnnotationFile = annotationState?.saveAnnotationFile;
   const annotationSaving = annotationState?.saving ?? false;
@@ -642,7 +655,7 @@ export default function MarkdownPreview({
       ...composerSelection.range,
       selectedText: composerSelection.selectedText,
       note: trimmedNote,
-      quoteHash: buildQuoteHash(composerSelection.selectedText),
+      quoteHash: buildStableTextHash(composerSelection.selectedText),
       createdAt: composerSelection.createdAt ?? timestamp,
       updatedAt: timestamp,
     };
@@ -715,6 +728,39 @@ export default function MarkdownPreview({
     setInvalidAnnotationCount(annotations.length - nextValidAnnotationIds.length);
   }, [annotations, content]);
 
+  useEffect(() => {
+    setLegacyBaselineHash(null);
+  }, [annotationFile?.filePath]);
+
+  useEffect(() => {
+    if (!annotationFile) {
+      setLegacyBaselineHash(null);
+      return;
+    }
+
+    if (annotationFile.fileHash) {
+      setLegacyBaselineHash(null);
+      return;
+    }
+
+    if (!shouldCaptureLegacyAnnotationBaselineHash({
+      storedFileHash: annotationFile.fileHash,
+      legacyBaselineHash,
+      annotationCount: annotations.length,
+      invalidAnnotationCount,
+    })) {
+      return;
+    }
+
+    setLegacyBaselineHash(contentHash);
+  }, [annotationFile, annotations.length, contentHash, invalidAnnotationCount, legacyBaselineHash]);
+
+  const isDocumentContentChanged = isMarkdownAnnotationDocumentChanged({
+    storedFileHash: annotationFile?.fileHash,
+    legacyBaselineHash,
+    contentHash,
+  });
+
   const handleAddAnnotationsToChatInput = useCallback(() => {
     if (!onAppendToChatInput) {
       return;
@@ -775,9 +821,14 @@ export default function MarkdownPreview({
     focusAnnotation(annotationId);
   }, [findAnnotation, focusAnnotation]);
 
+  const renderedAnnotations = useMemo(
+    () => annotations.filter((annotation) => validAnnotationIds.includes(annotation.id)),
+    [annotations, validAnnotationIds],
+  );
+
   const markdownPreviewComponents = useMemo(
-    () => createMarkdownPreviewComponents(content, annotations, focusedAnnotationId, handleEditAnnotation),
-    [annotations, content, focusedAnnotationId, handleEditAnnotation],
+    () => createMarkdownPreviewComponents(content, renderedAnnotations, focusedAnnotationId, handleEditAnnotation),
+    [content, focusedAnnotationId, handleEditAnnotation, renderedAnnotations],
   );
 
   useEffect(() => {
@@ -890,7 +941,10 @@ export default function MarkdownPreview({
       onContextMenu={handlePreviewContextMenu}
       onMouseUp={handlePreviewMouseUp}
     >
-      <MarkdownAnnotationBanner invalidCount={invalidAnnotationCount} />
+      <MarkdownAnnotationBanner
+        invalidCount={invalidAnnotationCount}
+        isDocumentContentChanged={isDocumentContentChanged}
+      />
       <ReactMarkdown
         remarkPlugins={remarkPlugins}
         rehypePlugins={rehypePlugins}

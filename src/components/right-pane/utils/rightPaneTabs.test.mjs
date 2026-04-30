@@ -37,6 +37,31 @@ test('upsertRightPaneTab 相同 identity 会复用已有 tab 并更新 target', 
   assert.equal(result.tabs[0].target.title, 'Home');
 });
 
+test('upsertRightPaneTab 会把 markdown-draft tab 原位升级成真实 markdown tab', () => {
+  const result = upsertRightPaneTab([
+    {
+      id: 'markdown:/demo/PRD.md',
+      target: {
+        type: 'markdown-draft',
+        filePath: '/demo/PRD.md',
+        fileName: 'PRD.md',
+        projectName: 'demo',
+        content: '正在起草...',
+        statusText: '正在起草...',
+      },
+    },
+  ], {
+    type: 'markdown',
+    filePath: '/demo/PRD.md',
+    fileName: 'PRD.md',
+    projectName: 'demo',
+  });
+
+  assert.equal(result.tabs.length, 1);
+  assert.equal(result.activeTabId, 'markdown:/demo/PRD.md');
+  assert.equal(result.tabs[0].target.type, 'markdown');
+});
+
 test('upsertRightPaneTab 支持后台新建 tab 且保留当前激活项', () => {
   const result = upsertRightPaneTab([
     {

@@ -594,6 +594,46 @@ export const mapSourceOffsetToRenderedOffset = (
   return null;
 };
 
+const clampSourceOffsetToRenderedOffset = (
+  renderedSourceMap: MarkdownRenderedSourceMap,
+  sourceOffset: number,
+  bias: 'start' | 'end',
+): number | null => {
+  const directOffset = mapSourceOffsetToRenderedOffset(renderedSourceMap, sourceOffset, bias);
+  if (directOffset !== null) {
+    return directOffset;
+  }
+
+  if (renderedSourceMap.segments.length === 0) {
+    return null;
+  }
+
+  if (bias === 'start') {
+    for (const segment of renderedSourceMap.segments) {
+      if (sourceOffset <= segment.sourceStartOffset) {
+        return segment.renderedStartOffset;
+      }
+      if (sourceOffset < segment.sourceEndOffset) {
+        return segment.renderedStartOffset + Math.max(0, sourceOffset - segment.sourceStartOffset);
+      }
+    }
+
+    return renderedSourceMap.segments[renderedSourceMap.segments.length - 1]?.renderedEndOffset ?? null;
+  }
+
+  for (let index = renderedSourceMap.segments.length - 1; index >= 0; index -= 1) {
+    const segment = renderedSourceMap.segments[index];
+    if (sourceOffset >= segment.sourceEndOffset) {
+      return segment.renderedEndOffset;
+    }
+    if (sourceOffset > segment.sourceStartOffset) {
+      return segment.renderedStartOffset + (sourceOffset - segment.sourceStartOffset);
+    }
+  }
+
+  return renderedSourceMap.segments[0]?.renderedStartOffset ?? null;
+};
+
 export const resolveAnnotationRenderedOffsets = ({
   annotation,
   markdownSource,
@@ -627,6 +667,64 @@ export const resolveAnnotationRenderedOffsets = ({
   const renderedSourceMap = buildMarkdownRenderedSourceMap(markdownSource);
   const renderedStartOffset = mapSourceOffsetToRenderedOffset(renderedSourceMap, sourceStartOffset, 'start');
   const renderedEndOffset = mapSourceOffsetToRenderedOffset(renderedSourceMap, sourceEndOffset, 'end');
+
+  if (
+    renderedStartOffset === null ||
+    renderedEndOffset === null ||
+    renderedEndOffset <= renderedStartOffset
+  ) {
+    return null;
+  }
+
+  return {
+    renderedStartOffset,
+    renderedEndOffset,
+    renderedText: renderedSourceMap.renderedText,
+  };
+};
+
+export const resolveAnnotationRenderedOverlap = ({
+  content,
+  annotation,
+  markdownSource,
+  sourceStartLine,
+  sourceStartColumn,
+  sourceEndLine,
+  sourceEndColumn,
+}: {
+  content: string;
+  annotation: MarkdownAnnotation;
+  markdownSource: string;
+  sourceStartLine: number;
+  sourceStartColumn: number;
+  sourceEndLine: number;
+  sourceEndColumn: number;
+}): { renderedStartOffset: number; renderedEndOffset: number; renderedText: string } | null => {
+  const blockStartOffset = getSourceOffsetFromLineColumn(content, sourceStartLine, sourceStartColumn);
+  const blockEndOffset = getSourceOffsetFromLineColumn(content, sourceEndLine, sourceEndColumn);
+  const annotationStartOffset = getSourceOffsetFromLineColumn(content, annotation.startLine, annotation.startColumn);
+  const annotationEndOffset = getSourceOffsetFromLineColumn(content, annotation.endLine, annotation.endColumn);
+
+  if (
+    blockStartOffset === null ||
+    blockEndOffset === null ||
+    annotationStartOffset === null ||
+    annotationEndOffset === null
+  ) {
+    return null;
+  }
+
+  const overlapStartOffset = Math.max(blockStartOffset, annotationStartOffset);
+  const overlapEndOffset = Math.min(blockEndOffset, annotationEndOffset);
+  if (overlapEndOffset <= overlapStartOffset) {
+    return null;
+  }
+
+  const localStartOffset = overlapStartOffset - blockStartOffset;
+  const localEndOffset = overlapEndOffset - blockStartOffset;
+  const renderedSourceMap = buildMarkdownRenderedSourceMap(markdownSource);
+  const renderedStartOffset = clampSourceOffsetToRenderedOffset(renderedSourceMap, localStartOffset, 'start');
+  const renderedEndOffset = clampSourceOffsetToRenderedOffset(renderedSourceMap, localEndOffset, 'end');
 
   if (
     renderedStartOffset === null ||

@@ -1,6 +1,6 @@
 import type { CodeEditorDiffInfo } from '../code-editor/types/types';
 
-export type RightPaneTargetType = 'code' | 'markdown' | 'browser' | 'git-commit' | 'visual-html';
+export type RightPaneTargetType = 'code' | 'markdown' | 'markdown-draft' | 'browser' | 'git-commit' | 'visual-html';
 
 export type RightPaneBrowserSource = 'address-bar' | 'chat-link' | 'external-link';
 
@@ -17,6 +17,16 @@ export type RightPaneMarkdownTarget = {
   filePath: string;
   fileName: string;
   projectName?: string;
+};
+
+export type RightPaneMarkdownDraftTarget = {
+  type: 'markdown-draft';
+  filePath: string;
+  fileName: string;
+  projectName?: string;
+  content?: string;
+  statusText?: string;
+  sourceSessionId?: string | null;
 };
 
 export type RightPaneVisualHtmlTarget = {
@@ -48,6 +58,7 @@ export type RightPaneGitCommitTarget = {
 export type RightPaneTarget =
   | RightPaneCodeTarget
   | RightPaneMarkdownTarget
+  | RightPaneMarkdownDraftTarget
   | RightPaneVisualHtmlTarget
   | RightPaneBrowserTarget
   | RightPaneGitCommitTarget;

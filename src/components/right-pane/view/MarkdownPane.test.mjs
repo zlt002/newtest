@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { getDefaultMarkdownPreview } from '../../code-editor/utils/markdownPreviewState.ts';
 import { createEditorPaneProps } from './editorPaneProps.ts';
 import MarkdownPane from './MarkdownPane.tsx';
+import MarkdownDraftPane from './MarkdownDraftPane.tsx';
 import RightPaneContentRouter from './RightPaneContentRouter.tsx';
 
 const markdownTarget = {
@@ -51,6 +52,47 @@ test('RightPaneContentRouter routes markdown targets to MarkdownPane instead of 
   assert.match(markup, /data-markdown-pane="true"/);
   assert.match(markup, /data-editor-refresh-pulse="3"/);
   assert.doesNotMatch(markup, /Markdown Preview/);
+});
+
+test('MarkdownDraftPane renders immediate draft placeholder content for pending markdown work', () => {
+  const markup = renderToStaticMarkup(
+    React.createElement(MarkdownDraftPane, {
+      target: {
+        type: 'markdown-draft',
+        filePath: '/demo/PRD.md',
+        fileName: 'PRD.md',
+        projectName: 'demo-project',
+        content: '',
+        statusText: '正在起草...',
+      },
+      onClosePane: () => {},
+    }),
+  );
+
+  assert.match(markup, /data-right-pane-view="markdown-draft"/);
+  assert.match(markup, /data-markdown-draft-pane="true"/);
+  assert.match(markup, /正在起草/);
+});
+
+test('RightPaneContentRouter routes markdown-draft targets to MarkdownDraftPane', () => {
+  const markup = renderToStaticMarkup(
+    React.createElement(RightPaneContentRouter, {
+      target: {
+        type: 'markdown-draft',
+        filePath: '/demo/PRD.md',
+        fileName: 'PRD.md',
+        projectName: 'demo-project',
+        content: '# 草稿',
+        statusText: '正在接收回复',
+      },
+      onClosePane: () => {},
+      isSidebar: true,
+    }),
+  );
+
+  assert.match(markup, /data-right-pane-view="markdown-draft"/);
+  assert.match(markup, /data-markdown-draft-pane="true"/);
+  assert.match(markup, /PRD\.md/);
 });
 
 test('Markdown files keep the existing default preview-on behavior', () => {

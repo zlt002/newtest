@@ -979,6 +979,17 @@ test('ChatInterface auto-opens markdown files when Write or Edit starts streamin
   assert.match(source, /onFileOpen\(markdownWrite\.filePath, undefined\);/);
 });
 
+test('ChatInterface syncs an immediate markdown draft surface before the real file write begins', async () => {
+  const chatInterfaceSource = await readFile(new URL('./ChatInterface.tsx', import.meta.url), 'utf8');
+  const composerSource = await readFile(new URL('../../../hooks/chat/useChatComposerState.ts', import.meta.url), 'utf8');
+
+  assert.match(composerSource, /function shouldOpenMarkdownDraft/);
+  assert.match(composerSource, /onMarkdownDraftOpen\(\{\s*filePath: markdownDraftFilePath,/s);
+  assert.match(chatInterfaceSource, /function getActiveMarkdownDraftFilePath/);
+  assert.match(chatInterfaceSource, /onMarkdownDraftUpdate\(\{\s*filePath: draftFilePath,/s);
+  assert.match(chatInterfaceSource, /content: agentConversation\.execution\?\.assistantText \|\| ''/);
+});
+
 test('ChatInterface renders the context file pill and composer status bar in a single horizontal row', async () => {
   const source = await readFile(new URL('./ChatInterface.tsx', import.meta.url), 'utf8');
 

@@ -4,6 +4,7 @@ import type {
   MarkdownAnnotation,
   MarkdownAnnotationFile,
 } from '../types/markdownAnnotations.ts';
+import { buildStableTextHash } from '../utils/markdownAnnotationHashes.ts';
 
 type UseMarkdownAnnotationsParams = {
   enabled?: boolean;
@@ -98,10 +99,15 @@ export function useMarkdownAnnotations({
   enabled = true,
   projectName,
   filePath,
+  content,
 }: UseMarkdownAnnotationsParams): UseMarkdownAnnotationsResult {
+  const currentFileHash = useMemo(() => buildStableTextHash(content), [content]);
   const emptyAnnotationFile = useMemo(
-    () => createEmptyAnnotationFile(filePath),
-    [filePath],
+    () => ({
+      ...createEmptyAnnotationFile(filePath),
+      fileHash: currentFileHash,
+    }),
+    [currentFileHash, filePath],
   );
   const [annotationFile, setAnnotationFile] = useState<MarkdownAnnotationFile | null>(
     enabled ? emptyAnnotationFile : null,
@@ -163,10 +169,15 @@ export function useMarkdownAnnotations({
       return annotationFileRef.current ?? nextAnnotationFile;
     }
 
+    const normalizedAnnotationFile: MarkdownAnnotationFile = {
+      ...nextAnnotationFile,
+      fileHash: currentFileHash,
+    };
+
     if (!enabled || !projectName) {
-      setAnnotationFile(nextAnnotationFile);
-      annotationFileRef.current = nextAnnotationFile;
-      return nextAnnotationFile;
+      setAnnotationFile(normalizedAnnotationFile);
+      annotationFileRef.current = normalizedAnnotationFile;
+      return normalizedAnnotationFile;
     }
 
     savingRef.current = true;
@@ -174,16 +185,16 @@ export function useMarkdownAnnotations({
     setError(null);
 
     try {
-      const response = await api.saveMarkdownAnnotations(projectName, filePath, nextAnnotationFile);
+      const response = await api.saveMarkdownAnnotations(projectName, filePath, normalizedAnnotationFile);
 
       if (!response.ok) {
         throw new Error(`Failed to save markdown annotations: ${response.status} ${response.statusText}`);
       }
 
       await response.json();
-      setAnnotationFile(nextAnnotationFile);
-      annotationFileRef.current = nextAnnotationFile;
-      return nextAnnotationFile;
+      setAnnotationFile(normalizedAnnotationFile);
+      annotationFileRef.current = normalizedAnnotationFile;
+      return normalizedAnnotationFile;
     } catch (saveError) {
       const message = getErrorMessage(saveError);
       setError(message);
@@ -192,7 +203,7 @@ export function useMarkdownAnnotations({
       savingRef.current = false;
       setSaving(false);
     }
-  }, [enabled, filePath, projectName]);
+  }, [currentFileHash, enabled, filePath, projectName]);
 
   const saveAnnotation = useCallback(async (annotation: MarkdownAnnotation) => {
     if (savingRef.current) {

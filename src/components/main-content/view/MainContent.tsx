@@ -51,6 +51,8 @@ function MainContent({
   codeFollowAlongState,
   draftPreviewState,
   onFileOpen,
+  onMarkdownDraftOpen,
+  onMarkdownDraftUpdate,
   onOpenUrl,
   onClosePane,
   onSelectRightPaneTab,
@@ -120,6 +122,8 @@ function MainContent({
                 sendMessage={sendMessage}
                 latestMessage={latestMessage}
                 onFileOpen={onFileOpen}
+                onMarkdownDraftOpen={onMarkdownDraftOpen}
+                onMarkdownDraftUpdate={onMarkdownDraftUpdate}
                 onOpenUrl={(url) => onOpenUrl(url, 'chat-link')}
                 onInputFocusChange={onInputFocusChange}
                 onSessionActive={onSessionActive}

@@ -504,6 +504,70 @@ test('useChatComposerState runtime submitAgentRun payload includes the active co
   );
 });
 
+test('useChatComposerState 在 markdown 文档写作请求提交前会先打开右侧草稿面板', async () => {
+  const openedDrafts = [];
+  const { exports } = await loadUseChatComposerStateModule({
+    draftInput: '请继续完善这份PRD文档，补齐验收标准',
+    storage: {
+      'draft_input_demo': '请继续完善这份PRD文档，补齐验收标准',
+    },
+  });
+  const useChatComposerState = exports.useChatComposerState;
+
+  const api = useChatComposerState({
+    selectedProject: {
+      name: 'demo',
+      fullPath: '/workspace/demo',
+      path: '/workspace/demo',
+    },
+    selectedSession: {
+      id: 'sess-1',
+      summary: 'demo session',
+    },
+    currentSessionId: 'sess-1',
+    setCurrentSessionId: () => undefined,
+    provider: 'claude',
+    permissionMode: 'bypassPermissions',
+    cyclePermissionMode: () => undefined,
+    claudeModel: 'claude-opus-4-7',
+    isLoading: false,
+    canAbortSession: false,
+    tokenBudget: null,
+    chatMessages: [],
+    sendMessage: () => undefined,
+    onSessionActive: () => undefined,
+    onSessionProcessing: () => undefined,
+    onNavigateToSession: () => undefined,
+    onCompactWorkflowStart: () => undefined,
+    onInputFocusChange: () => undefined,
+    onFileOpen: () => undefined,
+    onMarkdownDraftOpen: (payload) => {
+      openedDrafts.push(payload);
+    },
+    activeContextFilePath: '/workspace/demo/PRD-demo.md',
+    onShowSettings: () => undefined,
+    pendingViewSessionRef: { current: null },
+    scrollToBottom: () => undefined,
+    addMessage: () => undefined,
+    clearMessages: () => undefined,
+    rewindMessages: () => undefined,
+    setIsLoading: () => undefined,
+    setCanAbortSession: () => undefined,
+    setClaudeStatus: () => undefined,
+    setIsUserScrolledUp: () => undefined,
+    pendingDecisionRequests: [],
+    setPendingDecisionRequests: () => undefined,
+    submitAgentRun: async () => undefined,
+  });
+
+  await api.handleSubmit({ preventDefault: () => undefined });
+
+  assert.equal(openedDrafts.length, 1);
+  assert.equal(openedDrafts[0].filePath, '/workspace/demo/PRD-demo.md');
+  assert.equal(openedDrafts[0].statusText, '正在起草...');
+  assert.equal(openedDrafts[0].sourceSessionId, 'sess-1');
+});
+
 test('useChatComposerState runtime fallback sendMessage payload uses transport message envelope', async () => {
   const sentMessages = [];
   const { exports } = await loadUseChatComposerStateModule();

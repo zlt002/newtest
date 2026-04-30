@@ -235,6 +235,15 @@ function getMarkdownFilePathFromToolPayload(payload: unknown) {
   };
 }
 
+function getActiveMarkdownDraftFilePath(target: RightPaneTarget | null | undefined) {
+  if (!target || target.type !== 'markdown-draft') {
+    return null;
+  }
+
+  const filePath = String(target.filePath || '').trim();
+  return filePath || null;
+}
+
 function ChatInterface({
   selectedProject,
   selectedSession,
@@ -242,6 +251,8 @@ function ChatInterface({
   sendMessage,
   latestMessage,
   onFileOpen,
+  onMarkdownDraftOpen,
+  onMarkdownDraftUpdate,
   onOpenUrl,
   onInputFocusChange,
   onSessionActive,
@@ -563,6 +574,7 @@ function ChatInterface({
     onCompactWorkflowStart: handleCompactWorkflowStart,
     onInputFocusChange,
     onFileOpen,
+    onMarkdownDraftOpen,
     activeContextFilePath: getActiveContextFilePath(activeContextTarget),
     onShowSettings,
     pendingCompactionSeedRef,
@@ -845,6 +857,35 @@ function ChatInterface({
     hasConversationHistory: mergedChatMessages.length > 0 || conversationRounds.length > 0,
     execution: agentConversation.execution,
   });
+  useEffect(() => {
+    const draftFilePath = getActiveMarkdownDraftFilePath(activeContextTarget);
+    if (!draftFilePath || !onMarkdownDraftUpdate) {
+      return;
+    }
+
+    const isRunActive = composerState.status === 'queued'
+      || composerState.status === 'starting'
+      || composerState.status === 'streaming'
+      || composerState.status === 'waiting_for_tool';
+
+    if (!isRunActive) {
+      return;
+    }
+
+    onMarkdownDraftUpdate({
+      filePath: draftFilePath,
+      content: agentConversation.execution?.assistantText || '',
+      statusText: composerState.label,
+      sourceSessionId: activeAgentSessionId,
+    });
+  }, [
+    activeAgentSessionId,
+    activeContextTarget,
+    agentConversation.execution?.assistantText,
+    composerState.label,
+    composerState.status,
+    onMarkdownDraftUpdate,
+  ]);
   useEffect(() => {
     if (!activeAgentSessionId) {
       return;

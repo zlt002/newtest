@@ -10,6 +10,10 @@ type DraftPreviewRightPaneTarget =
       filePath: string;
     }
   | {
+      type: 'markdown-draft';
+      filePath: string;
+    }
+  | {
       type: 'visual-html';
       filePath: string;
     }
@@ -85,7 +89,7 @@ function resolveDraftPreviewTarget(filePath: string, projectName?: string): Draf
 }
 
 function isPreviewCapableTarget(target: DraftPreviewRightPaneTarget) {
-  return target?.type === 'code' || target?.type === 'markdown';
+  return target?.type === 'code' || target?.type === 'markdown' || target?.type === 'markdown-draft';
 }
 
 function isSamePreviewTarget(

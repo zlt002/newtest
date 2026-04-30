@@ -68,6 +68,13 @@ interface UseChatComposerStateArgs {
   onCompactWorkflowStart?: (sessionId: string | null) => void;
   onInputFocusChange?: (focused: boolean) => void;
   onFileOpen?: (filePath: string, diffInfo?: unknown) => void;
+  onMarkdownDraftOpen?: (payload: {
+    filePath: string;
+    fileName?: string;
+    content?: string;
+    statusText?: string;
+    sourceSessionId?: string | null;
+  }) => void;
   activeContextFilePath?: string | null;
   onShowSettings?: () => void;
   pendingCompactionSeedRef?: { current: string | null };
@@ -296,6 +303,48 @@ function normalizeContextFilePaths(filePaths: unknown): string[] {
   return normalized;
 }
 
+function isMarkdownFilePath(value: string | null | undefined) {
+  return typeof value === 'string' && /\.(md|markdown)$/i.test(value.trim());
+}
+
+function getMarkdownDraftFilePath({
+  prompt,
+  activeContextFilePath,
+}: {
+  prompt: string;
+  activeContextFilePath: string | null;
+}) {
+  if (isMarkdownFilePath(activeContextFilePath)) {
+    return activeContextFilePath?.trim() || null;
+  }
+
+  const filePathMatch = prompt.match(/([^\s`"'<>]+\.md(?:own)?)/i);
+  return filePathMatch?.[1] || null;
+}
+
+function shouldOpenMarkdownDraft({
+  prompt,
+  activeContextFilePath,
+}: {
+  prompt: string;
+  activeContextFilePath: string | null;
+}) {
+  const normalizedPrompt = prompt.trim();
+  if (!normalizedPrompt) {
+    return false;
+  }
+
+  if (/[^\s`"'<>]+\.md(?:own)?/i.test(normalizedPrompt)) {
+    return true;
+  }
+
+  if (!isMarkdownFilePath(activeContextFilePath)) {
+    return false;
+  }
+
+  return /(prd|markdown|README|文档|需求|方案|写|改写|更新|完善|生成|起草|撰写|补充)/iu.test(normalizedPrompt);
+}
+
 const getNotificationSessionSummary = (
   selectedSession: ProjectSession | null,
   fallbackInput: string,
@@ -336,6 +385,7 @@ export function useChatComposerState({
   onCompactWorkflowStart,
   onInputFocusChange,
   onFileOpen,
+  onMarkdownDraftOpen,
   activeContextFilePath = null,
   onShowSettings,
   pendingCompactionSeedRef,
@@ -1051,6 +1101,24 @@ export function useChatComposerState({
       const contextFilePaths = isContextFileEnabled && activeContextFilePath
         ? normalizeContextFilePaths([activeContextFilePath])
         : [];
+      const markdownDraftFilePath = shouldOpenMarkdownDraft({
+        prompt: visibleUserInput,
+        activeContextFilePath,
+      })
+        ? getMarkdownDraftFilePath({
+            prompt: visibleUserInput,
+            activeContextFilePath,
+          })
+        : null;
+
+      if (markdownDraftFilePath && onMarkdownDraftOpen) {
+        onMarkdownDraftOpen({
+          filePath: markdownDraftFilePath,
+          content: '',
+          statusText: '正在起草...',
+          sourceSessionId: sessionToActivate,
+        });
+      }
 
       if (submitAgentRun) {
         try {
@@ -1178,6 +1246,7 @@ export function useChatComposerState({
       submitAgentRun,
       activeContextFilePath,
       isContextFileEnabled,
+      onMarkdownDraftOpen,
       thinkingMode,
     ],
   );

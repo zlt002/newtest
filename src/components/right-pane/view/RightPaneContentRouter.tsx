@@ -3,6 +3,7 @@ import type { BrowserDependencySnapshot, CodeFollowAlongState } from '../../code
 import type { FileDraftPreviewOperation } from '../../code-editor/types/types';
 import type { RightPaneTarget } from '../types';
 import MarkdownPane from './MarkdownPane';
+import MarkdownDraftPane from './MarkdownDraftPane';
 import BrowserPane from './BrowserPane';
 import GitCommitPane from './GitCommitPane';
 import { createEditorPaneProps } from './editorPaneProps';
@@ -90,6 +91,15 @@ export default function RightPaneContentRouter({
         onPopOut={onPopOut}
         isExpanded={isExpanded}
         isSidebar={isSidebar}
+      />
+    );
+  }
+
+  if (target.type === 'markdown-draft') {
+    return (
+      <MarkdownDraftPane
+        target={target}
+        onClosePane={onClosePane}
       />
     );
   }

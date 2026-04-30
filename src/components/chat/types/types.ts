@@ -227,6 +227,19 @@ export interface ChatInterfaceProps {
   sendMessage: (message: unknown) => void;
   latestMessage: any;
   onFileOpen?: (filePath: string, diffInfo?: any) => void;
+  onMarkdownDraftOpen?: (payload: {
+    filePath: string;
+    fileName?: string;
+    content?: string;
+    statusText?: string;
+    sourceSessionId?: string | null;
+  }) => void;
+  onMarkdownDraftUpdate?: (payload: {
+    filePath: string;
+    content?: string;
+    statusText?: string;
+    sourceSessionId?: string | null;
+  }) => void;
   onOpenUrl?: (url: string) => void;
   onInputFocusChange?: (focused: boolean) => void;
   onSessionActive?: (sessionId?: string | null) => void;

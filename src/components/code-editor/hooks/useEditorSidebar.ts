@@ -7,6 +7,7 @@ import { DEFAULT_EDITOR_WIDTH, readEditorSidebarPreference, writeEditorSidebarPr
 import type { RightPaneBrowserSource, RightPaneTab, RightPaneTarget } from '../../right-pane/types';
 import { createClosedRightPaneState } from '../../right-pane/types';
 import { createVisualHtmlTarget, resolveRightPaneTargetForFile } from '../../right-pane/utils/rightPaneRouting';
+import { getRightPaneTargetIdentity } from '../../right-pane/utils/rightPaneTargetIdentity';
 import { closeRightPaneTab, upsertRightPaneTab } from '../../right-pane/utils/rightPaneTabs';
 import { subscribeToFileSyncEvents } from '../../../utils/fileSyncEvents';
 import type { FileChangeLineRange } from '@hooks/chat/chatFileChangeEvents';
@@ -33,6 +34,15 @@ export type DraftPreviewState = Record<string, FileDraftPreviewOperation[]>;
 type OpenTargetOptions = {
   activate?: boolean;
   markAsFresh?: boolean;
+};
+
+type MarkdownDraftPayload = {
+  filePath: string;
+  fileName?: string;
+  projectName?: string;
+  content?: string;
+  statusText?: string;
+  sourceSessionId?: string | null;
 };
 
 type UseEditorSidebarOptions = {
@@ -114,6 +124,43 @@ export const useEditorSidebar = ({
     },
     [openTarget, selectedProject?.name],
   );
+
+  const handleMarkdownDraftOpen = useCallback((payload: MarkdownDraftPayload, options: OpenTargetOptions = {}) => {
+    openTarget({
+      type: 'markdown-draft',
+      filePath: payload.filePath,
+      fileName: payload.fileName || payload.filePath.replace(/\\/g, '/').split('/').pop() || payload.filePath,
+      projectName: payload.projectName ?? selectedProject?.name,
+      content: payload.content || '',
+      statusText: payload.statusText || '正在起草...',
+      sourceSessionId: payload.sourceSessionId ?? null,
+    }, options);
+  }, [openTarget, selectedProject?.name]);
+
+  const handleMarkdownDraftUpdate = useCallback((payload: MarkdownDraftPayload) => {
+    const targetIdentity = getRightPaneTargetIdentity({
+      type: 'markdown-draft',
+      filePath: payload.filePath,
+      fileName: payload.fileName || payload.filePath,
+      projectName: payload.projectName,
+    });
+
+    setTabs((previousTabs) => previousTabs.map((tab) => {
+      if (tab.id !== targetIdentity || tab.target.type !== 'markdown-draft') {
+        return tab;
+      }
+
+      return {
+        ...tab,
+        target: {
+          ...tab.target,
+          content: payload.content ?? tab.target.content,
+          statusText: payload.statusText ?? tab.target.statusText,
+          sourceSessionId: payload.sourceSessionId ?? tab.target.sourceSessionId ?? null,
+        },
+      };
+    }));
+  }, []);
 
   const handleCloseEditor = useCallback(() => {
     setTabs((previousTabs) => {
@@ -432,5 +479,7 @@ export const useEditorSidebar = ({
     requestBrowserRefresh,
     focusCurrentCodeFile,
     applyDraftPreviewEvent,
+    handleMarkdownDraftOpen,
+    handleMarkdownDraftUpdate,
   };
 };

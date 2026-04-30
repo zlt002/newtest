@@ -145,6 +145,7 @@ test('handleClaudeCommandWithAgentV2 injects hidden output-file protocol for mar
   assert.match(calls[0].message.content, /<context-file>\/tmp\/demo\/PRD\.md<\/context-file>/);
   assert.match(calls[0].message.content, /<output-file>\/tmp\/demo\/PRD\.md<\/output-file>/);
   assert.match(calls[0].message.content, /<system-reminder>[\s\S]*directly update the output file[\s\S]*<\/system-reminder>/i);
+  assert.match(calls[0].message.content, /<system-reminder>[\s\S]*create the file as early as possible[\s\S]*incremental Write\/Edit updates[\s\S]*<\/system-reminder>/i);
 });
 
 test('handleClaudeCommandWithAgentV2 does not inject output-file protocol for markdown explanation requests', async () => {

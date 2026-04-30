@@ -13,5 +13,9 @@ export function getRightPaneTargetIdentity(target: RightPaneTarget | null): stri
     return `git-commit:${target.commitHash}`;
   }
 
+  if (target.type === 'markdown-draft') {
+    return `markdown:${target.filePath}`;
+  }
+
   return `${target.type}:${target.filePath}`;
 }

@@ -38,6 +38,18 @@ test('getRightPaneTargetIdentity 对 code 和 markdown target 继续使用 fileP
     }),
     'markdown:/demo/README.md',
   );
+
+  assert.equal(
+    getRightPaneTargetIdentity({
+      type: 'markdown-draft',
+      filePath: '/demo/README.md',
+      fileName: 'README.md',
+      projectName: 'demo',
+      content: '正在起草',
+      statusText: '正在起草...',
+    }),
+    'markdown:/demo/README.md',
+  );
 });
 
 test('getRightPaneTargetIdentity 对 git-commit target 使用 commit hash，避免不同提交共用同一 identity', () => {

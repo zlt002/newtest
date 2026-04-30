@@ -92,6 +92,8 @@ export default function AppContent() {
     requestBrowserRefresh,
     focusCurrentCodeFile,
     applyDraftPreviewEvent,
+    handleMarkdownDraftOpen,
+    handleMarkdownDraftUpdate,
   } = useEditorSidebar({
     selectedProject,
     isMobile,
@@ -269,6 +271,31 @@ export default function AppContent() {
     handleFileOpen(filePath, diffInfo);
   }, [handleFileOpen, isRightPaneVisible, rightPaneTarget]);
 
+  const handleChatMarkdownDraftOpen = useCallback((payload: {
+    filePath: string;
+    fileName?: string;
+    content?: string;
+    statusText?: string;
+    sourceSessionId?: string | null;
+  }) => {
+    handleMarkdownDraftOpen({
+      ...payload,
+      projectName: selectedProject?.name,
+    });
+  }, [handleMarkdownDraftOpen, selectedProject?.name]);
+
+  const handleChatMarkdownDraftUpdate = useCallback((payload: {
+    filePath: string;
+    content?: string;
+    statusText?: string;
+    sourceSessionId?: string | null;
+  }) => {
+    handleMarkdownDraftUpdate({
+      ...payload,
+      projectName: selectedProject?.name,
+    });
+  }, [handleMarkdownDraftUpdate, selectedProject?.name]);
+
   useEffect(() => {
     if (!shouldLogPrdStreamingDebug) {
       return;
@@ -420,6 +447,8 @@ export default function AppContent() {
           codeFollowAlongState={codeFollowAlongState}
           draftPreviewState={draftPreviewState}
           onFileOpen={handleChatFileOpen}
+          onMarkdownDraftOpen={handleChatMarkdownDraftOpen}
+          onMarkdownDraftUpdate={handleChatMarkdownDraftUpdate}
           onOpenUrl={handleUrlOpen}
           onClosePane={handleCloseEditor}
           onSelectRightPaneTab={handleOpenExistingTab}

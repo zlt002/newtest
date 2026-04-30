@@ -51,6 +51,19 @@ export type MainContentProps = {
   codeFollowAlongState?: CodeFollowAlongState | null;
   draftPreviewState?: DraftPreviewState;
   onFileOpen: (filePath: string, diffInfo?: CodeEditorDiffInfo | null) => void;
+  onMarkdownDraftOpen: (payload: {
+    filePath: string;
+    fileName?: string;
+    content?: string;
+    statusText?: string;
+    sourceSessionId?: string | null;
+  }) => void;
+  onMarkdownDraftUpdate: (payload: {
+    filePath: string;
+    content?: string;
+    statusText?: string;
+    sourceSessionId?: string | null;
+  }) => void;
   onOpenUrl: (url: string, source?: 'address-bar' | 'chat-link' | 'external-link') => void;
   onClosePane: () => void;
   onSelectRightPaneTab: (tabId: string) => void;

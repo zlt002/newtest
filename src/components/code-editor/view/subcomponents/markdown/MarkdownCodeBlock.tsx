@@ -3,12 +3,22 @@ import type { ComponentProps } from 'react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark as prismOneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { copyTextToClipboard } from '../../../../../utils/clipboard';
+import type { MarkdownAnnotation } from '../../../types/markdownAnnotations.ts';
+import {
+  resolveAnnotationRenderedOverlap,
+  sliceMarkdownSourceByRange,
+} from '../../../utils/markdownSourceTextMapping';
 import { getMarkdownCodeAnnotationProps } from './markdownCodeAnnotationProps';
+import MarkdownAnnotationHighlight from './MarkdownAnnotationHighlight';
 import MermaidBlock from '../../../../shared/markdown/MermaidBlock';
 import { parseMarkdownCodeBlock, shouldRenderMermaidBlock } from '../../../../shared/markdown/mermaidCodeBlock';
 
 type MarkdownCodeBlockProps = {
+  annotations?: MarkdownAnnotation[];
+  focusedAnnotationId?: string | null;
   inline?: boolean;
+  markdownContent?: string;
+  onActivateAnnotation?: ((annotationId: string) => void) | null;
   node?: {
     position?: {
       start?: {
@@ -22,6 +32,102 @@ type MarkdownCodeBlockProps = {
     };
   };
 } & ComponentProps<'code'>;
+
+const buildCodeHighlightParts = ({
+  annotations,
+  content,
+  markdownSource,
+  rawContent,
+  sourceStartLine,
+  sourceStartColumn,
+  sourceEndLine,
+  sourceEndColumn,
+  focusedAnnotationId,
+  onActivateAnnotation,
+}: {
+  annotations: MarkdownAnnotation[];
+  content: string;
+  markdownSource: string;
+  rawContent: string;
+  sourceStartLine: number;
+  sourceStartColumn: number;
+  sourceEndLine: number;
+  sourceEndColumn: number;
+  focusedAnnotationId: string | null;
+  onActivateAnnotation: ((annotationId: string) => void) | null;
+}) => {
+  const matches = annotations
+    .map((annotation) => {
+      const renderedMatch = resolveAnnotationRenderedOverlap({
+        content,
+        annotation,
+        markdownSource,
+        sourceStartLine,
+        sourceStartColumn,
+        sourceEndLine,
+        sourceEndColumn,
+      });
+
+      if (!renderedMatch) {
+        return null;
+      }
+
+      return {
+        annotation,
+        renderedStartOffset: renderedMatch.renderedStartOffset,
+        renderedEndOffset: renderedMatch.renderedEndOffset,
+      };
+    })
+    .filter((match) => match !== null)
+    .sort((left, right) =>
+      left.renderedStartOffset - right.renderedStartOffset ||
+      left.renderedEndOffset - right.renderedEndOffset,
+    );
+
+  if (matches.length === 0) {
+    return null;
+  }
+
+  const boundaries = new Set<number>([0, rawContent.length]);
+  for (const match of matches) {
+    boundaries.add(match.renderedStartOffset);
+    boundaries.add(match.renderedEndOffset);
+  }
+
+  const sortedBoundaries = [...boundaries].sort((left, right) => left - right);
+  return sortedBoundaries.flatMap((start, index) => {
+    const end = sortedBoundaries[index + 1];
+    if (typeof end !== 'number' || end <= start) {
+      return [];
+    }
+
+    const text = rawContent.slice(start, end);
+    if (!text) {
+      return [];
+    }
+
+    const coveringAnnotations = matches
+      .filter((match) => match.renderedStartOffset < end && match.renderedEndOffset > start)
+      .map((match) => match.annotation);
+
+    if (coveringAnnotations.length === 0) {
+      return [text];
+    }
+
+    return [
+      <MarkdownAnnotationHighlight
+        key={`code-annotation-${start}-${end}`}
+        text={text}
+        annotations={coveringAnnotations}
+        isFocused={Boolean(
+          focusedAnnotationId &&
+          coveringAnnotations.some((annotation) => annotation.id === focusedAnnotationId),
+        )}
+        onActivate={onActivateAnnotation}
+      />,
+    ];
+  });
+};
 
 const getSourcePositionDataProps = (node?: MarkdownCodeBlockProps['node'], shouldRenderInline = false) => {
   const annotationProps = getMarkdownCodeAnnotationProps({ shouldRenderInline });
@@ -48,10 +154,14 @@ const getSourcePositionDataProps = (node?: MarkdownCodeBlockProps['node'], shoul
 };
 
 export default function MarkdownCodeBlock({
+  annotations = [],
   inline,
   className,
   children,
+  focusedAnnotationId = null,
+  markdownContent = '',
   node,
+  onActivateAnnotation = null,
   ...props
 }: MarkdownCodeBlockProps) {
   const [copied, setCopied] = useState(false);
@@ -84,6 +194,35 @@ export default function MarkdownCodeBlock({
   }
 
   const language = codeBlock.language;
+  const sourceStartLine = node?.position?.start?.line;
+  const sourceStartColumn = node?.position?.start?.column;
+  const sourceEndLine = node?.position?.end?.line;
+  const sourceEndColumn = node?.position?.end?.column;
+  const highlightedCodeParts = (
+    typeof sourceStartLine === 'number' &&
+    typeof sourceStartColumn === 'number' &&
+    typeof sourceEndLine === 'number' &&
+    typeof sourceEndColumn === 'number' &&
+    markdownContent &&
+    annotations.length > 0
+  ) ? buildCodeHighlightParts({
+    annotations,
+    content: markdownContent,
+    markdownSource: sliceMarkdownSourceByRange({
+      sourceText: markdownContent,
+      startLine: sourceStartLine,
+      startColumn: sourceStartColumn,
+      endLine: sourceEndLine,
+      endColumn: sourceEndColumn,
+    }) ?? rawContent,
+    rawContent,
+    sourceStartLine,
+    sourceStartColumn,
+    sourceEndLine,
+    sourceEndColumn,
+    focusedAnnotationId,
+    onActivateAnnotation,
+  }) : null;
 
   return (
     <div className="group relative my-2">
@@ -106,18 +245,32 @@ export default function MarkdownCodeBlock({
       </button>
 
       <div {...sourcePositionDataProps}>
-        <SyntaxHighlighter
-          language={language}
-          style={prismOneDark}
-          customStyle={{
-            margin: 0,
-            borderRadius: '0.5rem',
-            fontSize: '0.875rem',
-            padding: language !== 'text' ? '2rem 1rem 1rem 1rem' : '1rem',
-          }}
-        >
-          {rawContent}
-        </SyntaxHighlighter>
+        {highlightedCodeParts ? (
+          <pre
+            className="overflow-x-auto rounded-lg bg-[#282c34] text-sm text-gray-100"
+            style={{
+              margin: 0,
+              padding: language !== 'text' ? '2rem 1rem 1rem 1rem' : '1rem',
+            }}
+          >
+            <code className="font-mono whitespace-pre-wrap break-words">
+              {highlightedCodeParts}
+            </code>
+          </pre>
+        ) : (
+          <SyntaxHighlighter
+            language={language}
+            style={prismOneDark}
+            customStyle={{
+              margin: 0,
+              borderRadius: '0.5rem',
+              fontSize: '0.875rem',
+              padding: language !== 'text' ? '2rem 1rem 1rem 1rem' : '1rem',
+            }}
+          >
+            {rawContent}
+          </SyntaxHighlighter>
+        )}
       </div>
     </div>
   );

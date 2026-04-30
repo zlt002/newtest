@@ -10,6 +10,10 @@ type FollowAlongRightPaneTarget =
       filePath: string;
     }
   | {
+      type: 'markdown-draft';
+      filePath: string;
+    }
+  | {
       type: 'visual-html';
       filePath: string;
     }
@@ -84,7 +88,10 @@ function resolveFollowAlongTarget(filePath: string, projectName?: string): Follo
 }
 
 function isPreviewCapableTarget(target: FollowAlongRightPaneTarget) {
-  return target?.type === 'code' || target?.type === 'markdown' || target?.type === 'visual-html';
+  return target?.type === 'code'
+    || target?.type === 'markdown'
+    || target?.type === 'markdown-draft'
+    || target?.type === 'visual-html';
 }
 
 export function getFileChangeFollowAlongDecision({
