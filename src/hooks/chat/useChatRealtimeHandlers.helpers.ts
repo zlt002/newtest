@@ -714,6 +714,45 @@ function createDraftPreviewEventKey(event: DraftPreviewEvent) {
   ].join('::');
 }
 
+function mergeWritePreviewText(previousText: string, nextText: string) {
+  if (!previousText) {
+    return nextText;
+  }
+
+  if (!nextText) {
+    return previousText;
+  }
+
+  if (nextText.startsWith(previousText)) {
+    return nextText;
+  }
+
+  if (previousText.startsWith(nextText)) {
+    return previousText;
+  }
+
+  return `${previousText}${nextText}`;
+}
+
+function mergeDraftPreviewOperation(
+  previousOperation: FileDraftPreviewOperation | undefined,
+  nextOperation: FileDraftPreviewOperation,
+) {
+  if (!previousOperation || previousOperation.source !== nextOperation.source) {
+    return nextOperation;
+  }
+
+  if (nextOperation.source === 'Write' && nextOperation.mode === 'write') {
+    return {
+      ...previousOperation,
+      ...nextOperation,
+      newText: mergeWritePreviewText(previousOperation.newText, nextOperation.newText),
+    };
+  }
+
+  return nextOperation;
+}
+
 function buildDraftPreviewOperationFromEvent(event: {
   sessionId: string;
   timestamp: string;
@@ -791,6 +830,7 @@ export function collectDraftPreviewEventsFromAgentV2Event({
   }
 
   if (event.type === 'tool.call.started') {
+    const cacheKey = getDraftPreviewCacheKey(sessionId, typeof event.payload.toolId === 'string' ? event.payload.toolId.trim() : '');
     const operation = buildDraftPreviewOperationFromEvent({
       sessionId,
       timestamp: event.timestamp,
@@ -801,15 +841,16 @@ export function collectDraftPreviewEventsFromAgentV2Event({
       return [];
     }
 
-    draftOperationCache.set(getDraftPreviewCacheKey(sessionId, operation.toolId), operation);
+    const mergedOperation = mergeDraftPreviewOperation(draftOperationCache.get(cacheKey), operation);
+    draftOperationCache.set(getDraftPreviewCacheKey(sessionId, operation.toolId), mergedOperation);
 
     const nextEvent: DraftPreviewEvent = {
       type: 'file_change_preview_delta',
       sessionId,
-      toolId: operation.toolId,
-      filePath: operation.filePath,
-      timestamp: operation.timestamp,
-      operation,
+      toolId: mergedOperation.toolId,
+      filePath: mergedOperation.filePath,
+      timestamp: mergedOperation.timestamp,
+      operation: mergedOperation,
     };
     const eventKey = createDraftPreviewEventKey(nextEvent);
     if (emittedKeys.has(eventKey)) {
@@ -820,6 +861,7 @@ export function collectDraftPreviewEventsFromAgentV2Event({
   }
 
   if (event.type === 'tool.call.delta') {
+    const cacheKey = getDraftPreviewCacheKey(sessionId, typeof event.payload.toolId === 'string' ? event.payload.toolId.trim() : '');
     const operation = buildDraftPreviewOperationFromEvent({
       sessionId,
       timestamp: event.timestamp,
@@ -829,14 +871,15 @@ export function collectDraftPreviewEventsFromAgentV2Event({
       return [];
     }
 
-    draftOperationCache.set(getDraftPreviewCacheKey(sessionId, operation.toolId), operation);
+    const mergedOperation = mergeDraftPreviewOperation(draftOperationCache.get(cacheKey), operation);
+    draftOperationCache.set(getDraftPreviewCacheKey(sessionId, operation.toolId), mergedOperation);
     const nextEvent: DraftPreviewEvent = {
       type: 'file_change_preview_delta',
       sessionId,
-      toolId: operation.toolId,
-      filePath: operation.filePath,
-      timestamp: operation.timestamp,
-      operation,
+      toolId: mergedOperation.toolId,
+      filePath: mergedOperation.filePath,
+      timestamp: mergedOperation.timestamp,
+      operation: mergedOperation,
     };
     const eventKey = createDraftPreviewEventKey(nextEvent);
     if (emittedKeys.has(eventKey)) {

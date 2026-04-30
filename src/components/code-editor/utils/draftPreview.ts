@@ -1,5 +1,7 @@
 import type { FileDraftPreviewOperation } from '../types/types';
 
+const DEFAULT_REVEAL_CHARS_PER_SECOND = 180;
+
 function replaceFirst(source: string, search: string, replacement: string) {
   const index = source.indexOf(search);
   if (index === -1) {
@@ -61,6 +63,43 @@ export function applyDraftPreviewOperations(
     .slice()
     .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp))
     .reduce((currentContent, operation) => applyDraftPreviewOperation(currentContent, operation), content);
+}
+
+function getPendingWritePreviewOperation(operations: FileDraftPreviewOperation[]) {
+  return operations
+    .slice()
+    .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp))
+    .findLast((operation) => operation.mode === 'write' && operation.status === 'pending') ?? null;
+}
+
+export function getAnimatedDraftPreviewContent({
+  content,
+  operations,
+  nowMs,
+  revealStartMs,
+  charsPerSecond = DEFAULT_REVEAL_CHARS_PER_SECOND,
+}: {
+  content: string;
+  operations: FileDraftPreviewOperation[];
+  nowMs: number;
+  revealStartMs: number | null;
+  charsPerSecond?: number;
+}) {
+  const finalContent = applyDraftPreviewOperations(content, operations);
+  const pendingWriteOperation = getPendingWritePreviewOperation(operations);
+
+  if (!pendingWriteOperation || !revealStartMs || charsPerSecond <= 0) {
+    return finalContent;
+  }
+
+  const elapsedMs = Math.max(0, nowMs - revealStartMs);
+  const visibleChars = Math.max(1, Math.floor((elapsedMs / 1000) * charsPerSecond));
+
+  if (visibleChars >= finalContent.length) {
+    return finalContent;
+  }
+
+  return finalContent.slice(0, visibleChars);
 }
 
 export function getFirstDraftPreviewAnchorLine(

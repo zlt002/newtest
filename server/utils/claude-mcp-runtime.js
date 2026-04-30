@@ -6,10 +6,6 @@ function normalizeStatus(value = {}) {
     .toLowerCase();
 }
 
-export function createDisabledMcpRegistry() {
-  return new Map();
-}
-
 export function extractFailedMcpServerNamesFromInitEvent(event = {}) {
   if (event?.type !== 'system' || event?.subtype !== 'init' || !event?.mcp_servers || typeof event.mcp_servers !== 'object') {
     return [];

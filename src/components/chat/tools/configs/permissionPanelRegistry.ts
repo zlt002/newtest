@@ -11,13 +11,6 @@ export interface PermissionPanelProps {
 
 const registry: Record<string, ComponentType<PermissionPanelProps>> = {};
 
-export function registerPermissionPanel(
-  toolName: string,
-  component: ComponentType<PermissionPanelProps>,
-): void {
-  registry[toolName] = component;
-}
-
 export function getPermissionPanel(
   toolName: string,
 ): ComponentType<PermissionPanelProps> | null {

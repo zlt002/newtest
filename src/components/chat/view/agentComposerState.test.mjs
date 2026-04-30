@@ -25,6 +25,7 @@ test('没有活跃 execution 时，顶部状态回退到旧 loading 状态', () 
     resolveAgentComposerState({
       isLoading: true,
       claudeStatusText: '处理中',
+      hasConversationHistory: false,
       execution: null,
     }),
     {
@@ -41,6 +42,7 @@ test('活跃 execution 不把完整 assistant 正文塞进 composer 状态条', 
     resolveAgentComposerState({
       isLoading: false,
       claudeStatusText: null,
+      hasConversationHistory: true,
       execution: {
         status: 'streaming',
         assistantText: longAssistantText,
@@ -49,6 +51,36 @@ test('活跃 execution 不把完整 assistant 正文塞进 composer 状态条', 
     {
       status: 'streaming',
       label: '正在接收回复',
+    },
+  );
+});
+
+test('空白新会话在未开始时显示 idle，而不是 completed', () => {
+  assert.deepEqual(
+    resolveAgentComposerState({
+      isLoading: false,
+      claudeStatusText: null,
+      hasConversationHistory: false,
+      execution: null,
+    }),
+    {
+      status: 'idle',
+      label: '发送消息开始对话',
+    },
+  );
+});
+
+test('已有历史对话但当前空闲时显示 completed', () => {
+  assert.deepEqual(
+    resolveAgentComposerState({
+      isLoading: false,
+      claudeStatusText: null,
+      hasConversationHistory: true,
+      execution: null,
+    }),
+    {
+      status: 'completed',
+      label: '准备开始下一轮',
     },
   );
 });

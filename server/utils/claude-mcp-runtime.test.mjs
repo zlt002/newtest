@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  createDisabledMcpRegistry,
   extractFailedMcpServerNamesFromInitEvent,
   filterDisabledMcpServers,
   markFailedMcpServersFromInitEvent,
@@ -39,7 +38,7 @@ test('extractFailedMcpServerNamesFromInitEvent uses server names when SDK report
 });
 
 test('markFailedMcpServersFromInitEvent stores failed servers with expiry and filterDisabledMcpServers skips them', () => {
-  const registry = createDisabledMcpRegistry();
+  const registry = new Map();
   markFailedMcpServersFromInitEvent(
     registry,
     {
@@ -71,7 +70,7 @@ test('markFailedMcpServersFromInitEvent stores failed servers with expiry and fi
 });
 
 test('filterDisabledMcpServers lets expired disabled servers back in', () => {
-  const registry = createDisabledMcpRegistry();
+  const registry = new Map();
   markFailedMcpServersFromInitEvent(
     registry,
     {

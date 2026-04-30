@@ -1,5 +1,7 @@
 # Project Cleanup Design Spec
 
+> **档案状态：历史设计（已归档）** 本文档为历史清理设计说明，当前仓库以实际落地为准，部分条目仅保留决策追踪用途。
+
 Date: 2026-04-25
 Status: Draft
 Scope: Full project cleanup — dead code removal, JS→TS migration, structural simplification

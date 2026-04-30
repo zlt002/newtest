@@ -113,6 +113,7 @@
   },
   "composerContext": {
     "statuses": {
+      "idle": "待开始",
       "queued": "排队中",
       "starting": "启动中",
       "streaming": "执行中",

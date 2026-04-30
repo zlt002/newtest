@@ -1,5 +1,7 @@
 # 目录架构重构实施计划
 
+> **档案状态：历史计划（已归档）** 本文档为历史重构计划，当前代码组织可能已发生迭代，文中细节仅用于历史参考。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-step. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **目标:** 重构 CC-UI 项目目录结构，采用技术层驱动架构，统一前后端组织原则

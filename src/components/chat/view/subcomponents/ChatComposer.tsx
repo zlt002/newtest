@@ -60,7 +60,7 @@ interface ChatComposerProps {
     dashboardUrl: string | null;
   } | null;
   observabilitySessionId: string | null;
-  composerStatus?: 'queued' | 'starting' | 'streaming' | 'waiting_for_tool' | 'completed' | 'failed' | 'aborted';
+  composerStatus?: 'idle' | 'queued' | 'starting' | 'streaming' | 'waiting_for_tool' | 'completed' | 'failed' | 'aborted';
   composerLabel?: string | null;
   slashCommandsCount: number;
   onToggleCommandMenu: () => void;

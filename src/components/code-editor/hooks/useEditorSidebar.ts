@@ -14,6 +14,7 @@ import type { DraftPreviewEvent } from '@hooks/chat/chatDraftPreviewEvents';
 import { createUrlOpenState } from './editorSidebarUrlOpenState';
 
 const VISUAL_HTML_OPEN_REQUEST_EVENT_NAME = 'ccui:visual-html-open-request';
+const shouldLogPrdStreamingDebug = Boolean(import.meta.env?.DEV);
 
 export type BrowserDependencySnapshot = {
   previewFilePath: string;
@@ -28,6 +29,11 @@ export type CodeFollowAlongState = {
 };
 
 export type DraftPreviewState = Record<string, FileDraftPreviewOperation[]>;
+
+type OpenTargetOptions = {
+  activate?: boolean;
+  markAsFresh?: boolean;
+};
 
 type UseEditorSidebarOptions = {
   selectedProject: Project | null;
@@ -62,23 +68,49 @@ export const useEditorSidebar = ({
   const draftCleanupTimersRef = useRef<Map<string, number>>(new Map());
   const rightPaneTarget = tabs.find((tab) => tab.id === activeTabId)?.target ?? null;
 
-  const openTarget = useCallback((target: RightPaneTarget) => {
+  const openTarget = useCallback((target: RightPaneTarget, options: OpenTargetOptions = {}) => {
+    if (shouldLogPrdStreamingDebug) {
+      console.info('[PRD debug][useEditorSidebar] openTarget', {
+        target,
+        options,
+        activeTabId,
+      });
+    }
+
     setTabs((previousTabs) => {
-      const result = upsertRightPaneTab(previousTabs, target);
+      const result = upsertRightPaneTab(previousTabs, target, {
+        activate: options.activate,
+        markAsFresh: options.markAsFresh,
+        currentActiveTabId: activeTabId,
+      });
       setActiveTabId(result.activeTabId);
       return result.tabs;
     });
     setIsRightPaneVisible(true);
-  }, []);
+  }, [activeTabId]);
 
   const handleFileOpen = useCallback(
-    (filePath: string, diffInfo: CodeEditorDiffInfo | null = null) => {
+    (
+      filePath: string,
+      diffInfo: CodeEditorDiffInfo | null = null,
+      options: OpenTargetOptions = {},
+    ) => {
       const nextTarget = resolveRightPaneTargetForFile(filePath, {
         projectName: selectedProject?.name,
         diffInfo,
       });
 
-      openTarget(nextTarget);
+      if (shouldLogPrdStreamingDebug) {
+        console.info('[PRD debug][useEditorSidebar] handleFileOpen', {
+          filePath,
+          diffInfo,
+          options,
+          resolvedTarget: nextTarget,
+          projectName: selectedProject?.name,
+        });
+      }
+
+      openTarget(nextTarget, options);
     },
     [openTarget, selectedProject?.name],
   );
@@ -145,6 +177,9 @@ export const useEditorSidebar = ({
   }, [tabs.length]);
 
   const handleOpenExistingTab = useCallback((tabId: string) => {
+    setTabs((previousTabs) => previousTabs.map((tab) => (
+      tab.id === tabId ? { ...tab, isFresh: false } : tab
+    )));
     setActiveTabId(tabId);
     setIsRightPaneVisible(true);
   }, []);

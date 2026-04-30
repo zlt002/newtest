@@ -968,6 +968,25 @@ test('ChatInterface keeps completed degraded execution warnings visible after ru
   assert.match(source, /contextBar=\{composerContextBar\}/);
 });
 
+test('ChatInterface auto-opens markdown files when Write or Edit starts streaming', async () => {
+  const source = await readFile(new URL('./ChatInterface.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /const autoOpenedMarkdownWriteKeysRef = useRef\(new Set<string>\(\)\);/);
+  assert.match(source, /if \(!activeAgentSessionId \|\| !onFileOpen\)/);
+  assert.match(source, /const sessionEvents = agentEventStoreRef\.current\.listBySession\(activeAgentSessionId\);/);
+  assert.match(source, /event\.type !== 'tool\.call\.started' && event\.type !== 'tool\.call\.delta'/);
+  assert.match(source, /getMarkdownFilePathFromToolPayload\(event\.payload\)/);
+  assert.match(source, /onFileOpen\(markdownWrite\.filePath, undefined\);/);
+});
+
+test('ChatInterface renders the context file pill and composer status bar in a single horizontal row', async () => {
+  const source = await readFile(new URL('./ChatInterface.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /const composerContextBar = activeContextFilePath \? \(/);
+  assert.match(source, /className="flex flex-wrap items-center gap-2"/);
+  assert.doesNotMatch(source, /className="space-y-2"/);
+});
+
 test('ChatInterface only refreshes canonical history on websocket reconnect when catch-up is actually needed', async () => {
   const source = await readFile(new URL('./ChatInterface.tsx', import.meta.url), 'utf8');
 

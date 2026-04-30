@@ -8,6 +8,8 @@ import { getRightPaneTabLabel } from '../utils/rightPaneTabs';
 import { computeVisibleRightPaneTabs } from '../utils/rightPaneVisibleTabs';
 import RightPaneContentRouter from './RightPaneContentRouter';
 
+const shouldLogPrdStreamingDebug = Boolean(import.meta.env?.DEV);
+
 type RightPaneProps = {
   tabs: RightPaneTab[];
   activeTabId: string | null;
@@ -235,7 +237,30 @@ export default function RightPane({
     };
   }, [editorWidth, isMobile, poppedOut, target]);
 
+  if (shouldLogPrdStreamingDebug) {
+    console.info('[PRD debug][RightPane] render gate', {
+      hasTarget: Boolean(target),
+      target,
+      activeTabId,
+      activeTab,
+      tabs,
+      isMobile,
+      poppedOut,
+      editorExpanded,
+      effectiveWidth,
+      hasManualWidth,
+      fillSpace,
+    });
+  }
+
   if (!target || !activeTab) {
+    if (shouldLogPrdStreamingDebug) {
+      console.info('[PRD debug][RightPane] return null', {
+        reason: !target ? 'missing-target' : 'missing-active-tab',
+        activeTabId,
+        tabs,
+      });
+    }
     return null;
   }
 
@@ -255,23 +280,27 @@ export default function RightPane({
             <div
               key={tab.id}
               className={`group flex h-8 min-w-0 max-w-[220px] flex-shrink-0 items-center gap-1 rounded-md border px-2 text-sm transition-colors ${
-                isFollowAlongActive
-                  ? 'border-blue-400 bg-blue-50 text-blue-700'
-                  : isActive
+                isActive
                   ? 'border-border bg-accent/60 text-foreground'
                   : 'border-transparent bg-muted/40 text-muted-foreground hover:bg-accent/40 hover:text-foreground'
               }`}
               data-right-pane-tab={tab.id}
               data-right-pane-tab-active={String(isActive)}
               data-right-pane-follow-along-active={String(isFollowAlongActive)}
+              data-right-pane-tab-fresh={String(Boolean(tab.isFresh))}
             >
               <button
                 type="button"
-                className="min-w-0 flex-1 truncate text-left"
+                className="flex min-w-0 flex-1 items-center gap-1 truncate text-left"
                 onClick={() => onSelectTab(tab.id)}
                 title={getRightPaneTabLabel(tab.target)}
               >
-                {getRightPaneTabLabel(tab.target)}
+                <span className="truncate">{getRightPaneTabLabel(tab.target)}</span>
+                {tab.isFresh ? (
+                  <span className="inline-flex flex-shrink-0 items-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-700">
+                    new
+                  </span>
+                ) : null}
               </button>
               <button
                 type="button"
@@ -316,7 +345,7 @@ export default function RightPane({
                   >
                     <button
                       type="button"
-                      className="min-w-0 flex-1 truncate text-left"
+                      className="flex min-w-0 flex-1 items-center gap-1 truncate text-left"
                       data-right-pane-overflow-tab={tab.id}
                       onClick={() => {
                         onSelectTab(tab.id);
@@ -325,7 +354,12 @@ export default function RightPane({
                       role="menuitem"
                       title={getRightPaneTabLabel(tab.target)}
                     >
-                      {getRightPaneTabLabel(tab.target)}
+                      <span className="truncate">{getRightPaneTabLabel(tab.target)}</span>
+                      {tab.isFresh ? (
+                        <span className="inline-flex flex-shrink-0 items-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-700">
+                          new
+                        </span>
+                      ) : null}
                     </button>
                     <button
                       type="button"
@@ -364,14 +398,19 @@ export default function RightPane({
                 key={`measure-${tab.id}`}
                 ref={(element) => measureTabWidth(tab.id, element)}
                 className={`group flex h-8 min-w-0 max-w-[220px] flex-shrink-0 items-center gap-1 rounded-md border px-2 text-sm transition-colors ${
-                  isFollowAlongActive
-                    ? 'border-blue-400 bg-blue-50 text-blue-700'
-                    : isActive
+                  isActive
                     ? 'border-border bg-accent/60 text-foreground'
                     : 'border-transparent bg-muted/40 text-muted-foreground hover:bg-accent/40 hover:text-foreground'
                 }`}
               >
-                <span className="min-w-0 flex-1 truncate text-left">{getRightPaneTabLabel(tab.target)}</span>
+                <span className="flex min-w-0 flex-1 items-center gap-1 truncate text-left">
+                  <span className="truncate">{getRightPaneTabLabel(tab.target)}</span>
+                  {tab.isFresh ? (
+                    <span className="inline-flex flex-shrink-0 items-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-700">
+                      new
+                    </span>
+                  ) : null}
+                </span>
                 <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-muted-foreground transition-colors">
                   <X className="h-3.5 w-3.5" />
                 </span>
@@ -413,6 +452,15 @@ export default function RightPane({
   );
 
   const isOverlay = isMobile || poppedOut;
+  if (shouldLogPrdStreamingDebug) {
+    console.info('[PRD debug][RightPane] ready to render content', {
+      isOverlay,
+      targetType: target.type,
+      activeTabId,
+      effectiveWidth,
+      useFlexLayout: editorExpanded || Boolean(fillSpace && !hasManualWidth),
+    });
+  }
   if (isOverlay) {
     return (
       <PlaceholderOverlayFrame>

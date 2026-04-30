@@ -34,6 +34,7 @@ import ChatMessagesPane from './subcomponents/ChatMessagesPane';
 import type { OutputFormatConfig } from '../types/transport.ts';
 import type { RightPaneTarget } from '../../right-pane/types.ts';
 
+const shouldLogPrdStreamingDebug = Boolean(import.meta.env?.DEV);
 
 type PendingViewSession = {
   sessionId: string | null;
@@ -207,6 +208,33 @@ function getActiveContextFileName(filePath: string | null) {
   return normalized.split('/').pop() || filePath;
 }
 
+function normalizeEventPayloadRecord(input: unknown): Record<string, unknown> {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return {};
+  }
+
+  return input as Record<string, unknown>;
+}
+
+function getMarkdownFilePathFromToolPayload(payload: unknown) {
+  const normalizedPayload = normalizeEventPayloadRecord(payload);
+  const toolName = String(normalizedPayload.toolName || '').trim();
+  if (toolName !== 'Write' && toolName !== 'Edit') {
+    return null;
+  }
+
+  const input = normalizeEventPayloadRecord(normalizedPayload.input);
+  const filePath = String(input.file_path || input.filePath || input.path || '').trim();
+  if (!filePath || !/\.md(?:own)?$/i.test(filePath)) {
+    return null;
+  }
+
+  return {
+    filePath,
+    toolId: String(normalizedPayload.toolId || '').trim() || null,
+  };
+}
+
 function ChatInterface({
   selectedProject,
   selectedSession,
@@ -265,6 +293,7 @@ function ChatInterface({
   const pendingRealtimeCleanupSessionRef = useRef<PendingRealtimeCleanup | null>(null);
   const missingAssistantRecoveryRef = useRef<string | null>(null);
   const previousHadActiveExecutionRef = useRef(false);
+  const autoOpenedMarkdownWriteKeysRef = useRef(new Set<string>());
   const historicalLoadAllOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const historicalLoadAllFinishedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previousHistoricalLoadingOlderRef = useRef(false);
@@ -655,7 +684,67 @@ function ChatInterface({
     previousHadActiveExecutionRef.current = false;
     pendingRealtimeCleanupSessionRef.current = null;
     missingAssistantRecoveryRef.current = null;
+    autoOpenedMarkdownWriteKeysRef.current.clear();
   }, [activeAgentSessionId]);
+  useEffect(() => {
+    if (!activeAgentSessionId || !onFileOpen) {
+      return;
+    }
+
+    const sessionEvents = agentEventStoreRef.current.listBySession(activeAgentSessionId);
+    for (let index = sessionEvents.length - 1; index >= 0; index -= 1) {
+      const event = sessionEvents[index];
+      if (event.type !== 'tool.call.started' && event.type !== 'tool.call.delta') {
+        continue;
+      }
+
+      const markdownWrite = getMarkdownFilePathFromToolPayload(event.payload);
+      if (!markdownWrite) {
+        continue;
+      }
+
+      const dedupeKey = [
+        activeAgentSessionId,
+        markdownWrite.toolId || event.eventId,
+        markdownWrite.filePath,
+      ].join(':');
+
+      if (shouldLogPrdStreamingDebug) {
+        console.info('[PRD debug][ChatInterface] 命中 markdown 写入事件', {
+          sessionId: activeAgentSessionId,
+          eventId: event.eventId,
+          eventType: event.type,
+          toolId: markdownWrite.toolId,
+          filePath: markdownWrite.filePath,
+          dedupeKey,
+          alreadyOpened: autoOpenedMarkdownWriteKeysRef.current.has(dedupeKey),
+        });
+      }
+
+      if (autoOpenedMarkdownWriteKeysRef.current.has(dedupeKey)) {
+        return;
+      }
+
+      autoOpenedMarkdownWriteKeysRef.current.add(dedupeKey);
+      if (shouldLogPrdStreamingDebug) {
+        console.info('[PRD debug][ChatInterface] 准备调用 onFileOpen', {
+          sessionId: activeAgentSessionId,
+          filePath: markdownWrite.filePath,
+          eventType: event.type,
+        });
+      }
+      onFileOpen(markdownWrite.filePath, undefined);
+      return;
+    }
+
+    if (shouldLogPrdStreamingDebug && sessionEvents.length > 0) {
+      console.info('[PRD debug][ChatInterface] 当前会话还没有可自动打开的 markdown 写入事件', {
+        sessionId: activeAgentSessionId,
+        eventCount: sessionEvents.length,
+      });
+    }
+  }, [activeAgentSessionId, agentEventVersion, onFileOpen]);
+
   useEffect(() => {
     const previousHadActiveExecution = previousHadActiveExecutionRef.current;
     if (previousHadActiveExecution && !hasActiveExecution && activeAgentSessionId) {
@@ -753,6 +842,7 @@ function ChatInterface({
   const composerState = resolveAgentComposerState({
     isLoading,
     claudeStatusText: String(claudeStatus?.text || '').trim() || null,
+    hasConversationHistory: mergedChatMessages.length > 0 || conversationRounds.length > 0,
     execution: agentConversation.execution,
   });
   useEffect(() => {
@@ -943,9 +1033,11 @@ function ChatInterface({
     </div>
   ) : null;
   const composerContextBar = activeContextFilePath ? (
-    <div className="space-y-2">
+    <div className="flex flex-wrap items-center gap-2">
       {contextFileBar}
-      {chatV2ContextBar}
+      <div className="min-w-0 flex-1">
+        {chatV2ContextBar}
+      </div>
     </div>
   ) : chatV2ContextBar;
 

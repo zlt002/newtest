@@ -1,5 +1,7 @@
 # Project Cleanup Implementation Plan
 
+> **档案状态：历史计划（已归档）** 本文档是历史执行计划，当前代码库在后续清理迭代中已演进，文中清单主要用于工程决策追溯。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Remove dead code, migrate remaining JS→TS, and simplify project structure in one pass.

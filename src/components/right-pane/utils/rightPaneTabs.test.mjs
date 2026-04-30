@@ -37,6 +37,34 @@ test('upsertRightPaneTab 相同 identity 会复用已有 tab 并更新 target', 
   assert.equal(result.tabs[0].target.title, 'Home');
 });
 
+test('upsertRightPaneTab 支持后台新建 tab 且保留当前激活项', () => {
+  const result = upsertRightPaneTab([
+    {
+      id: 'markdown:/demo/current.md',
+      target: {
+        type: 'markdown',
+        filePath: '/demo/current.md',
+        fileName: 'current.md',
+        projectName: 'demo',
+      },
+    },
+  ], {
+    type: 'markdown',
+    filePath: '/demo/new.md',
+    fileName: 'new.md',
+    projectName: 'demo',
+  }, {
+    activate: false,
+    markAsFresh: true,
+    currentActiveTabId: 'markdown:/demo/current.md',
+  });
+
+  assert.equal(result.tabs.length, 2);
+  assert.equal(result.activeTabId, 'markdown:/demo/current.md');
+  assert.equal(result.tabs[1].id, 'markdown:/demo/new.md');
+  assert.equal(result.tabs[1].isFresh, true);
+});
+
 test('closeRightPaneTab 关闭当前 tab 后会切到相邻 tab', () => {
   const result = closeRightPaneTab([
     {

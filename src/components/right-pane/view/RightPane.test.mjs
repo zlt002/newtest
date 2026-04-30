@@ -134,6 +134,46 @@ test('RightPane marks markdown tabs as follow-along active when the current mark
   assert.match(markup, /data-editor-refresh-pulse="1"/);
 });
 
+test('RightPane renders a new badge for background-opened tabs without activating them', () => {
+  const markup = renderToStaticMarkup(
+    React.createElement(RightPane, {
+      ...baseProps,
+      tabs: [
+        {
+          id: 'markdown:/demo/current.md',
+          target: {
+            type: 'markdown',
+            filePath: '/demo/current.md',
+            fileName: 'current.md',
+            projectName: 'demo-project',
+          },
+        },
+        {
+          id: 'markdown:/demo/new.md',
+          target: {
+            type: 'markdown',
+            filePath: '/demo/new.md',
+            fileName: 'new.md',
+            projectName: 'demo-project',
+          },
+          isFresh: true,
+        },
+      ],
+      activeTabId: 'markdown:/demo/current.md',
+      target: {
+        type: 'markdown',
+        filePath: '/demo/current.md',
+        fileName: 'current.md',
+        projectName: 'demo-project',
+      },
+    }),
+  );
+
+  assert.match(markup, /data-right-pane-tab="markdown:\/demo\/new\.md"/);
+  assert.match(markup, /data-right-pane-tab-fresh="true"/);
+  assert.match(markup, />new</);
+});
+
 test('RightPane renders git commit branch marker when target type is git-commit', () => {
   const markup = renderToStaticMarkup(
     React.createElement(RightPane, {

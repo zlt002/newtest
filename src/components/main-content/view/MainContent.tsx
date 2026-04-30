@@ -8,6 +8,8 @@ import MainContentHeader from './subcomponents/MainContentHeader';
 import MainContentStateView from './subcomponents/MainContentStateView';
 import ErrorBoundary from './ErrorBoundary';
 
+const shouldLogPrdStreamingDebug = Boolean(import.meta.env?.DEV);
+
 function MainContent({
   selectedProject,
   selectedSession,
@@ -70,6 +72,19 @@ function MainContent({
     editorExpanded,
     hasManualWidth,
   });
+
+  if (shouldLogPrdStreamingDebug) {
+    console.info('[PRD debug][MainContent] render', {
+      activeTab,
+      hasRightPaneContent,
+      isRightPaneVisible,
+      activeRightPaneTabId,
+      rightPaneTarget,
+      useBalancedEditorLayout,
+      editorExpanded,
+      hasManualWidth,
+    });
+  }
 
   if (isLoading) {
     return <MainContentStateView mode="loading" isMobile={isMobile} onMenuClick={onMenuClick} />;

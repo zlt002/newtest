@@ -3,12 +3,13 @@ import type { ReactNode } from 'react';
 import type { RunCard as RunCardModel } from '../types/runCard.ts';
 import { RuntimeMarkdown } from './RuntimeMarkdown';
 import { RunCardProcessTimeline } from './RunCardProcessTimeline';
+import { TodoListContent } from '../tools/components/ContentRenderers/TodoListContent.tsx';
 
 function ClaudeAvatar() {
   return (
     <div
       data-chat-v2-run-card-avatar="true"
-      className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#D97757] text-sm font-semibold text-white shadow-sm"
+      className="flex h-8 w-8 items-center justify-center rounded-full bg-[#D97757] text-sm font-semibold text-white shadow-sm"
       aria-label="Claude"
       title="Claude"
     >
@@ -20,15 +21,15 @@ function ClaudeAvatar() {
 function resolveCardTone(cardStatus: RunCardModel['cardStatus']) {
   switch (cardStatus) {
     case 'completed':
-      return 'border-emerald-200 bg-white';
+      return 'border-emerald-200 bg-white dark:border-emerald-900/70 dark:bg-neutral-900/95';
     case 'failed':
-      return 'border-red-200 bg-white';
+      return 'border-red-200 bg-white dark:border-red-900/70 dark:bg-neutral-900/95';
     case 'aborted':
-      return 'border-amber-200 bg-white';
+      return 'border-amber-200 bg-white dark:border-amber-900/70 dark:bg-neutral-900/95';
     case 'waiting_for_input':
-      return 'border-amber-200 bg-white';
+      return 'border-amber-200 bg-white dark:border-amber-900/70 dark:bg-neutral-900/95';
     default:
-      return 'border-neutral-200 bg-white';
+      return 'border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900/95';
   }
 }
 
@@ -89,29 +90,7 @@ function extractTodoItems(value: unknown): Array<{ content: string; status: stri
     || null;
 }
 
-function summarizeTodoPreviewItem(item: { body: string; title: string; payload?: unknown }) {
-  const payload = item.payload && typeof item.payload === 'object' ? item.payload as Record<string, unknown> : null;
-  const toolName = payload?.toolName
-    || payload?.tool_name
-    || payload?.name
-    || item.title;
-
-  if (!isTodoToolName(toolName)) {
-    return normalizePreviewText(item.body);
-  }
-
-  const todos = extractTodoItems(payload) || extractTodoItems(item.body);
-  if (!todos || todos.length === 0) {
-    return normalizePreviewText(item.body);
-  }
-
-  return todos
-    .slice(0, 3)
-    .map((todo) => `${todo.status} · ${todo.content}`)
-    .join(' | ');
-}
-
-function getTodoPreviewItems(item: { body: string; title: string; payload?: unknown }) {
+function getTodoPanelItems(item: { body: string; title: string; payload?: unknown }) {
   const payload = item.payload && typeof item.payload === 'object' ? item.payload as Record<string, unknown> : null;
   const toolName = payload?.toolName
     || payload?.tool_name
@@ -122,12 +101,11 @@ function getTodoPreviewItems(item: { body: string; title: string; payload?: unkn
     return null;
   }
 
-  const todos = extractTodoItems(payload) || extractTodoItems(item.body);
-  return todos && todos.length > 0 ? todos.slice(0, 3) : null;
+  return extractTodoItems(payload) || extractTodoItems(item.body);
 }
 
-function formatTodoStatus(status: string) {
-  return status.replace(/_/g, ' ');
+function isTodoProcessItem(item: { body: string; title: string; payload?: unknown }) {
+  return Array.isArray(getTodoPanelItems(item)) && getTodoPanelItems(item)!.length > 0;
 }
 
 function normalizeFilePath(value: string) {
@@ -237,9 +215,17 @@ export function RunCard({
 }) {
   const [isProcessModalOpen, setIsProcessModalOpen] = useState(false);
   const modalScrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const previewScrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const todoPanelItems = useMemo(() => {
+    for (let index = card.processItems.length - 1; index >= 0; index -= 1) {
+      const todos = getTodoPanelItems(card.processItems[index]);
+      if (todos && todos.length > 0) {
+        return todos;
+      }
+    }
+    return null;
+  }, [card.processItems]);
   const processTimelineItems = useMemo(
-    () => card.processItems.filter((item) => item.kind !== 'notice'),
+    () => card.processItems.filter((item) => item.kind !== 'notice' && !isTodoProcessItem(item)),
     [card.processItems],
   );
   const processPreviewItems = useMemo(
@@ -247,7 +233,7 @@ export function RunCard({
       const explicitPreviewItems = Array.isArray(card.previewItems)
         ? card.previewItems.filter((item) => item.kind !== 'notice')
         : null;
-      return explicitPreviewItems ?? processTimelineItems.slice(-5);
+      return (explicitPreviewItems ?? processTimelineItems).slice(-2);
     },
     [card.previewItems, processTimelineItems],
   );
@@ -340,144 +326,123 @@ export function RunCard({
     scrollContainerToBottom(container);
   }, [isProcessModalOpen, processTimelineItems]);
 
-  useEffect(() => {
-    const container = previewScrollContainerRef.current;
-    scrollContainerToBottom(container);
-  }, [processPreviewItems]);
-
   return (
     <>
-      <article
-        data-chat-v2-run-card="true"
-        data-chat-v2-run-card-expanded={isProcessModalOpen ? 'true' : 'false'}
-        className={`space-y-3 rounded-2xl border px-4 py-4 shadow-sm ${resolveCardTone(card.cardStatus)}`}
+      <div
+        data-chat-v2-run-card-shell="true"
+        className="flex w-full items-start gap-3"
       >
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <ClaudeAvatar />
+        <div
+          data-chat-v2-run-card-avatar-column="true"
+          className="flex h-8 w-8 shrink-0 items-start justify-center pt-1"
+        >
+          <ClaudeAvatar />
+        </div>
+        <article
+          data-chat-v2-run-card="true"
+          data-chat-v2-run-card-expanded={isProcessModalOpen ? 'true' : 'false'}
+          data-chat-v2-run-card-card-column="true"
+          className={`min-w-0 flex-1 space-y-3 rounded-2xl border px-4 py-4 shadow-sm ${resolveCardTone(card.cardStatus)}`}
+        >
+          <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 space-y-0.5">
-              <div className="text-sm font-semibold text-neutral-900">Claude</div>
-              <div className="text-xs font-medium text-neutral-500">{card.headline}</div>
+              <div className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Claude</div>
+              <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400">{card.headline}</div>
             </div>
+
+            {hasProcessItems ? (
+              <button
+                type="button"
+                className="shrink-0 rounded-full border border-neutral-200 bg-white px-3 py-1 text-[11px] text-neutral-600 transition hover:border-neutral-300 hover:text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-300 dark:hover:border-neutral-600 dark:hover:text-neutral-100"
+                onClick={() => setIsProcessModalOpen(true)}
+              >
+                共 {processTimelineItems.length} 条过程
+              </button>
+            ) : null}
           </div>
 
-          {hasProcessItems ? (
-            <button
-              type="button"
-              className="shrink-0 rounded-full border border-neutral-200 bg-white px-3 py-1 text-[11px] text-neutral-600 transition hover:border-neutral-300 hover:text-neutral-900"
-              onClick={() => setIsProcessModalOpen(true)}
-            >
-              共 {processTimelineItems.length} 条过程
-            </button>
+          {interactionNode ? (
+            <div data-chat-v2-run-card-interaction="true">{interactionNode}</div>
           ) : null}
-        </div>
-
-        {interactionNode ? (
-          <div data-chat-v2-run-card-interaction="true">{interactionNode}</div>
-        ) : null}
-
-        {hasProcessItems ? (
-          <section
-            data-chat-v2-run-card-process-preview="true"
-            className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 shadow-sm"
-          >
-            <div
-              ref={previewScrollContainerRef}
-              className="max-h-72 space-y-2 overflow-y-auto pr-1"
+          {hasProcessItems ? (
+            <section
+              data-chat-v2-run-card-process-preview="true"
+              className="rounded-2xl bg-neutral-50 px-3 py-1.5 dark:bg-neutral-950/80"
             >
-              {processPreviewItems.map((item) => (
-                (() => {
-                  const todoPreviewItems = getTodoPreviewItems(item);
-                  return (
-                    <div
-                      key={item.id}
-                      data-chat-v2-run-card-process-item={item.kind}
-                      className={`min-w-0 text-[11px] text-neutral-700 ${todoPreviewItems ? 'space-y-2 rounded-xl border border-neutral-200 bg-white px-3 py-2' : 'flex items-center gap-2'}`}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="shrink-0 rounded-full border border-neutral-200 bg-neutral-50 px-2 py-0.5  uppercase tracking-[0.08em] text-neutral-500">
-                          {resolveProcessPreviewLabel(item.title)}
-                        </span>
-                        <span className="text-neutral-400">
-                          {item.timestamp ? new Date(item.timestamp).toLocaleTimeString('zh-CN', {
-                            hour12: false,
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            second: '2-digit',
-                          }) : ''}
-                        </span>
-                      </div>
-                      {todoPreviewItems ? (
-                        <div
-                          data-chat-v2-run-card-process-preview-todo="true"
-                          className="space-y-1.5"
-                        >
-                          {todoPreviewItems.map((todo, index) => (
-                            <div
-                              key={`${item.id}:todo:${index}`}
-                              className="flex min-w-0 items-center gap-2 text-neutral-700"
-                            >
-                              <span className="shrink-0 rounded-full border border-neutral-200 bg-neutral-50 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.06em] text-neutral-500">
-                                {formatTodoStatus(todo.status)}
-                              </span>
-                              <span className="min-w-0 truncate text-[12px] text-neutral-700">
-                                {todo.content}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="min-w-0 flex-1 truncate text-neutral-700">
-                          {summarizeTodoPreviewItem(item)}
-                        </div>
-                      )}
+              <div className="space-y-0.5">
+                {processPreviewItems.map((item) => (
+                  <div
+                    key={item.id}
+                    data-chat-v2-run-card-process-item={item.kind}
+                    className="flex min-w-0 items-center gap-1.5 text-[11px] leading-4 text-neutral-700 dark:text-neutral-300"
+                  >
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className="shrink-0 rounded-full border border-neutral-200 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.06em] text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
+                        {resolveProcessPreviewLabel(item.title)}
+                      </span>
+                      <span className="shrink-0 text-[10px] text-neutral-400 dark:text-neutral-500">
+                        {item.timestamp ? new Date(item.timestamp).toLocaleTimeString('zh-CN', {
+                          hour12: false,
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit',
+                        }) : ''}
+                      </span>
                     </div>
-                  );
-                })()
-              ))}
-            </div>
-          </section>
-        ) : null}
-
-        {relatedFiles.length > 0 ? (
-          <section
-            data-chat-v2-run-card-related-files="true"
-            className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 shadow-sm"
-          >
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-neutral-500">
-              相关文件
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {relatedFiles.map((file) => (
-                <button
-                  key={file.filePath}
-                  type="button"
-                  title={file.filePath}
-                  data-chat-v2-run-card-related-file={file.filePath}
-                  onClick={() => onFileOpen?.(file.filePath)}
-                  className="inline-flex max-w-full items-center gap-1 rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs text-neutral-700 transition hover:border-neutral-300 hover:text-neutral-900"
-                >
-                  <span className="truncate">{file.fileName}</span>
-                </button>
-              ))}
-            </div>
-          </section>
-        ) : null}
-
-        <div data-chat-v2-run-card-response="true" className="space-y-3 text-sm leading-7 text-neutral-800">
-          {responseSegments.map((segment) => (
-            <div
-              key={segment.id}
-              data-chat-v2-run-card-response-segment={segment.kind}
-              className={''}
+                    <div className="min-w-0 flex-1 truncate text-neutral-700 dark:text-neutral-300">
+                      {normalizePreviewText(item.body)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+          {todoPanelItems && todoPanelItems.length > 0 ? (
+            <section
+              data-chat-v2-run-card-todo-panel="true"
+              className="rounded-2xl bg-violet-50/60 px-4 py-2 dark:bg-violet-950/30"
             >
-              <RuntimeMarkdown className="prose prose-sm max-w-none dark:prose-invert">
-                {segment.body}
-              </RuntimeMarkdown>
-            </div>
-          ))}
-        </div>
-      </article>
+              <TodoListContent todos={todoPanelItems} compact />
+            </section>
+          ) : null}
+
+          {relatedFiles.length > 0 ? (
+            <section
+              data-chat-v2-run-card-related-files="true"
+              className=""
+            >
+              <div className="flex flex-wrap gap-2">
+                {relatedFiles.map((file) => (
+                  <button
+                    key={file.filePath}
+                    type="button"
+                    title={file.filePath}
+                    data-chat-v2-run-card-related-file={file.filePath}
+                    onClick={() => onFileOpen?.(file.filePath)}
+                    className="inline-flex max-w-full items-center gap-1 rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs text-neutral-700 transition hover:border-neutral-300 hover:text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-300 dark:hover:border-neutral-600 dark:hover:text-neutral-100"
+                  >
+                    <span className="truncate">{file.fileName}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          <div data-chat-v2-run-card-response="true" className="space-y-3 text-sm leading-7 text-neutral-800 dark:text-neutral-200">
+            {responseSegments.map((segment) => (
+              <div
+                key={segment.id}
+                data-chat-v2-run-card-response-segment={segment.kind}
+                className={''}
+              >
+                <RuntimeMarkdown className="max-w-none prose prose-sm dark:prose-invert">
+                  {segment.body}
+                </RuntimeMarkdown>
+              </div>
+            ))}
+          </div>
+        </article>
+      </div>
 
       {isProcessModalOpen && hasProcessItems ? (
         <div
@@ -485,23 +450,23 @@ export function RunCard({
           className="fixed inset-0 z-[10000] flex items-center justify-center p-4"
         >
           <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 backdrop-blur-sm bg-black/60"
             onClick={() => setIsProcessModalOpen(false)}
           />
           <div
-            className="relative flex h-[min(88vh,960px)] w-[min(96vw,1080px)] flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-2xl"
+            className="relative flex h-[min(88vh,960px)] w-[min(96vw,1080px)] flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-2xl dark:border-neutral-800 dark:bg-neutral-900"
             role="dialog"
             aria-modal="true"
             aria-label="完整过程时间轴"
           >
-            <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
+            <div className="flex justify-between items-center px-5 py-4 border-b border-neutral-200 dark:border-neutral-800">
               <div className="space-y-1">
-                <div className="text-base font-semibold text-neutral-900">完整过程时间轴</div>
-                <div className="text-xs text-neutral-500">共 {processTimelineItems.length} 条过程事件，按时间顺序查看</div>
+                <div className="text-base font-semibold text-neutral-900 dark:text-neutral-100">完整过程时间轴</div>
+                <div className="text-xs text-neutral-500 dark:text-neutral-400">共 {processTimelineItems.length} 条过程事件，按时间顺序查看</div>
               </div>
               <button
                 type="button"
-                className="rounded-full border border-neutral-200 px-3 py-1 text-xs text-neutral-600 transition hover:border-neutral-300 hover:text-neutral-900"
+                className="rounded-full border border-neutral-200 px-3 py-1 text-xs text-neutral-600 transition hover:border-neutral-300 hover:text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-300 dark:hover:border-neutral-600 dark:hover:text-neutral-100"
                 onClick={() => setIsProcessModalOpen(false)}
               >
                 关闭
@@ -509,7 +474,7 @@ export function RunCard({
             </div>
             <div
               ref={modalScrollContainerRef}
-              className="flex-1 overflow-y-auto bg-neutral-50/80 px-5 py-5"
+              className="flex-1 overflow-y-auto bg-neutral-50/80 px-5 py-5 dark:bg-neutral-950/70"
             >
               <RunCardProcessTimeline items={processTimelineItems} />
             </div>

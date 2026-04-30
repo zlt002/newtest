@@ -216,6 +216,58 @@ test('collectDraftPreviewEventsFromAgentV2Event emits repeated delta events for 
   assert.equal(deltaEvents[0].operation.newText, '# Money');
 });
 
+test('collectDraftPreviewEventsFromAgentV2Event 累积 Write 增量片段，便于右侧 markdown 实时跟写', () => {
+  const emittedKeys = new Set();
+  const draftOperationCache = new Map();
+
+  const firstDeltaEvents = collectDraftPreviewEventsFromAgentV2Event({
+    event: {
+      eventId: 'evt-11',
+      runId: 'run-1',
+      sessionId: 'session-1',
+      sequence: 1,
+      type: 'tool.call.delta',
+      timestamp: '2026-04-21T10:00:00.100Z',
+      payload: {
+        toolId: 'tool-9',
+        toolName: 'Write',
+        input: {
+          file_path: '/workspace/docs/PRD-Stream.md',
+          content: '# ',
+        },
+      },
+    },
+    emittedKeys,
+    draftOperationCache,
+  });
+
+  const secondDeltaEvents = collectDraftPreviewEventsFromAgentV2Event({
+    event: {
+      eventId: 'evt-12',
+      runId: 'run-1',
+      sessionId: 'session-1',
+      sequence: 2,
+      type: 'tool.call.delta',
+      timestamp: '2026-04-21T10:00:00.200Z',
+      payload: {
+        toolId: 'tool-9',
+        toolName: 'Write',
+        input: {
+          file_path: '/workspace/docs/PRD-Stream.md',
+          content: '标题',
+        },
+      },
+    },
+    emittedKeys,
+    draftOperationCache,
+  });
+
+  assert.deepEqual(firstDeltaEvents.map((event) => event.type), ['file_change_preview_delta']);
+  assert.equal(firstDeltaEvents[0].operation.newText, '# ');
+  assert.deepEqual(secondDeltaEvents.map((event) => event.type), ['file_change_preview_delta']);
+  assert.equal(secondDeltaEvents[0].operation.newText, '# 标题');
+});
+
 test('collectRealtimeEventsFromAgentV2Event maps raw V2 events into raw feed blocks', () => {
   const blocks = collectRealtimeEventsFromAgentV2Event({
     eventId: 'evt-1',

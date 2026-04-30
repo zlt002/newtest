@@ -278,6 +278,15 @@ test('ChatMessagesPane renders conversationTurns without legacy assistant Messag
   assert.doesNotMatch(markup, /data-message-component="true"[^>]*>第一轮回复/);
 });
 
+test('RunCard source includes dark theme classes for assistant card surfaces rendered inside ChatMessagesPane', async () => {
+  const source = await readFile(new URL('../../components/RunCard.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /dark:border-neutral-800/);
+  assert.match(source, /dark:bg-neutral-900/);
+  assert.match(source, /dark:text-neutral-100/);
+  assert.match(source, /dark:bg-neutral-950/);
+});
+
 test('ChatMessagesPane renders each conversation round as one user bubble plus one assistant card', () => {
   const markup = renderPane({
     chatMessages: [
@@ -783,6 +792,110 @@ test('ChatMessagesPane does not render legacy assistant or realtime surfaces whe
   assert.doesNotMatch(markup, /PRIMARY_TURN/);
   assert.doesNotMatch(markup, /data-primary-turn="true"/);
   assert.doesNotMatch(markup, /data-chat-v2-realtime-feed="true"/);
+});
+
+test('ChatMessagesPane upgrades legacy assistant-only history into a RunCard when no v2 turns are available', () => {
+  const markup = renderPane({
+    isLoading: false,
+    chatMessages: [
+      {
+        type: 'user',
+        content: '请帮我整理一下',
+        id: 'legacy-user-1',
+        messageId: 'legacy-user-1',
+        sessionId: 'legacy-session-1',
+        timestamp: '2026-04-20T10:00:00.000Z',
+      },
+      {
+        type: 'assistant',
+        content: '这是旧历史里的回答',
+        id: 'legacy-assistant-1',
+        messageId: 'legacy-assistant-1',
+        sessionId: 'legacy-session-1',
+        timestamp: '2026-04-20T10:00:01.000Z',
+      },
+    ],
+    visibleMessages: [
+      {
+        type: 'user',
+        content: '请帮我整理一下',
+        id: 'legacy-user-1',
+        messageId: 'legacy-user-1',
+        sessionId: 'legacy-session-1',
+        timestamp: '2026-04-20T10:00:00.000Z',
+      },
+      {
+        type: 'assistant',
+        content: '这是旧历史里的回答',
+        id: 'legacy-assistant-1',
+        messageId: 'legacy-assistant-1',
+        sessionId: 'legacy-session-1',
+        timestamp: '2026-04-20T10:00:01.000Z',
+      },
+    ],
+    conversationTurns: [],
+    conversationRounds: [],
+    runCards: [],
+  });
+
+  assert.match(markup, /data-message-component="true"[^>]*>请帮我整理一下/);
+  assert.match(markup, /data-run-card="true"/);
+  assert.match(markup, /已完成 :: 这是旧历史里的回答/);
+  assert.doesNotMatch(markup, /data-message-component="true"[^>]*>这是旧历史里的回答/);
+});
+
+test('ChatMessagesPane upgrades anchorless legacy assistant history into a standalone RunCard', () => {
+  const markup = renderPane({
+    isLoading: false,
+    chatMessages: [
+      {
+        type: 'assistant',
+        content: '思考中...',
+        id: 'legacy-thinking-1',
+        messageId: 'legacy-thinking-1',
+        sessionId: 'legacy-session-2',
+        timestamp: '2026-04-20T10:00:00.000Z',
+        normalizedKind: 'thinking',
+        isThinking: true,
+      },
+      {
+        type: 'assistant',
+        content: '这是没有 user 锚点的旧回答',
+        id: 'legacy-assistant-2',
+        messageId: 'legacy-assistant-2',
+        sessionId: 'legacy-session-2',
+        timestamp: '2026-04-20T10:00:03.000Z',
+      },
+    ],
+    visibleMessages: [
+      {
+        type: 'assistant',
+        content: '思考中...',
+        id: 'legacy-thinking-1',
+        messageId: 'legacy-thinking-1',
+        sessionId: 'legacy-session-2',
+        timestamp: '2026-04-20T10:00:00.000Z',
+        normalizedKind: 'thinking',
+        isThinking: true,
+      },
+      {
+        type: 'assistant',
+        content: '这是没有 user 锚点的旧回答',
+        id: 'legacy-assistant-2',
+        messageId: 'legacy-assistant-2',
+        sessionId: 'legacy-session-2',
+        timestamp: '2026-04-20T10:00:03.000Z',
+      },
+    ],
+    conversationTurns: [],
+    conversationRounds: [],
+    runCards: [],
+  });
+
+  assert.match(markup, /data-run-card="true"/);
+  assert.match(markup, /已完成 :: 这是没有 user 锚点的旧回答/);
+  assert.doesNotMatch(markup, /data-message-component="true"[^>]*>思考中\.\.\./);
+  assert.doesNotMatch(markup, /data-message-component="true"[^>]*>这是没有 user 锚点的旧回答/);
 });
 
 test('ChatMessagesPane renders only one run card per user anchor and suppresses the legacy assistant surface when runCards are present', () => {

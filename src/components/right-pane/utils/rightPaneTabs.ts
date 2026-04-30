@@ -3,7 +3,7 @@ import { getRightPaneTargetIdentity } from './rightPaneTargetIdentity.js';
 
 type UpsertResult = {
   tabs: RightPaneTab[];
-  activeTabId: string;
+  activeTabId: string | null;
 };
 
 type CloseResult = {
@@ -11,19 +11,37 @@ type CloseResult = {
   activeTabId: string | null;
 };
 
-export function upsertRightPaneTab(tabs: RightPaneTab[], target: RightPaneTarget): UpsertResult {
+type UpsertOptions = {
+  activate?: boolean;
+  markAsFresh?: boolean;
+  currentActiveTabId?: string | null;
+};
+
+export function upsertRightPaneTab(
+  tabs: RightPaneTab[],
+  target: RightPaneTarget,
+  options: UpsertOptions = {},
+): UpsertResult {
   const nextId = getRightPaneTargetIdentity(target);
   const existingIndex = tabs.findIndex((tab) => tab.id === nextId);
+  const shouldActivate = options.activate !== false;
+  const nextActiveTabId = shouldActivate
+    ? nextId
+    : (options.currentActiveTabId && tabs.some((tab) => tab.id === options.currentActiveTabId)
+      ? options.currentActiveTabId
+      : nextId);
 
   if (existingIndex >= 0) {
     const nextTabs = tabs.slice();
+    const previousTab = nextTabs[existingIndex];
     nextTabs[existingIndex] = {
       id: nextId,
       target,
+      isFresh: options.markAsFresh ? true : (shouldActivate ? false : previousTab.isFresh),
     };
     return {
       tabs: nextTabs,
-      activeTabId: nextId,
+      activeTabId: nextActiveTabId,
     };
   }
 
@@ -33,9 +51,10 @@ export function upsertRightPaneTab(tabs: RightPaneTab[], target: RightPaneTarget
       {
         id: nextId,
         target,
+        isFresh: options.markAsFresh ? true : false,
       },
     ],
-    activeTabId: nextId,
+    activeTabId: nextActiveTabId,
   };
 }
 

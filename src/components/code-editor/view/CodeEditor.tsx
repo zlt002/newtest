@@ -8,7 +8,7 @@ import { useMarkdownAnnotations } from '../hooks/useMarkdownAnnotations';
 import { useCodeEditorSettings } from '../hooks/useCodeEditorSettings';
 import { useEditorKeyboardShortcuts } from '../hooks/useEditorKeyboardShortcuts';
 import type { CodeEditorFile, FileDraftPreviewOperation } from '../types/types';
-import { applyDraftPreviewOperations } from '../utils/draftPreview';
+import { applyDraftPreviewOperations, getAnimatedDraftPreviewContent } from '../utils/draftPreview';
 import { createMinimapExtension, createScrollToFirstChunkExtension, getLanguageExtensions } from '../utils/editorExtensions';
 import { getDefaultMarkdownPreview, isMarkdownFileName } from '../utils/markdownPreviewState';
 import { createEmptyMarkdownToolbarState, isMarkdownToolbarStateEqual, type MarkdownToolbarState } from '../utils/markdownToolbarState';
@@ -50,6 +50,8 @@ export default function CodeEditor({
   const [markdownPreview, setMarkdownPreview] = useState(() => getDefaultMarkdownPreview(file.name));
   const [requestedEditAnnotationId, setRequestedEditAnnotationId] = useState<string | null>(null);
   const [markdownToolbarState, setMarkdownToolbarState] = useState<MarkdownToolbarState>(() => createEmptyMarkdownToolbarState());
+  const [draftPreviewRevealStartMs, setDraftPreviewRevealStartMs] = useState<number | null>(null);
+  const [draftPreviewNowMs, setDraftPreviewNowMs] = useState(() => Date.now());
 
   const {
     isDarkMode,
@@ -83,13 +85,61 @@ export default function CodeEditor({
   }, [file.name]);
 
   const isHtmlFile = useMemo(() => shouldShowVisualHtmlAction(file), [file]);
+
+  const pendingWritePreviewKey = useMemo(() => {
+    const pendingWrite = draftPreviewOperations.findLast((operation) => (
+      operation.mode === 'write' && operation.status === 'pending'
+    ));
+
+    if (!pendingWrite) {
+      return null;
+    }
+
+    return `${pendingWrite.toolId}:${pendingWrite.timestamp}:${pendingWrite.newText.length}`;
+  }, [draftPreviewOperations]);
+
+  useEffect(() => {
+    if (!pendingWritePreviewKey) {
+      setDraftPreviewRevealStartMs(null);
+      return;
+    }
+
+    setDraftPreviewRevealStartMs(Date.now());
+    setDraftPreviewNowMs(Date.now());
+  }, [pendingWritePreviewKey]);
+
+  useEffect(() => {
+    if (!pendingWritePreviewKey || !draftPreviewRevealStartMs) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setDraftPreviewNowMs(Date.now());
+    }, 50);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [draftPreviewRevealStartMs, pendingWritePreviewKey]);
+
   const effectiveContent = useMemo(() => {
     if (draftPreviewOperations.length === 0 || content !== persistedContent) {
       return content;
     }
 
-    return applyDraftPreviewOperations(content, draftPreviewOperations);
-  }, [content, draftPreviewOperations, persistedContent]);
+    const finalPreviewContent = applyDraftPreviewOperations(content, draftPreviewOperations);
+
+    if (!pendingWritePreviewKey) {
+      return finalPreviewContent;
+    }
+
+    return getAnimatedDraftPreviewContent({
+      content,
+      operations: draftPreviewOperations,
+      nowMs: draftPreviewNowMs,
+      revealStartMs: draftPreviewRevealStartMs,
+    });
+  }, [content, draftPreviewNowMs, draftPreviewOperations, draftPreviewRevealStartMs, pendingWritePreviewKey, persistedContent]);
 
   const handleOpenVisualEditor = useCallback(() => {
     if (typeof window === 'undefined') {

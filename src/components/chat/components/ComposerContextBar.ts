@@ -8,7 +8,7 @@ export function ComposerContextBar({
   label,
   blockedOnDecision = false,
 }: {
-  status: 'queued' | 'starting' | 'streaming' | 'waiting_for_tool' | 'completed' | 'failed' | 'aborted';
+  status: 'idle' | 'queued' | 'starting' | 'streaming' | 'waiting_for_tool' | 'completed' | 'failed' | 'aborted';
   label: string;
   blockedOnDecision?: boolean;
 }) {

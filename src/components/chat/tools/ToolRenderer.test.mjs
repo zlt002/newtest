@@ -52,6 +52,28 @@ test('TodoListContent renders todo items for TodoWrite cards', () => {
 
   assert.match(markup, /Write spec/);
   assert.match(markup, /Review draft/);
-  assert.match(markup, /pending/);
-  assert.match(markup, /in progress/);
+  assert.match(markup, /待处理/);
+  assert.match(markup, /进行中/);
+});
+
+test('TodoListContent supports a compact mode for dense surfaces like RunCard panels', () => {
+  const markup = renderToStaticMarkup(
+    React.createElement(TodoListContent, {
+      todos: [
+        { content: 'Write spec', status: 'pending', activeForm: 'Write spec' },
+        { content: 'Review draft', status: 'in_progress', activeForm: 'Review draft' },
+        { content: 'Ship fix', status: 'completed', activeForm: 'Ship fix' },
+      ],
+      compact: true,
+      isResult: false,
+    }),
+  );
+
+  assert.match(markup, /data-todo-list-compact="true"/);
+  assert.match(markup, /Write spec/);
+  assert.match(markup, /Review draft/);
+  assert.match(markup, /Ship fix/);
+  assert.match(markup, /待处理/);
+  assert.match(markup, /进行中/);
+  assert.match(markup, /已完成/);
 });

@@ -28,13 +28,13 @@ type RenderableTimelineEntry = TimelineSingleEntry | TimelineToolChainEntry;
 function resolveToneClasses(tone: RunCardProcessItem['tone']) {
   switch (tone) {
     case 'danger':
-      return 'border-red-200 bg-red-50 text-red-800';
+      return 'border-red-200 bg-red-50 text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200';
     case 'warning':
-      return 'border-amber-200 bg-amber-50 text-amber-800';
+      return 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200';
     case 'success':
-      return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+      return 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200';
     default:
-      return 'border-neutral-200 bg-neutral-50 text-neutral-800';
+      return 'border-neutral-200 bg-neutral-50 text-neutral-800 dark:border-neutral-800 dark:bg-neutral-900/70 dark:text-neutral-200';
   }
 }
 
@@ -230,9 +230,9 @@ function ProcessBody({ body, variant = 'neutral' }: ProcessBodyProps) {
   const formattedJson = tryFormatJson(body);
   if (formattedJson) {
     const variantClasses = {
-      neutral: 'border-neutral-200 bg-neutral-100 text-neutral-800',
-      emerald: 'border-emerald-200 bg-emerald-50/60 text-emerald-900',
-      slate: 'border-slate-200 bg-slate-100 text-slate-800',
+      neutral: 'border-neutral-200 bg-neutral-100 text-neutral-800 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-200',
+      emerald: 'border-emerald-200 bg-emerald-50/60 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200',
+      slate: 'border-slate-200 bg-slate-100 text-slate-800 dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-200',
     };
     return (
       <pre className={`mt-1 overflow-x-auto rounded-lg border p-3 font-mono text-xs leading-5 ${variantClasses[variant]}`}>
@@ -244,8 +244,8 @@ function ProcessBody({ body, variant = 'neutral' }: ProcessBodyProps) {
   if (variant === 'slate') {
     const cleaned = stripLineNumbers(body);
     return (
-      <div className="mt-1 text-sm leading-6 text-slate-800">
-        <RuntimeMarkdown className="prose prose-sm max-w-none">{cleaned}</RuntimeMarkdown>
+      <div className="mt-1 text-sm leading-6 text-slate-800 dark:text-slate-200">
+        <RuntimeMarkdown className="prose prose-sm max-w-none dark:prose-invert">{cleaned}</RuntimeMarkdown>
       </div>
     );
   }
@@ -337,12 +337,12 @@ function renderSingleItem(item: RunCardProcessItem) {
       className={`rounded-2xl border px-4 py-3 shadow-sm ${resolveToneClasses(item.tone)}`}
     >
       <div className="mb-2 flex items-center justify-between gap-3">
-        <div className="border-current/10 inline-flex items-center rounded-full border bg-white/70 px-2 py-0.5 text-[10px] font-semibold tracking-[0.08em]">
+        <div className="border-current/10 inline-flex items-center rounded-full border bg-white/70 px-2 py-0.5 text-[10px] font-semibold tracking-[0.08em] dark:bg-neutral-950/70">
           {resolveItemLabel(item)}
         </div>
         <div className="text-[11px] opacity-70">{formatTimestamp(item.timestamp)}</div>
       </div>
-      <div className="text-xs font-medium text-neutral-500">{item.title}</div>
+      <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400">{item.title}</div>
       <ProcessItemBody item={item} variant="neutral" />
     </div>
   );
@@ -353,27 +353,27 @@ function renderToolChain(entry: TimelineToolChainEntry) {
     <div
       key={`${entry.use.id}:${entry.result.id}`}
       data-chat-v2-run-card-process-combo="tool-chain"
-      className="overflow-hidden rounded-2xl border border-emerald-200 bg-white shadow-sm"
+      className="overflow-hidden rounded-2xl border border-emerald-200 bg-white shadow-sm dark:border-emerald-900/60 dark:bg-neutral-900"
     >
-      <div className="grid gap-px bg-emerald-100">
-        <div className="bg-emerald-50 px-4 py-3 text-emerald-900">
+      <div className="grid gap-px bg-emerald-100 dark:bg-neutral-800">
+        <div className="bg-emerald-50 px-4 py-3 text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
           <div className="mb-2 flex items-center justify-between gap-3">
-            <div className="inline-flex items-center rounded-full border border-emerald-200 bg-white px-2 py-0.5 text-[10px] font-semibold tracking-[0.08em] text-emerald-700">
+            <div className="inline-flex items-center rounded-full border border-emerald-200 bg-white px-2 py-0.5 text-[10px] font-semibold tracking-[0.08em] text-emerald-700 dark:border-emerald-900/60 dark:bg-neutral-950 dark:text-emerald-200">
               工具调用
             </div>
             <div className="text-[11px] text-emerald-700/80">{formatTimestamp(entry.use.timestamp)}</div>
           </div>
-          <div className="text-xs font-medium text-emerald-700/80">{entry.use.title}</div>
+          <div className="text-xs font-medium text-emerald-700/80 dark:text-emerald-300">{entry.use.title}</div>
           <ProcessItemBody item={entry.use} variant="emerald" />
         </div>
-        <div className="bg-slate-50 px-4 py-3 text-slate-800">
+        <div className="bg-slate-50 px-4 py-3 text-slate-800 dark:bg-slate-950/40 dark:text-slate-200">
           <div className="mb-2 flex items-center justify-between gap-3">
-            <div className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold tracking-[0.08em] text-slate-600">
+            <div className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold tracking-[0.08em] text-slate-600 dark:border-slate-700 dark:bg-neutral-950 dark:text-slate-200">
               工具结果
             </div>
-            <div className="text-[11px] text-slate-500">{formatTimestamp(entry.result.timestamp)}</div>
+            <div className="text-[11px] text-slate-500 dark:text-slate-400">{formatTimestamp(entry.result.timestamp)}</div>
           </div>
-          <div className="text-xs font-medium text-slate-500">{entry.result.title}</div>
+          <div className="text-xs font-medium text-slate-500 dark:text-slate-400">{entry.result.title}</div>
           <ProcessItemBody item={entry.result} variant="slate" />
         </div>
       </div>
@@ -398,14 +398,14 @@ export function RunCardProcessTimeline({
         <section
           key={group.key}
           data-chat-v2-run-card-process-group={group.key}
-          className="rounded-3xl border border-neutral-200 bg-white/80 p-4 shadow-sm"
+          className="rounded-3xl border border-neutral-200 bg-white/80 p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900/80"
         >
-          <div className="mb-3 flex items-center justify-between gap-3 border-b border-neutral-100 pb-3">
+          <div className="mb-3 flex items-center justify-between gap-3 border-b border-neutral-100 pb-3 dark:border-neutral-800">
             <div>
-              <div className="text-sm font-semibold text-neutral-900">{group.title}</div>
-              <div className="text-xs text-neutral-500">{group.summary}</div>
+              <div className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{group.title}</div>
+              <div className="text-xs text-neutral-500 dark:text-neutral-400">{group.summary}</div>
             </div>
-            <div className="rounded-full bg-neutral-100 px-3 py-1 text-[11px] text-neutral-600">
+            <div className="rounded-full bg-neutral-100 px-3 py-1 text-[11px] text-neutral-600 dark:bg-neutral-950 dark:text-neutral-300">
               {group.items.length} 项
             </div>
           </div>

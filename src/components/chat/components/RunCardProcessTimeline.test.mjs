@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { register } from 'node:module';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -89,6 +90,15 @@ test('RunCardProcessTimeline renders TodoWrite tool input as a todo list instead
   );
 
   assert.match(markup, /检查项目是否已接入 Claude Agent SDK 的 todo tracking/);
-  assert.match(markup, /completed/);
+  assert.match(markup, /completed|已完成/);
   assert.match(markup, /data-badge="true"/);
+});
+
+test('RuntimeMarkdown source defines dark theme classes for inline code, quotes, and tables used by run cards', async () => {
+  const source = await readFile(new URL('./RuntimeMarkdown.ts', import.meta.url), 'utf8');
+
+  assert.match(source, /dark:border-neutral-700/);
+  assert.match(source, /dark:bg-neutral-800/);
+  assert.match(source, /dark:text-neutral-100/);
+  assert.match(source, /dark:bg-neutral-900/);
 });

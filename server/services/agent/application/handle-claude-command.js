@@ -49,6 +49,91 @@ function buildContextFilePrelude(contextFilePaths) {
     .trim();
 }
 
+function isMarkdownContextFile(filePath) {
+  return /\.(md|markdown)$/i.test(String(filePath || '').trim());
+}
+
+function extractUserMessageText(content) {
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  if (!Array.isArray(content)) {
+    return '';
+  }
+
+  return content
+    .filter((block) => block?.type === 'text' && typeof block.text === 'string')
+    .map((block) => block.text)
+    .join('\n')
+    .trim();
+}
+
+function isDirectDocumentWriteIntent(text) {
+  const normalized = String(text || '').trim();
+  if (!normalized) {
+    return false;
+  }
+
+  const asksToExplain = /(?:解释|说明|分析|看看|查看|总结|阅读|review|explain|summari[sz]e|analy[sz]e)/i.test(normalized);
+  if (asksToExplain) {
+    return false;
+  }
+
+  const mentionsDocument = /(?:prd|文档|markdown|readme|spec|说明书|需求|方案|内容)/i.test(normalized);
+  const mentionsWriting = /(?:写|撰写|生成|起草|补充|完善|更新|改写|编写|输出|填写|write|draft|generate|create|update|revise|complete)/i.test(normalized);
+
+  return mentionsDocument && mentionsWriting;
+}
+
+function buildDirectWritePrelude(filePath) {
+  const normalizedFilePath = typeof filePath === 'string' ? filePath.trim() : '';
+  if (!normalizedFilePath) {
+    return '';
+  }
+
+  return [
+    `<output-file>${normalizedFilePath}</output-file>`,
+    '<system-reminder>Directly update the output file for this request. Prefer Write/Edit so the document is written into that file instead of only replying in chat.</system-reminder>',
+    '<system-reminder>For long-form document generation, create the file as early as possible with a minimal scaffold, then keep expanding it with multiple incremental Write/Edit updates. Do not wait until the very end to write the whole document in one shot.</system-reminder>',
+  ].join('\n');
+}
+
+function resolveDirectWriteFilePath({ contextFilePaths, prompt, message }) {
+  if (!Array.isArray(contextFilePaths) || contextFilePaths.length !== 1) {
+    return null;
+  }
+
+  const [filePath] = contextFilePaths;
+  if (!isMarkdownContextFile(filePath)) {
+    return null;
+  }
+
+  const messageText = extractUserMessageText(message?.content);
+  const combinedIntentText = [prompt, messageText].filter(Boolean).join('\n').trim();
+
+  return isDirectDocumentWriteIntent(combinedIntentText) ? filePath : null;
+}
+
+function prependProtocolPrelude(content, prelude) {
+  if (!prelude) {
+    return content;
+  }
+
+  if (typeof content === 'string') {
+    return content ? `${prelude}\n${content}` : prelude;
+  }
+
+  if (Array.isArray(content)) {
+    return [
+      { type: 'text', text: prelude },
+      ...content,
+    ];
+  }
+
+  return prelude;
+}
+
 function prependContextToMessageContent(content, prelude) {
   if (!prelude) {
     return content;
@@ -82,6 +167,20 @@ function injectContextFilesIntoUserMessage(message, contextFilePaths) {
   };
 }
 
+function injectDirectWriteProtocolIntoUserMessage(message, filePath) {
+  const normalizedMessage = message && typeof message === 'object' ? { ...message } : { role: 'user', content: '' };
+  const prelude = buildDirectWritePrelude(filePath);
+
+  if (!prelude) {
+    return normalizedMessage;
+  }
+
+  return {
+    ...normalizedMessage,
+    content: prependProtocolPrelude(normalizedMessage.content, prelude),
+  };
+}
+
 // WebSocket / transport 层进入 V2 的统一入口。
 // 这里负责把“是否继续已有会话”这件事翻译成 start / continue 两种 application 调用。
 export async function handleClaudeCommandWithAgentV2({
@@ -95,8 +194,16 @@ export async function handleClaudeCommandWithAgentV2({
     ? options.message
     : null;
   const contextFilePaths = normalizeContextFilePaths(options.contextFilePaths);
-  const effectiveMessage = injectContextFilesIntoUserMessage(message, contextFilePaths);
   const prompt = String(command || '').trim();
+  const directWriteFilePath = resolveDirectWriteFilePath({
+    contextFilePaths,
+    prompt,
+    message,
+  });
+  const effectiveMessage = injectDirectWriteProtocolIntoUserMessage(
+    injectContextFilesIntoUserMessage(message, contextFilePaths),
+    directWriteFilePath,
+  );
   const hasMessageContent = Boolean(
     effectiveMessage
     && (

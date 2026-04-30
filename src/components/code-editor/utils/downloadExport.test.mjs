@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import JSZip from 'jszip';
 import {
   buildDocxDownloadPayload,
   buildMarkdownDownloadPayload,
@@ -44,6 +45,33 @@ test('buildDocxDownloadPayload 导出包含中文 Mermaid 流程图的 docx 不�
   assert.equal(payload.fileName, 'diagram.docx');
   assert.equal(payload.parts.length, 1);
   assert.ok(payload.parts[0] instanceof Blob);
+});
+
+test('buildDocxDownloadPayload 为表格写入固定布局和有效列宽，避免 web 导入时挤压', async () => {
+  const payload = await buildDocxDownloadPayload({
+    content: [
+      '## 文档信息',
+      '',
+      '| 项目 | 内容 |',
+      '| --- | --- |',
+      '| 产品名称 | 校园二手交易小程序 |',
+      '| 文档版本 | V1.0 MVP |',
+    ].join('\n'),
+    fileName: 'table.md',
+  });
+
+  const blob = payload.parts[0];
+  assert.ok(blob instanceof Blob);
+
+  const zip = await JSZip.loadAsync(Buffer.from(await blob.arrayBuffer()));
+  const documentXml = await zip.file('word/document.xml').async('string');
+  const gridWidths = Array.from(documentXml.matchAll(/<w:gridCol w:w="(\d+)"\/>/g), (match) => Number(match[1]));
+
+  assert.match(documentXml, /<w:tblLayout w:type="fixed"\/>/);
+  assert.deepEqual(gridWidths.length, 2);
+  assert.ok(gridWidths.every((width) => width >= 1800));
+  assert.equal(gridWidths.reduce((sum, width) => sum + width, 0), 9000);
+  assert.doesNotMatch(documentXml, /<w:gridCol w:w="100"\/><w:gridCol w:w="100"\/>/);
 });
 
 test('createCodeBlockRuns 将代码块按行拆分并保留显式换行', () => {

@@ -126,6 +126,172 @@ function isDuplicatedByStandaloneRunCard(message: ChatMessage, standaloneRunCard
   });
 }
 
+function buildLegacyProcessItem(message: ChatMessage, index: number): RunCardModel['processItems'][number] | null {
+  const body = String(message.content || '').trim();
+  if (!body) {
+    return null;
+  }
+
+  if (message.isThinking) {
+    return {
+      id: getMessageIdentity(message) || `legacy-thinking-${index}`,
+      timestamp: String(message.timestamp || ''),
+      kind: 'thinking',
+      title: 'Thinking',
+      body,
+    };
+  }
+
+  if (message.isTaskNotification) {
+    return {
+      id: getMessageIdentity(message) || `legacy-task-${index}`,
+      timestamp: String(message.timestamp || ''),
+      kind: 'subagent_progress',
+      title: '阶段更新',
+      body,
+    };
+  }
+
+  return null;
+}
+
+function buildLegacyAssistantRunCardFromGroup(
+  assistantMessages: ChatMessage[],
+  anchorMessage: ChatMessage | null,
+  existingStandaloneRunCards: RunCardModel[],
+  isLoading: boolean,
+): RunCardModel | null {
+  if (assistantMessages.length === 0) {
+    return null;
+  }
+
+  const processItems = assistantMessages
+    .map((message, index) => buildLegacyProcessItem(message, index))
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+  const responseCandidates = assistantMessages
+    .filter((message) => message.type === 'assistant' && !message.isThinking && !message.isTaskNotification)
+    .map((message) => ({
+      id: getMessageIdentity(message) || 'legacy-assistant-response',
+      timestamp: String(message.timestamp || ''),
+      body: String(message.content || '').trim(),
+      sessionId: String(message.sessionId || ''),
+    }))
+    .filter((message) => Boolean(message.body));
+
+  if (processItems.length === 0 && responseCandidates.length === 0) {
+    return null;
+  }
+
+  const responseMessages = responseCandidates.map((message, index) => ({
+    id: message.id,
+    timestamp: message.timestamp,
+    kind: index === responseCandidates.length - 1 ? 'final' as const : 'phase' as const,
+    body: message.body,
+  }));
+  const lastAssistantMessage = assistantMessages[assistantMessages.length - 1];
+  const lastResponse = responseCandidates[responseCandidates.length - 1] || null;
+  const finalResponse = lastResponse?.body || '';
+  const anchorMessageId = anchorMessage ? getMessageIdentity(anchorMessage) : '';
+
+  if (!anchorMessageId && isLoading && processItems.length === 0) {
+    return null;
+  }
+
+  if (!anchorMessageId && finalResponse) {
+    const duplicated = existingStandaloneRunCards.some((card) => (
+      normalizeComparableText(card.finalResponse) === normalizeComparableText(finalResponse)
+    ));
+    if (duplicated) {
+      return null;
+    }
+  }
+
+  const normalizedResponseMessages = anchorMessageId && processItems.length === 0 && responseMessages.length > 0
+    ? [responseMessages[responseMessages.length - 1]]
+    : responseMessages;
+  const cardStatus = isLoading && anchorMessageId
+    ? 'running'
+    : (isLoading && !finalResponse ? 'running' : 'completed');
+  const startedAt = String(anchorMessage?.timestamp || assistantMessages[0]?.timestamp || '');
+  const updatedAt = String(lastAssistantMessage?.timestamp || startedAt);
+
+  return {
+    sessionId: String(lastResponse?.sessionId || lastAssistantMessage?.sessionId || anchorMessage?.sessionId || ''),
+    anchorMessageId,
+    cardStatus,
+    headline: cardStatus === 'running' ? '执行中' : '已完成',
+    finalResponse,
+    responseMessages: normalizedResponseMessages,
+    processItems,
+    previewItems: processItems.slice(-5),
+    activeInteraction: null,
+    startedAt,
+    updatedAt,
+    completedAt: cardStatus === 'running' ? null : updatedAt,
+    defaultExpanded: false,
+    source: 'fallback',
+  };
+}
+
+function buildLegacyAssistantRunCards(
+  messages: ChatMessage[],
+  runCardsByAnchorMessageId: Map<string, RunCardModel>,
+  standaloneRunCards: RunCardModel[],
+  isLoading: boolean,
+): RunCardModel[] {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return [];
+  }
+
+  const synthesizedCards: RunCardModel[] = [];
+  let currentAnchorMessage: ChatMessage | null = null;
+  let currentAssistantGroup: ChatMessage[] = [];
+
+  const flushAssistantGroup = () => {
+    if (currentAssistantGroup.length === 0) {
+      return;
+    }
+
+    const anchorMessageId = currentAnchorMessage ? getMessageIdentity(currentAnchorMessage) : '';
+    if (anchorMessageId && runCardsByAnchorMessageId.has(anchorMessageId)) {
+      currentAssistantGroup = [];
+      return;
+    }
+
+    const card = buildLegacyAssistantRunCardFromGroup(
+      currentAssistantGroup,
+      currentAnchorMessage,
+      [...standaloneRunCards, ...synthesizedCards.filter((item) => !item.anchorMessageId)],
+      isLoading,
+    );
+
+    if (card) {
+      synthesizedCards.push(card);
+    }
+
+    currentAssistantGroup = [];
+  };
+
+  for (const message of messages) {
+    if (message.type === 'user') {
+      flushAssistantGroup();
+      currentAnchorMessage = message;
+      continue;
+    }
+
+    if (message.type === 'assistant') {
+      currentAssistantGroup.push(message);
+      continue;
+    }
+
+    flushAssistantGroup();
+    currentAnchorMessage = null;
+  }
+
+  flushAssistantGroup();
+  return synthesizedCards;
+}
+
 function trimLegacyAssistantMessages(
   messages: ChatMessage[],
   hasRenderableRunCards: boolean,
@@ -406,6 +572,25 @@ export default function ChatMessagesPane({
     }
 
     runCardsByAnchorMessageId.set(anchorMessageId, card);
+  }
+  const synthesizedLegacyRunCards = useConversationTurns
+    ? []
+    : buildLegacyAssistantRunCards(
+        chatMessages,
+        runCardsByAnchorMessageId,
+        standaloneRunCards,
+        isLoading,
+      );
+  for (const card of synthesizedLegacyRunCards) {
+    const anchorMessageId = String(card.anchorMessageId || '').trim();
+    if (anchorMessageId) {
+      if (!runCardsByAnchorMessageId.has(anchorMessageId)) {
+        runCardsByAnchorMessageId.set(anchorMessageId, card);
+      }
+      continue;
+    }
+
+    standaloneRunCards.push(card);
   }
   const transientAssistantRunCard = useConversationTurns
     ? null

@@ -1,4 +1,5 @@
 type ComposerStatus =
+  | 'idle'
   | 'queued'
   | 'starting'
   | 'streaming'
@@ -15,6 +16,7 @@ type ExecutionLike = {
 type AgentComposerStateInput = {
   isLoading: boolean;
   claudeStatusText: string | null;
+  hasConversationHistory: boolean;
   execution: ExecutionLike;
 };
 
@@ -45,6 +47,7 @@ function labelForExecutionStatus(status: string, fallback: string | null) {
 export function resolveAgentComposerState({
   isLoading,
   claudeStatusText,
+  hasConversationHistory,
   execution,
 }: AgentComposerStateInput): {
   status: ComposerStatus;
@@ -68,6 +71,13 @@ export function resolveAgentComposerState({
     return {
       status: 'streaming',
       label: claudeStatusText || '思考中',
+    };
+  }
+
+  if (!hasConversationHistory) {
+    return {
+      status: 'idle',
+      label: '发送消息开始对话',
     };
   }
 

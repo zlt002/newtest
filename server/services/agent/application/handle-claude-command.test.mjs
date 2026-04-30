@@ -113,6 +113,74 @@ test('handleClaudeCommandWithAgentV2 forwards official user messages into sessio
   assert.equal(calls[0].prompt, '');
 });
 
+test('handleClaudeCommandWithAgentV2 injects hidden output-file protocol for markdown writing intents', async () => {
+  const calls = [];
+  const services = {
+    async startSessionRun(input) {
+      calls.push(input);
+      return {
+        sessionId: 'sess-prd',
+        run: { id: 'run-prd', sessionId: 'sess-prd' },
+        events: [],
+      };
+    },
+  };
+  const writer = { send() {} };
+
+  await handleClaudeCommandWithAgentV2({
+    command: '帮我写一份prd 内容你定 不要问我',
+    options: {
+      projectPath: '/tmp/demo',
+      message: {
+        role: 'user',
+        content: '帮我写一份prd 内容你定 不要问我',
+      },
+      contextFilePaths: ['/tmp/demo/PRD.md'],
+    },
+    services,
+    writer,
+  });
+
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].message.content, /<context-file>\/tmp\/demo\/PRD\.md<\/context-file>/);
+  assert.match(calls[0].message.content, /<output-file>\/tmp\/demo\/PRD\.md<\/output-file>/);
+  assert.match(calls[0].message.content, /<system-reminder>[\s\S]*directly update the output file[\s\S]*<\/system-reminder>/i);
+});
+
+test('handleClaudeCommandWithAgentV2 does not inject output-file protocol for markdown explanation requests', async () => {
+  const calls = [];
+  const services = {
+    async startSessionRun(input) {
+      calls.push(input);
+      return {
+        sessionId: 'sess-explain',
+        run: { id: 'run-explain', sessionId: 'sess-explain' },
+        events: [],
+      };
+    },
+  };
+  const writer = { send() {} };
+
+  await handleClaudeCommandWithAgentV2({
+    command: '请解释一下这个 PRD 的结构',
+    options: {
+      projectPath: '/tmp/demo',
+      message: {
+        role: 'user',
+        content: '请解释一下这个 PRD 的结构',
+      },
+      contextFilePaths: ['/tmp/demo/PRD.md'],
+    },
+    services,
+    writer,
+  });
+
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].message.content, /<context-file>\/tmp\/demo\/PRD\.md<\/context-file>/);
+  assert.doesNotMatch(calls[0].message.content, /<output-file>\/tmp\/demo\/PRD\.md<\/output-file>/);
+  assert.doesNotMatch(calls[0].message.content, /<system-reminder>/);
+});
+
 test('handleClaudeCommandWithAgentV2 continues an existing selected session', async () => {
   const sessionId = '550e8400-e29b-41d4-a716-446655440009';
   const calls = [];

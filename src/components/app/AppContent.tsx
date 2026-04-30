@@ -18,6 +18,8 @@ import { getDesktopSidebarPresentation } from './utils/desktopSidebarLayout';
 import MobileNav from './MobileNav';
 import { CLIENT_EVENT_TYPES } from '@components/chat/types/transport';
 
+const shouldLogPrdStreamingDebug = Boolean(import.meta.env?.DEV);
+
 export default function AppContent() {
   const navigate = useNavigate();
   const { sessionId } = useParams<{ sessionId?: string }>();
@@ -235,13 +237,50 @@ export default function AppContent() {
     }
 
     if (followAlongDecision.shouldOpenTarget) {
-      handleFileOpen(event.filePath, undefined);
+      const isViewingDifferentTarget = (
+        rightPaneTarget !== null
+        && !(
+          (rightPaneTarget.type === 'code' || rightPaneTarget.type === 'markdown')
+          && rightPaneTarget.filePath === event.filePath
+        )
+      );
+
+      handleFileOpen(event.filePath, undefined, {
+        activate: !isViewingDifferentTarget,
+        markAsFresh: isViewingDifferentTarget,
+      });
     }
   };
 
   const handleComposerAppendReady = useCallback((append: ((text: string) => void) | null) => {
     setAppendToChatInput(() => append);
   }, []);
+
+  const handleChatFileOpen = useCallback((filePath: string, diffInfo?: Parameters<NonNullable<typeof handleFileOpen>>[1]) => {
+    if (shouldLogPrdStreamingDebug) {
+      console.info('[PRD debug][AppContent] 收到 onFileOpen 请求', {
+        filePath,
+        diffInfo,
+        currentRightPaneTarget: rightPaneTarget,
+        isRightPaneVisible,
+      });
+    }
+
+    handleFileOpen(filePath, diffInfo);
+  }, [handleFileOpen, isRightPaneVisible, rightPaneTarget]);
+
+  useEffect(() => {
+    if (!shouldLogPrdStreamingDebug) {
+      return;
+    }
+
+    console.info('[PRD debug][AppContent] 右侧状态更新', {
+      isRightPaneVisible,
+      activeTabId,
+      rightPaneTarget,
+      tabCount: tabs.length,
+    });
+  }, [activeTabId, isRightPaneVisible, rightPaneTarget, tabs.length]);
 
   const sidebarProps = useMemo(() => ({
     ...sidebarSharedProps,
@@ -265,13 +304,13 @@ export default function AppContent() {
 
   const sidebarAuxiliaryProps = useMemo(() => ({
     onFileOpen: (filePath: string, diffInfo?: Parameters<NonNullable<typeof handleFileOpen>>[1]) => {
-      handleFileOpen(filePath, diffInfo);
+      handleChatFileOpen(filePath, diffInfo);
     },
     onCommitPreviewOpen: (commit: Parameters<typeof handleCommitPreviewOpen>[0], diff: Parameters<typeof handleCommitPreviewOpen>[1]) => {
       closeDesktopSidebarPeek();
       handleCommitPreviewOpen(commit, diff);
     },
-  }), [closeDesktopSidebarPeek, handleCommitPreviewOpen, handleFileOpen]);
+  }), [closeDesktopSidebarPeek, handleChatFileOpen, handleCommitPreviewOpen]);
 
   return (
     <div className="fixed inset-0 flex bg-background">
@@ -331,7 +370,7 @@ export default function AppContent() {
           >
             <Sidebar
               {...sidebarSharedProps}
-              onFileOpen={handleFileOpen}
+              onFileOpen={handleChatFileOpen}
               onAppendToChatInput={appendToChatInput}
               onCommitPreviewOpen={handleCommitPreviewOpen}
             />
@@ -380,7 +419,7 @@ export default function AppContent() {
           browserRefreshVersion={browserRefreshVersion}
           codeFollowAlongState={codeFollowAlongState}
           draftPreviewState={draftPreviewState}
-          onFileOpen={handleFileOpen}
+          onFileOpen={handleChatFileOpen}
           onOpenUrl={handleUrlOpen}
           onClosePane={handleCloseEditor}
           onSelectRightPaneTab={handleOpenExistingTab}

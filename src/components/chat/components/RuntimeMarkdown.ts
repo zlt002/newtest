@@ -27,7 +27,7 @@ function CodeBlock({ inline, className, children }: CodeBlockProps) {
     return React.createElement(
       'code',
       {
-        className: `whitespace-pre-wrap break-words rounded-md bg-neutral-100 px-1.5 py-0.5 font-mono text-[0.9em] text-neutral-900 ${className || ''}`,
+        className: `whitespace-pre-wrap break-words rounded-md bg-neutral-100 px-1.5 py-0.5 font-mono text-[0.9em] text-neutral-900 dark:border dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100 ${className || ''}`,
       },
       children,
     );
@@ -94,27 +94,27 @@ function createMarkdownComponents(onOpenUrl?: ((url: string) => void) | null) {
     blockquote: ({ children }: { children?: React.ReactNode }) =>
       React.createElement(
         'blockquote',
-        { className: 'my-2 border-l-4 border-neutral-300 pl-4 italic text-neutral-600' },
+        { className: 'my-2 border-l-4 border-neutral-300 pl-4 italic text-neutral-600 dark:border-neutral-700 dark:text-neutral-300' },
         children,
       ),
     table: ({ children }: { children?: React.ReactNode }) =>
       React.createElement(
         'div',
         { className: 'my-2 overflow-x-auto' },
-        React.createElement('table', { className: 'min-w-full border-collapse border border-neutral-200' }, children),
+        React.createElement('table', { className: 'min-w-full border-collapse border border-neutral-200 dark:border-neutral-700' }, children),
       ),
     thead: ({ children }: { children?: React.ReactNode }) =>
-      React.createElement('thead', { className: 'bg-neutral-50' }, children),
+      React.createElement('thead', { className: 'bg-neutral-50 dark:bg-neutral-900' }, children),
     th: ({ children }: { children?: React.ReactNode }) =>
       React.createElement(
         'th',
-        { className: 'border border-neutral-200 px-3 py-2 text-left text-sm font-semibold' },
+        { className: 'border border-neutral-200 px-3 py-2 text-left text-sm font-semibold dark:border-neutral-700 dark:text-neutral-100' },
         children,
       ),
     td: ({ children }: { children?: React.ReactNode }) =>
       React.createElement(
         'td',
-        { className: 'border border-neutral-200 px-3 py-2 align-top text-sm' },
+        { className: 'border border-neutral-200 px-3 py-2 align-top text-sm dark:border-neutral-700 dark:text-neutral-200' },
         children,
       ),
   };

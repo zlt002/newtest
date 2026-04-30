@@ -12,6 +12,7 @@ import {
   WidthType,
   BorderStyle,
   AlignmentType,
+  TableLayoutType,
   LevelFormat,
   UnderlineType,
   type ISectionOptions,
@@ -281,7 +282,46 @@ const tableCellParagraph = (
     : inlineRunsFromNode(cell),
 });
 
+const DOCX_TABLE_TOTAL_WIDTH = 9000;
+const DOCX_TABLE_MIN_COLUMN_WIDTH = 1800;
+
+const tableColumnWidthsFromNode = (node: MarkdownNode): number[] => {
+  const rows = node.children ?? [];
+  const columnCount = Math.max(0, ...rows.map((row) => row.children?.length ?? 0));
+
+  if (columnCount === 0) {
+    return [];
+  }
+
+  const textWeights = new Array(columnCount).fill(1);
+
+  rows.forEach((row) => {
+    (row.children ?? []).forEach((cell, index) => {
+      textWeights[index] = Math.max(textWeights[index], toString(cell).trim().length);
+    });
+  });
+
+  const totalWeight = textWeights.reduce((sum, weight) => sum + weight, 0);
+  const minWidthBudget = DOCX_TABLE_MIN_COLUMN_WIDTH * columnCount;
+
+  if (minWidthBudget >= DOCX_TABLE_TOTAL_WIDTH) {
+    const evenWidth = Math.floor(DOCX_TABLE_TOTAL_WIDTH / columnCount);
+    const widths = new Array(columnCount).fill(evenWidth);
+    widths[columnCount - 1] += DOCX_TABLE_TOTAL_WIDTH - (evenWidth * columnCount);
+    return widths;
+  }
+
+  const flexibleWidth = DOCX_TABLE_TOTAL_WIDTH - minWidthBudget;
+  const widths = textWeights.map((weight) => DOCX_TABLE_MIN_COLUMN_WIDTH
+    + Math.floor((weight / totalWeight) * flexibleWidth));
+  const usedWidth = widths.reduce((sum, width) => sum + width, 0);
+  widths[widths.length - 1] += DOCX_TABLE_TOTAL_WIDTH - usedWidth;
+
+  return widths;
+};
+
 const tableFromNode = (node: MarkdownNode): Table => {
+  const columnWidths = tableColumnWidthsFromNode(node);
   const rows = (node.children ?? []).map((row, rowIndex) => new TableRow({
     tableHeader: rowIndex === 0,
     children: (row.children ?? []).map((cell) => new TableCell({
@@ -306,6 +346,8 @@ const tableFromNode = (node: MarkdownNode): Table => {
       size: 100,
       type: WidthType.PERCENTAGE,
     },
+    columnWidths,
+    layout: TableLayoutType.FIXED,
     alignment: AlignmentType.CENTER,
     margins: {
       top: 60,

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   applyDraftPreviewOperation,
   applyDraftPreviewOperations,
+  getAnimatedDraftPreviewContent,
   getFirstDraftPreviewAnchorLine,
 } from './draftPreview.ts';
 
@@ -134,5 +135,77 @@ test('getFirstDraftPreviewAnchorLine 优先使用显式 lineRange', () => {
       },
     ]),
     2,
+  );
+});
+
+test('getAnimatedDraftPreviewContent 对 pending Write 渐进展开最终文档内容', () => {
+  const operation = {
+    toolId: 'tool-9',
+    filePath: '/demo/file.md',
+    timestamp: '2026-04-17T09:00:01.000Z',
+    source: 'Write',
+    mode: 'write',
+    newText: 'ABCDE',
+    status: 'pending',
+    lineRange: null,
+  };
+
+  assert.equal(
+    getAnimatedDraftPreviewContent({
+      content: '',
+      operations: [operation],
+      nowMs: 1000,
+      revealStartMs: 1000,
+      charsPerSecond: 2,
+    }),
+    'A',
+  );
+
+  assert.equal(
+    getAnimatedDraftPreviewContent({
+      content: '',
+      operations: [operation],
+      nowMs: 2500,
+      revealStartMs: 1000,
+      charsPerSecond: 2,
+    }),
+    'ABC',
+  );
+
+  assert.equal(
+    getAnimatedDraftPreviewContent({
+      content: '',
+      operations: [operation],
+      nowMs: 4000,
+      revealStartMs: 1000,
+      charsPerSecond: 2,
+    }),
+    'ABCDE',
+  );
+});
+
+test('getAnimatedDraftPreviewContent 对非 pending Write 保持完整预览', () => {
+  assert.equal(
+    getAnimatedDraftPreviewContent({
+      content: '标题\n旧段落',
+      operations: [
+        {
+          toolId: 'tool-1',
+          filePath: '/demo/file.md',
+          timestamp: '2026-04-17T09:00:01.000Z',
+          source: 'Edit',
+          mode: 'replace',
+          oldText: '旧段落',
+          newText: '新段落',
+          replaceAll: false,
+          status: 'pending',
+          lineRange: null,
+        },
+      ],
+      nowMs: 1000,
+      revealStartMs: 1000,
+      charsPerSecond: 2,
+    }),
+    '标题\n新段落',
   );
 });

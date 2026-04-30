@@ -18,9 +18,11 @@ export const TodoListContent = memo(
   ({
     todos,
     isResult = false,
+    compact = false,
   }: {
     todos: unknown;
     isResult?: boolean;
+    compact?: boolean;
   }) => {
     const safeTodos = useMemo<TodoItem[]>(() => {
       if (!Array.isArray(todos)) {
@@ -35,6 +37,6 @@ export const TodoListContent = memo(
       return null;
     }
 
-    return <TodoList todos={safeTodos} isResult={isResult} />;
+    return <TodoList todos={safeTodos} isResult={isResult} compact={compact} />;
   }
 );

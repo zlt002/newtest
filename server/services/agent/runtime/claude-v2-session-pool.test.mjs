@@ -4,7 +4,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { __testables, createClaudeV2SessionPool } from './claude-v2-session-pool.js';
-import { createClaudeHooksSessionMemoryStore } from '../../hooks/claude-hooks-session-memory-store.js';
 
 test('session pool uses native v2 sessions for new and resumed sessions', async () => {
   const calls = [];
@@ -275,33 +274,6 @@ test('session pool isolates resume hooks from SDK-side mutation', () => {
   assert.deepEqual(hooks, {
     PreToolUse: [{ matcher: 'Edit', hooks: [{ type: 'command', command: 'echo resume' }] }],
   });
-});
-
-test('session memory store supports get set and delete', () => {
-  const store = createClaudeHooksSessionMemoryStore();
-  const hooks = {
-    Stop: [{ matcher: '', hooks: [{ type: 'prompt', prompt: 'done' }] }],
-  };
-
-  assert.equal(store.get('sess-memory'), undefined);
-
-  store.set('sess-memory', hooks);
-  assert.deepEqual(store.get('sess-memory'), hooks);
-
-  store.delete('sess-memory');
-  assert.equal(store.get('sess-memory'), undefined);
-});
-
-test('session memory store rejects blank session ids without writing empty keys', () => {
-  const store = createClaudeHooksSessionMemoryStore();
-  const hooks = {
-    Stop: [{ matcher: '', hooks: [{ type: 'prompt', prompt: 'done' }] }],
-  };
-
-  assert.equal(store.get('   '), undefined);
-  assert.equal(store.delete('   '), false);
-  assert.throws(() => store.set('   ', hooks), /sessionId/i);
-  assert.equal(store.get(''), undefined);
 });
 
 test('session pool stores a runtime command catalog returned by the native SDK session', async () => {

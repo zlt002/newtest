@@ -24,6 +24,7 @@ type StatusConfig = {
   iconClassName: string;
   badgeClassName: string;
   textClassName: string;
+  label: string;
 };
 
 // Centralized visual config keeps rendering logic compact and easier to scan.
@@ -34,6 +35,7 @@ const STATUS_CONFIG: Record<TodoStatus, StatusConfig> = {
     badgeClassName:
       'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 border-green-200 dark:border-green-800',
     textClassName: 'line-through text-gray-500 dark:text-gray-400',
+    label: '已完成',
   },
   in_progress: {
     icon: Clock,
@@ -41,6 +43,7 @@ const STATUS_CONFIG: Record<TodoStatus, StatusConfig> = {
     badgeClassName:
       'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 border-blue-200 dark:border-blue-800',
     textClassName: 'text-gray-900 dark:text-gray-100',
+    label: '进行中',
   },
   pending: {
     icon: Circle,
@@ -48,6 +51,7 @@ const STATUS_CONFIG: Record<TodoStatus, StatusConfig> = {
     badgeClassName:
       'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700',
     textClassName: 'text-gray-900 dark:text-gray-100',
+    label: '待处理',
   },
 };
 
@@ -74,32 +78,39 @@ const normalizePriority = (priority?: string): TodoPriority => {
 };
 
 const TodoRow = memo(
-  ({ todo }: { todo: NormalizedTodoItem }) => {
+  ({ todo, compact = false }: { todo: NormalizedTodoItem; compact?: boolean }) => {
     const statusConfig = STATUS_CONFIG[todo.status];
     const StatusIcon = statusConfig.icon;
 
     return (
-      <div className="flex items-start gap-2 rounded border border-gray-200 bg-white p-2 transition-colors dark:border-gray-700 dark:bg-gray-800">
-        <div className="mt-0.5 flex-shrink-0">
+      <div
+        data-todo-list-row-compact={compact ? 'true' : 'false'}
+        className={compact
+          ? 'flex items-center gap-1.5 px-0 py-0.5'
+          : 'flex items-start gap-2 rounded border border-gray-200 bg-white p-2 transition-colors dark:border-gray-700 dark:bg-gray-800'}
+      >
+        <div className={`${compact ? '' : 'mt-0.5 '}flex-shrink-0`}>
           <StatusIcon className={statusConfig.iconClassName} />
         </div>
-        <div className="min-w-0 flex-1">
-          <div className="mb-0.5 flex items-start justify-between gap-2">
-            <p className={`text-xs font-medium ${statusConfig.textClassName}`}>
+        <div className="flex-1 min-w-0">
+          <div className={`flex justify-between gap-2 ${compact ? 'items-center' : 'mb-0.5 items-start'}`}>
+            <p className={`min-w-0 flex-1 ${compact ? 'truncate text-[11px]' : 'text-xs'} font-medium ${statusConfig.textClassName}`}>
               {todo.content}
             </p>
             <div className="flex flex-shrink-0 gap-1">
+              {!compact && (
+                <Badge
+                  variant="outline"
+                  className={`px-1.5 py-px text-[10px] ${PRIORITY_BADGE_CLASS[todo.priority]}`}
+                >
+                  {todo.priority}
+                </Badge>
+              )}
               <Badge
                 variant="outline"
-                className={`px-1.5 py-px text-[10px] ${PRIORITY_BADGE_CLASS[todo.priority]}`}
+                className={`${compact ? 'px-1 py-px text-[9px]' : 'px-1.5 py-px text-[10px]'} ${statusConfig.badgeClassName}`}
               >
-                {todo.priority}
-              </Badge>
-              <Badge
-                variant="outline"
-                className={`px-1.5 py-px text-[10px] ${statusConfig.badgeClassName}`}
-              >
-                {todo.status.replace('_', ' ')}
+                {statusConfig.label}
               </Badge>
             </div>
           </div>
@@ -113,9 +124,11 @@ const TodoList = memo(
   ({
     todos,
     isResult = false,
+    compact = false,
   }: {
     todos: TodoItem[];
     isResult?: boolean;
+    compact?: boolean;
   }) => {
     // Memoize normalization to avoid recomputing list metadata on every render.
     const normalizedTodos = useMemo<NormalizedTodoItem[]>(
@@ -134,15 +147,17 @@ const TodoList = memo(
     }
 
     return (
-      <div className="space-y-1.5">
-        {isResult && (
+      <div
+        data-todo-list-compact={compact ? 'true' : 'false'}
+        className={compact ? 'space-y-1' : 'space-y-1.5'}
+      >
+        {isResult && !compact && (
           <div className="mb-1.5 text-xs font-medium text-gray-600 dark:text-gray-400">
-            Todo List ({normalizedTodos.length}{' '}
-            {normalizedTodos.length === 1 ? 'item' : 'items'})
+            待办列表（{normalizedTodos.length} 项）
           </div>
         )}
         {normalizedTodos.map((todo, index) => (
-          <TodoRow key={todo.id ?? `${todo.content}-${index}`} todo={todo} />
+          <TodoRow key={todo.id ?? `${todo.content}-${index}`} todo={todo} compact={compact} />
         ))}
       </div>
     );

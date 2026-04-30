@@ -55,6 +55,7 @@ export type RightPaneTarget =
 export type RightPaneTab = {
   id: string;
   target: RightPaneTarget;
+  isFresh?: boolean;
 };
 
 export function createClosedRightPaneState() {

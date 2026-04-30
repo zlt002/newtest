@@ -428,6 +428,15 @@ export function useChatSessionState({
       setIsLoadingSessionMessages(false);
       setCurrentSessionId(selectedSession.id);
       lastLoadedSessionKeyRef.current = null;
+
+      if (ws) {
+        sendMessage({
+          type: CLIENT_EVENT_TYPES.CHAT_RECONNECT,
+          sessionId: selectedSession.id,
+          provider: 'claude',
+        });
+      }
+
       return;
     }
 

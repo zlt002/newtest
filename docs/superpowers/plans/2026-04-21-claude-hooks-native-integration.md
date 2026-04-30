@@ -1,5 +1,7 @@
 # Claude Hooks Native Integration Implementation Plan
 
+> **档案状态：历史计划（已归档）** 本文档是历史实施记录，当前代码库已完成与重构清理，文中提及的 `claude-hooks-session-memory-store.js` 等内容保留仅作历史追溯，不代表当前运行时依赖。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 在当前项目中按 Claude Agent SDK 官方模型 1:1 整合 hooks，统一展示全部来源、把 session-memory hooks 原生透传给 SDK、并提供最薄的 `/hooks` 管理与执行记录界面。

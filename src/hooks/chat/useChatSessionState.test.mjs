@@ -361,6 +361,65 @@ async function renderChatSessionStateHarness({
   };
 }
 
+test('useChatSessionState 在切回已存在会话时也会请求 reconnect 状态恢复', async () => {
+  const sendCalls = [];
+  const sessionStore = {
+    setActiveSession() {},
+    getMessages() { return []; },
+    has() { return false; },
+    isStale() { return false; },
+  };
+  const dom = installFakeDom();
+  const pendingViewSessionRef = { current: null };
+  const hookArgs = {
+    selectedProject: {
+      name: 'demo-project',
+      fullPath: '/workspace/demo-project',
+      path: '/workspace/demo-project',
+    },
+    selectedSession: { id: 'session-1', title: 'Session 1' },
+    ws: {},
+    sendMessage: (message) => {
+      sendCalls.push(message);
+    },
+    autoScrollToBottom: false,
+    externalMessageUpdate: 0,
+    processingSessions: new Set(),
+    resetStreamingState() {},
+    pendingViewSessionRef,
+    sessionStore,
+    disableSelectedSessionServerHydration: true,
+  };
+
+  function Harness() {
+    useChatSessionState(hookArgs);
+    return null;
+  }
+
+  const root = createRoot(dom.container);
+
+  await act(async () => {
+    root.render(React.createElement(Harness));
+    await Promise.resolve();
+  });
+
+  await act(async () => {
+    hookArgs.selectedSession = { id: 'session-2', title: 'Session 2' };
+    root.render(React.createElement(Harness));
+    await Promise.resolve();
+  });
+
+  await act(async () => {
+    root.unmount();
+  });
+  dom.restore();
+
+  assert.deepEqual(sendCalls, [
+    { type: 'chat_reconnect', sessionId: 'session-1', provider: 'claude' },
+    { type: 'chat_reconnect', sessionId: 'session-2', provider: 'claude' },
+  ]);
+});
+
 test('keeps the pending user message visible before any persisted user message exists', () => {
   const pendingUserMessage = {
     type: 'user',

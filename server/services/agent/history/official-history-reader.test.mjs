@@ -144,6 +144,16 @@ test('official history reader filters local command protocol messages from canon
       }),
       JSON.stringify({
         sessionId: 'sess-protocol',
+        type: 'user',
+        uuid: 'u4',
+        timestamp: '2026-04-22T10:00:09.500Z',
+        message: {
+          role: 'user',
+          content: '<context-file>/Users/demo/project/CLAUDE.md</context-file>\n55请先创建 todo，然后检查当前项目',
+        },
+      }),
+      JSON.stringify({
+        sessionId: 'sess-protocol',
         type: 'assistant',
         uuid: 'a1',
         timestamp: '2026-04-22T10:00:10.000Z',
@@ -160,6 +170,7 @@ test('official history reader filters local command protocol messages from canon
     [
       ['u1_0', 'user', '/clear'],
       ['u3_0', 'user', 'real user prompt'],
+      ['u4', 'user', '55请先创建 todo，然后检查当前项目'],
       ['a1_0', 'assistant', 'real assistant answer'],
     ],
   );

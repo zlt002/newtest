@@ -85,6 +85,14 @@ function stripContextFileProtocol(text) {
   return text.replace(/<context-file>[\s\S]*?<\/context-file>/gi, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function stripContextFileTagOnly(text) {
+  if (typeof text !== 'string') {
+    return '';
+  }
+
+  return text.replace(/<context-file>[\s\S]*?<\/context-file>/gi, '').trim();
+}
+
 function stringifyContent(content) {
   const text = extractTextFromContent(content);
   if (text !== null) {
@@ -155,6 +163,22 @@ function extractUserSummaryText(content) {
   }
 
   return null;
+}
+
+function normalizeUserVisibleText(text) {
+  if (typeof text !== 'string') {
+    return null;
+  }
+
+  if (/<context-file>/i.test(text)) {
+    const stripped = stripContextFileTagOnly(text);
+    if (stripped) {
+      return stripped;
+    }
+  }
+
+  const trimmed = text.trim();
+  return trimmed || null;
 }
 
 function hasUserImageContent(content) {
@@ -311,7 +335,14 @@ function normalizeContentPart({ part, baseId, partIndex, sessionId, timestamp, r
 
   if (part.type === 'text' && typeof part.text === 'string' && part.text.trim()) {
     const commandProtocolText = role === 'user' ? extractCommandProtocolText(part.text) : null;
-    const normalizedText = commandProtocolText || part.text;
+    const userVisibleText = role === 'user'
+      ? normalizeUserVisibleText(commandProtocolText || part.text)
+      : null;
+    const normalizedText = userVisibleText || commandProtocolText || part.text;
+    const keepsUserContentAfterContextFileStrip = role === 'user'
+      && !commandProtocolText
+      && /<context-file>/i.test(part.text)
+      && Boolean(userVisibleText);
 
     if (
       role === 'user'
@@ -322,7 +353,7 @@ function normalizeContentPart({ part, baseId, partIndex, sessionId, timestamp, r
       return [];
     }
 
-    if (role === 'user' && isKnownSystemUserMessage(part.text)) {
+    if (role === 'user' && isKnownSystemUserMessage(part.text) && !keepsUserContentAfterContextFileStrip) {
       if (commandProtocolText) {
         return [buildCanonicalMessage({
           id: buildCanonicalId(baseId, partIndex),
@@ -536,8 +567,15 @@ function normalizeOfficialHistoryEntry(entry, normalizedSessionId, source = 'ses
 
   const rawText = stringifyContent(content);
   const commandProtocolText = role === 'user' ? extractCommandProtocolText(rawText) : null;
-  const text = commandProtocolText || rawText;
-  if (role === 'user' && isKnownSystemUserMessage(text)) {
+  const userVisibleText = role === 'user'
+    ? normalizeUserVisibleText(commandProtocolText || rawText)
+    : null;
+  const text = userVisibleText || commandProtocolText || rawText;
+  const keepsUserContentAfterContextFileStrip = role === 'user'
+    && !commandProtocolText
+    && /<context-file>/i.test(String(rawText || ''))
+    && Boolean(userVisibleText);
+  if (role === 'user' && isKnownSystemUserMessage(commandProtocolText || rawText) && !keepsUserContentAfterContextFileStrip) {
     if (commandProtocolText) {
       return [buildCanonicalMessage({
         id: baseId,
