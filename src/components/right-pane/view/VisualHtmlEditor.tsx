@@ -61,6 +61,7 @@ type ToolbarAction = {
 };
 
 type CanvasDevice = 'desktop' | 'tablet' | 'mobile';
+type PreviewRuntimeElementStyles = Record<string, string>;
 
 function OutlineIcon(props: SVGProps<SVGSVGElement>) {
   return (
@@ -111,6 +112,7 @@ function getErrorMessage(error: unknown): string {
 
 const CANVAS_OUTLINE_STYLE_ID = 'ccui-visual-outline-override';
 const COMPONENT_OUTLINE_COMMAND_ID = 'core:component-outline';
+const CCUI_PREVIEW_RUNTIME_STYLE_ID = 'ccui-preview-runtime-style-override';
 
 function ensureCanvasOutlineOverrideStyle(editor: ReturnType<typeof grapesjs.init>) {
   const body = editor.Canvas.getBody();
@@ -272,6 +274,115 @@ function selectCanvasComponentForSourceEntry(
   return nextComponent;
 }
 
+function collectPreviewRuntimeElementStyles(document: Document): PreviewRuntimeElementStyles {
+  const elementStyles: PreviewRuntimeElementStyles = {};
+
+  document.body.querySelectorAll<HTMLElement>('[id]').forEach((element) => {
+    const styleText = element.getAttribute('style')?.trim();
+    if (element.id && styleText) {
+      elementStyles[element.id] = styleText;
+    }
+  });
+
+  return elementStyles;
+}
+
+function escapeCssIdentifier(identifier: string): string {
+  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+    return CSS.escape(identifier);
+  }
+
+  return identifier.replace(/[^a-zA-Z0-9_-]/g, (character) => `\\${character.charCodeAt(0).toString(16)} `);
+}
+
+function addImportantToStyleDeclaration(styleText: string): string {
+  return styleText
+    .split(';')
+    .map((declaration) => declaration.trim())
+    .filter(Boolean)
+    .map((declaration) => {
+      if (/!important\s*$/i.test(declaration)) {
+        return declaration;
+      }
+
+      return `${declaration} !important`;
+    })
+    .join('; ');
+}
+
+function buildPreviewRuntimeStyleOverride(elementStyles: PreviewRuntimeElementStyles): string {
+  return Object.entries(elementStyles)
+    .filter(([, styleText]) => styleText.trim())
+    .map(([elementId, styleText]) => `#${escapeCssIdentifier(elementId)} { ${addImportantToStyleDeclaration(styleText)}; }`)
+    .join('\n');
+}
+
+function findCanvasComponentByElementId(editor: ReturnType<typeof grapesjs.init>, elementId: string) {
+  const wrapper = editor.DomComponents?.getWrapper?.() as any;
+  const queue = wrapper ? [wrapper] : [];
+
+  while (queue.length > 0) {
+    const nextComponent = queue.shift();
+    if (!nextComponent) {
+      continue;
+    }
+
+    const attributes = nextComponent.getAttributes?.({ skipResolve: true }) ?? {};
+    if (attributes.id === elementId) {
+      return nextComponent;
+    }
+
+    const children = nextComponent.components?.();
+    if (Array.isArray(children)) {
+      queue.push(...children);
+    } else if (typeof children?.forEach === 'function') {
+      children.forEach((child: any) => {
+        queue.push(child);
+      });
+    }
+  }
+
+  return null;
+}
+
+function applyPreviewRuntimeElementStylesToCanvas(
+  editor: ReturnType<typeof grapesjs.init>,
+  elementStyles: PreviewRuntimeElementStyles,
+) {
+  const canvasDocument = editor.Canvas.getDocument?.();
+  if (canvasDocument) {
+    let style = canvasDocument.getElementById(CCUI_PREVIEW_RUNTIME_STYLE_ID) as HTMLStyleElement | null;
+    if (!style) {
+      style = canvasDocument.createElement('style');
+      style.id = CCUI_PREVIEW_RUNTIME_STYLE_ID;
+      canvasDocument.head.appendChild(style);
+    }
+    style.textContent = buildPreviewRuntimeStyleOverride(elementStyles);
+  }
+
+  Object.entries(elementStyles).forEach(([elementId, styleText]) => {
+    const component = findCanvasComponentByElementId(editor, elementId);
+    const element = component?.getEl?.() as HTMLElement | null;
+    const canvasElement = editor.Canvas.getDocument?.()?.getElementById(elementId);
+
+    component?.addAttributes?.({ style: styleText }, { silent: true });
+    canvasElement?.setAttribute('style', styleText);
+    element?.setAttribute('style', styleText);
+  });
+}
+
+function schedulePreviewRuntimeElementStyleRestore(
+  editor: ReturnType<typeof grapesjs.init>,
+  elementStyles: PreviewRuntimeElementStyles,
+) {
+  const delays = [0, 50, 150, 350, 700];
+  delays.forEach((delay) => {
+    window.setTimeout(() => {
+      applyPreviewRuntimeElementStylesToCanvas(editor, elementStyles);
+    }, delay);
+  });
+}
+
 export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatInput = null }: VisualHtmlEditorProps) {
   const controller = useHtmlDocumentController({
     filePath: target.filePath,
@@ -294,6 +405,8 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
   const [canvasDevice, setCanvasDevice] = useState<CanvasDevice>('desktop');
   const [canvasEditor, setCanvasEditor] = useState<ReturnType<typeof grapesjs.init> | null>(null);
   const canvasEditorRef = useRef<ReturnType<typeof grapesjs.init> | null>(null);
+  const previewFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const pendingPreviewRuntimeStylesRef = useRef<PreviewRuntimeElementStyles | null>(null);
   const sourceLocationMapRef = useRef(buildSourceLocationMap('', 0));
   const pendingSourceCursorEntryRef = useRef<SourceLocationEntry | null>(null);
   const pendingDesignSyncFrameRef = useRef<number | null>(null);
@@ -323,6 +436,22 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
       css: canvasEditorRef.current.getCss() ?? '',
     });
   }, [canvasDocument.snapshot, controller.documentText]);
+
+  const applyPreviewRuntimeStateToDesign = useCallback(() => {
+    const previewDocument = previewFrameRef.current?.contentDocument;
+    if (!previewDocument?.body) {
+      return;
+    }
+
+    const previewBodyHtml = previewDocument.body.innerHTML;
+    pendingPreviewRuntimeStylesRef.current = collectPreviewRuntimeElementStyles(previewDocument);
+    const nextHtml = buildSavedHtml({
+      snapshot: canvasDocument.snapshot,
+      bodyHtml: previewBodyHtml,
+      css: canvasDocument.styles,
+    });
+    setCanvasDocument(createWorkspaceDocument(nextHtml));
+  }, [canvasDocument.snapshot, canvasDocument.styles]);
 
   const clearPendingSourceCursorEntry = useCallback(() => {
     pendingSourceCursorEntryRef.current = null;
@@ -619,6 +748,7 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
 
   const togglePreview = useCallback(() => {
     if (isPreviewActive) {
+      applyPreviewRuntimeStateToDesign();
       setIsPreviewActive(false);
       return;
     }
@@ -635,7 +765,13 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
     editor.stopCommand('preview');
     editor.select?.();
     setIsPreviewActive(true);
-  }, [applyCurrentEditorDocument, cancelPendingDesignDocumentSync, collectCanvasHtml, isPreviewActive]);
+  }, [
+    applyCurrentEditorDocument,
+    applyPreviewRuntimeStateToDesign,
+    cancelPendingDesignDocumentSync,
+    collectCanvasHtml,
+    isPreviewActive,
+  ]);
 
   const handleCanvasUndo = useCallback(() => {
     canvasEditorRef.current?.runCommand('core:undo');
@@ -1170,6 +1306,7 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
                       style={{ width: previewViewportWidth }}
                     >
                       <iframe
+                        ref={previewFrameRef}
                         title="HTML 预览"
                         srcDoc={previewDocument}
                         className="block h-full min-h-0 w-full border-0 bg-white"
@@ -1201,6 +1338,13 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
                       setCanvasDevice('desktop');
                       editor.setDevice('Desktop');
                       applyCanvasOutlineVisibility(editor, false);
+                      const pendingPreviewRuntimeStyles = pendingPreviewRuntimeStylesRef.current;
+                      if (pendingPreviewRuntimeStyles) {
+                        schedulePreviewRuntimeElementStyleRestore(editor, pendingPreviewRuntimeStyles);
+                        window.setTimeout(() => {
+                          pendingPreviewRuntimeStylesRef.current = null;
+                        }, 750);
+                      }
                       editor.clearDirtyCount();
                       controller.setDirtyDesign(false);
                     }}

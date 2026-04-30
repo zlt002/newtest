@@ -156,12 +156,13 @@ test('VisualHtmlEditor treats preview as a read-only browser-like canvas state',
   assert.match(source, /setCanvasDevice\(device\);/);
   assert.match(source, /if \(!editor\) \{\s*return;\s*\}/);
   assert.match(source, /setCanvasDocument\(createWorkspaceDocument\(nextHtml\)\);/);
-  assert.match(source, /if \(isPreviewActive\) \{\s*setIsPreviewActive\(false\);\s*return;\s*\}/);
+  assert.match(source, /if \(isPreviewActive\) \{\s*applyPreviewRuntimeStateToDesign\(\);\s*setIsPreviewActive\(false\);\s*return;\s*\}/);
   assert.match(source, /if \(!editor\) \{\s*return;\s*\}/);
   assert.match(source, /editor\.stopCommand\('preview'\);/);
-  assert.match(source, /editor\.select\?\.\(null\);/);
+  assert.match(source, /editor\.select\?\.\(\);/);
   assert.match(source, /isPreviewActive \? \(/);
   assert.match(source, /<iframe/);
+  assert.match(source, /ref=\{previewFrameRef\}/);
   assert.match(source, /srcDoc=\{previewDocument\}/);
   assert.match(source, /data-visual-html-preview="true"/);
   assert.match(source, /data-visual-html-preview-frame="true"/);
@@ -171,7 +172,24 @@ test('VisualHtmlEditor treats preview as a read-only browser-like canvas state',
   assert.match(source, /className="block h-full min-h-0 w-full border-0 bg-white"/);
   assert.match(source, /showSpacingOverlay \? \(/);
   assert.match(source, /<SpacingOverlay/);
-  assert.doesNotMatch(source, /applyCanvasPreviewState/);
+});
+
+test('VisualHtmlEditor applies live preview DOM state back to the design canvas when preview closes', async () => {
+  const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /const previewFrameRef = useRef<HTMLIFrameElement \| null>\(null\)/);
+  assert.match(source, /const pendingPreviewRuntimeStylesRef = useRef<PreviewRuntimeElementStyles \| null>\(null\)/);
+  assert.match(source, /const applyPreviewRuntimeStateToDesign = useCallback\(\(\) => \{/);
+  assert.match(source, /const previewBodyHtml = previewDocument\.body\.innerHTML/);
+  assert.match(source, /pendingPreviewRuntimeStylesRef\.current = collectPreviewRuntimeElementStyles\(previewDocument\)/);
+  assert.match(source, /setCanvasDocument\(createWorkspaceDocument\(nextHtml\)\)/);
+  assert.match(source, /buildSavedHtml\(\{\s*snapshot: canvasDocument\.snapshot,\s*bodyHtml: previewBodyHtml,\s*css: canvasDocument\.styles,\s*\}\)/);
+  assert.match(source, /schedulePreviewRuntimeElementStyleRestore\(editor, pendingPreviewRuntimeStyles\)/);
+  assert.match(source, /editor\.Canvas\.getDocument\?\.\(\)\?\.getElementById\(elementId\)/);
+  assert.match(source, /component\?\.addAttributes\?\.\(\{ style: styleText \}/);
+  assert.match(source, /CCUI_PREVIEW_RUNTIME_STYLE_ID/);
+  assert.match(source, /style\.textContent = buildPreviewRuntimeStyleOverride\(elementStyles\)/);
+  assert.match(source, /pendingPreviewRuntimeStylesRef\.current = null/);
 });
 
 test('VisualHtmlEditor disables undo redo and save actions while preview is active', async () => {
