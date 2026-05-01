@@ -25,11 +25,13 @@ test('VisualCanvasPane source owns editor lifecycle and reload wiring', async ()
   assert.match(source, /editor\.destroy\(\)/);
   assert.match(source, /editor\.clearDirtyCount\(\)/);
   assert.match(source, /bodyHtml/);
+  assert.match(source, /headMarkup/);
   assert.match(source, /styles/);
   assert.match(source, /onEditorReadyRef/);
   assert.match(source, /onDirtyChangeRef/);
-  assert.match(source, /\}, \[bodyHtml, styles\]\)/);
-  assert.doesNotMatch(source, /\}, \[bodyHtml, onDirtyChange, onEditorReady, styles\]\)/);
+  assert.match(source, /injectCanvasHeadMarkup/);
+  assert.match(source, /\}, \[bodyHtml, headMarkup, styles\]\)/);
+  assert.doesNotMatch(source, /\}, \[bodyHtml, headMarkup, onDirtyChange, onEditorReady, styles\]\)/);
 });
 
 test('VisualCanvasPane source separates design and source toolbar states', async () => {

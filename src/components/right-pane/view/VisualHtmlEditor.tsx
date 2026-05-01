@@ -1317,6 +1317,7 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
                 ) : (
                   <VisualCanvasPane
                     bodyHtml={canvasDocument.bodyHtml}
+                    headMarkup={canvasDocument.snapshot.headMarkup}
                     styles={canvasDocument.styles}
                     onDirtyChange={(isDirty, editor) => {
                       canvasEditorRef.current = editor;

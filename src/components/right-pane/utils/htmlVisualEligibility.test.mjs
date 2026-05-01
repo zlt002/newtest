@@ -50,7 +50,25 @@ test('isHtmlEligibleForVisualEditing returns false for incomplete html fragments
   assert.equal(isHtmlEligibleForVisualEditing(content), false);
 });
 
-test('isHtmlEligibleForVisualEditing returns false for pages with external scripts', () => {
+test('isHtmlEligibleForVisualEditing returns true for pages with Tailwind CDN script', () => {
+  const content = `
+    <!doctype html>
+    <html lang="zh-CN">
+      <head>
+        <meta charset="utf-8" />
+        <title>Tailwind CDN</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+      </head>
+      <body>
+        <main class="p-6 text-slate-900">Safe shell</main>
+      </body>
+    </html>
+  `;
+
+  assert.equal(isHtmlEligibleForVisualEditing(content), true);
+});
+
+test('isHtmlEligibleForVisualEditing returns false for pages with non-whitelisted external scripts', () => {
   const content = `
     <!doctype html>
     <html lang="en">

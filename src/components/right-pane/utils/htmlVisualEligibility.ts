@@ -4,7 +4,8 @@ const BODY_PATTERN = /<body\b[^>]*>[\s\S]*<\/body>/i;
 const HEAD_PATTERN = /<head\b[^>]*>[\s\S]*<\/head>/i;
 const DOCTYPE_PATTERN = /^\s*<!doctype\s+html\b/i;
 const SCRIPT_TAG_PATTERN = /<script\b([^>]*)>[\s\S]*?<\/script>/gi;
-const EXTERNAL_SCRIPT_PATTERN = /\bsrc\s*=/i;
+const SCRIPT_SRC_PATTERN = /\bsrc\s*=\s*(["'])(.*?)\1/i;
+const TAILWIND_CDN_SRC_PATTERN = /^https:\/\/cdn\.tailwindcss\.com\/?(?:[?#].*)?$/i;
 
 function hasTrustedHtmlStructure(content: string): boolean {
   if (!HTML_ROOT_PATTERN.test(content) || !BODY_PATTERN.test(content)) {
@@ -19,8 +20,9 @@ function hasNoExternalScripts(content: string): boolean {
 
   for (const match of matches) {
     const attributes = match[1] ?? '';
-
-    if (EXTERNAL_SCRIPT_PATTERN.test(attributes)) {
+    const srcMatch = attributes.match(SCRIPT_SRC_PATTERN);
+    const scriptSrc = srcMatch?.[2]?.trim();
+    if (scriptSrc && !TAILWIND_CDN_SRC_PATTERN.test(scriptSrc)) {
       return false;
     }
   }
