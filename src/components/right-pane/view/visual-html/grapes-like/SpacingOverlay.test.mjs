@@ -598,6 +598,51 @@ test('buildSendSelectionToChatPayload refreshes stale mapping and resolves sourc
   );
 });
 
+test('buildSendSelectionToChatPayload includes all selected component locations for multi-select sends', async () => {
+  const sourceText = [
+    '<section>',
+    '  <label data-ccui-component-id="label">用户名</label>',
+    '  <input data-ccui-component-id="input" />',
+    '</section>',
+  ].join('\n');
+  const payload = await buildSendSelectionToChatPayload({
+    editor: {
+      getSelectedAll() {
+        return [
+          {
+            getId: () => 'label',
+            getAttributes: () => ({}),
+            getEl: () => ({ dataset: {} }),
+          },
+          {
+            getId: () => 'input',
+            getAttributes: () => ({}),
+            getEl: () => ({ dataset: {} }),
+          },
+        ];
+      },
+      getSelected() {
+        return null;
+      },
+    },
+    filePath: 'src/pages/login.html',
+    sourceText,
+    sourceLocationMap: buildSourceLocationMap(sourceText, 1),
+  });
+
+  assert.equal(payload?.targetId, 'label,input');
+  assert.equal(payload?.locations?.length, 2);
+  assert.equal(
+    payload?.prompt,
+    [
+      '文件路径：`src/pages/login.html`',
+      '选中元素：2 个',
+      '1. 代码位置：`src/pages/login.html:2:3-2:52`',
+      '2. 代码位置：`src/pages/login.html:3:3-3:43`',
+    ].join('\n'),
+  );
+});
+
 test('buildSendSelectionToChatPayload uses the latest mapping returned by freshness helper across repeated sends', async () => {
   const latestMaps = [
     buildSourceLocationMap([
@@ -1106,7 +1151,34 @@ test('SpacingOverlay source keeps a minimal guard for hiding GrapesJS chrome dur
   assert.match(source, /\.ccui-spacing-overlay-hide-outlines \.gjs-com-dashed,\s*\n\s*\.ccui-spacing-overlay-hide-outlines \.gjs-com-dashed \*/);
   assert.match(source, /body\[data-ccui-overlay-dragging="true"\] \.gjs-toolbar/);
   assert.match(source, /body\[data-ccui-overlay-dragging="true"\] \.gjs-badge/);
-  assert.match(source, /querySelectorAll<HTMLElement>\('\.gjs-toolbar, \.gjs-badge'\)/);
+  assert.match(source, /body\[data-ccui-multi-selecting="true"\] \.gjs-toolbar/);
+  assert.match(source, /MULTI_SELECTING_DATASET_KEY = 'ccuiMultiSelecting'/);
+  assert.match(source, /body\.dataset\[MULTI_SELECTING_DATASET_KEY\] = 'true'/);
+  assert.match(source, /CANVAS_MULTI_TOOLBAR_HIDDEN_ATTR = 'data-ccui-multi-toolbar-hidden'/);
+  assert.match(source, /function setCanvasSingleSelectionToolbarHidden/);
+  assert.match(source, /querySelectorAll\?\.<HTMLElement>\('\.gjs-toolbar'\)/);
+  assert.match(source, /setCanvasSingleSelectionToolbarHidden\(doc, isMultiSelecting\)/);
+  assert.match(source, /querySelectorAll\?\.<HTMLElement>\('\.gjs-toolbar, \.gjs-badge, \.gjs-placeholder, \.gjs-highlighter, \.gjs-resizer'\)/);
+  assert.match(source, /SELECTED_OVERLAY_BORDER_COLOR = 'rgba\(37, 99, 235, 0\.95\)'/);
+  assert.match(source, /selectedBorderBoxes/);
+  assert.match(source, /data-spacing-selected-box="true"/);
+  assert.match(source, /multiSelectionBox/);
+  assert.match(source, /data-spacing-multi-toolbar="true"/);
+  assert.match(source, /MultiSelectionToolbar/);
+  assert.match(source, /SPACING_HANDLE_HOVER_ZONE_PX = 10/);
+  assert.match(source, /SPACING_HANDLE_HIDE_DELAY_MS = 120/);
+  assert.match(source, /spacingHoverActive/);
+  assert.match(source, /shouldShowSpacingHandles/);
+  assert.match(source, /data-spacing-handle-hover-zone="true"/);
+  assert.match(source, /function SpacingHandleHoverFrame/);
+  assert.match(source, /发送所选到 AI/);
+  assert.match(source, /选择父级/);
+  assert.match(source, /selectSelectedParents\(currentEditor\)/);
+  assert.match(source, /void handleSendSelectionToChat\(\)/);
+  assert.match(source, /currentEditor\.runCommand\?\.\('tlb-clone'\)/);
+  assert.match(source, /currentEditor\.runCommand\?\.\('tlb-delete'\)/);
+  assert.match(source, /getSelectedComponents\(editor\)/);
+  assert.match(source, /border: `1px solid \$\{SELECTED_OVERLAY_BORDER_COLOR\}`/);
   assert.match(source, /setProperty\('display', 'none', 'important'\)/);
   assert.match(source, /removeProperty\('display'\)/);
 });
@@ -1117,7 +1189,8 @@ test('SpacingOverlay source wires ctrl drag marquee selection to the canvas', as
   assert.match(source, /attachCanvasMarqueeSelection/);
   assert.match(source, /event\.ctrlKey/);
   assert.match(source, /collectMarqueeSelectionComponents/);
-  assert.match(source, /editor\.selectAdd/);
+  assert.match(source, /clearMarqueeSourceSelection/);
+  assert.match(source, /setCanvasMarqueeChromeSuppressed/);
   assert.match(source, /data-ccui-marquee-selection/);
   assert.match(source, /canvas:frame:load/);
   assert.match(source, /reattachMarqueeSelection/);
@@ -1125,6 +1198,8 @@ test('SpacingOverlay source wires ctrl drag marquee selection to the canvas', as
   assert.match(source, /contextmenu/);
   assert.match(source, /doc\.documentElement/);
   assert.match(source, /setPointerCapture/);
+  assert.doesNotMatch(source, /addEventListener\('keydown'/);
+  assert.doesNotMatch(source, /addEventListener\('keyup'/);
 });
 
 test('attachCanvasMarqueeSelection is a no-op until the canvas body is ready', () => {
@@ -1187,6 +1262,7 @@ test('attachCanvasMarqueeSelection starts when pointerdown is captured by the if
   Object.assign(body, {
     ownerDocument: doc,
     style: {},
+    dataset: {},
     appendChild: (element) => {
       boxes.push(element);
     },
@@ -1237,12 +1313,12 @@ test('attachCanvasMarqueeSelection starts when pointerdown is captured by the if
   detach();
 });
 
-test('attachCanvasMarqueeSelection maps hit DOM nodes to Grapes components before multi-selecting', () => {
+test('attachCanvasMarqueeSelection clears existing selection while ctrl is held and replaces it with marquee hits', () => {
   const win = createMarqueeEventTarget();
   const doc = createMarqueeEventTarget();
   const html = createMarqueeEventTarget();
   const body = createMarqueeEventTarget();
-  const selectedComponents = [];
+  const selectCalls = [];
 
   Object.assign(win, {
     requestAnimationFrame: (callback) => {
@@ -1254,6 +1330,7 @@ test('attachCanvasMarqueeSelection maps hit DOM nodes to Grapes components befor
   Object.assign(doc, {
     defaultView: win,
     documentElement: html,
+    querySelectorAll: () => [],
     createElement: () => ({
       style: {},
       setAttribute: () => {},
@@ -1283,6 +1360,7 @@ test('attachCanvasMarqueeSelection maps hit DOM nodes to Grapes components befor
   Object.assign(body, {
     ownerDocument: doc,
     style: {},
+    dataset: {},
     appendChild: () => {},
     querySelectorAll: () => [firstElement, secondElement],
   });
@@ -1303,8 +1381,8 @@ test('attachCanvasMarqueeSelection maps hit DOM nodes to Grapes components befor
     Canvas: {
       getBody: () => body,
     },
-    selectAdd(component) {
-      selectedComponents.push(component);
+    select(components) {
+      selectCalls.push(components);
     },
   });
 
@@ -1324,7 +1402,239 @@ test('attachCanvasMarqueeSelection maps hit DOM nodes to Grapes components befor
     clientY: 80,
   });
 
-  assert.deepEqual(selectedComponents, [firstComponent, secondComponent]);
+  assert.deepEqual(selectCalls, [[], [firstComponent, secondComponent]]);
+  assert.equal(body.dataset.ccuiMarqueeSelecting, undefined);
+
+  detach();
+});
+
+test('attachCanvasMarqueeSelection does not change selection when ctrl is pressed and released without pointer drag', () => {
+  const win = createMarqueeEventTarget();
+  const doc = createMarqueeEventTarget();
+  const html = createMarqueeEventTarget();
+  const body = createMarqueeEventTarget();
+  const selectedBeforeCtrl = [{ id: 'already-selected' }];
+  const selectCalls = [];
+
+  Object.assign(win, {
+    requestAnimationFrame: (callback) => {
+      callback();
+      return 1;
+    },
+    cancelAnimationFrame: () => {},
+  });
+  Object.assign(doc, {
+    defaultView: win,
+    documentElement: html,
+    querySelectorAll: () => [],
+    createElement: () => ({
+      style: {},
+      setAttribute: () => {},
+      remove: () => {},
+    }),
+  });
+  Object.assign(body, {
+    ownerDocument: doc,
+    style: {},
+    dataset: {},
+    appendChild: () => {},
+    querySelectorAll: () => [],
+  });
+
+  const detach = attachCanvasMarqueeSelection({
+    Canvas: {
+      getBody: () => body,
+    },
+    getSelectedAll: () => selectedBeforeCtrl,
+    select(components) {
+      selectCalls.push(components);
+    },
+  });
+
+  win.emit('keydown', {
+    key: 'Control',
+    preventDefault: () => {},
+    stopPropagation: () => {},
+  });
+  win.emit('keyup', {
+    key: 'Control',
+    preventDefault: () => {},
+    stopPropagation: () => {},
+  });
+
+  assert.deepEqual(selectCalls, []);
+  assert.equal(body.dataset.ccuiMarqueeSelecting, undefined);
+
+  detach();
+});
+
+test('attachCanvasMarqueeSelection restores previous selection when ctrl pointerdown ends without drag', () => {
+  const win = createMarqueeEventTarget();
+  const doc = createMarqueeEventTarget();
+  const html = createMarqueeEventTarget();
+  const body = createMarqueeEventTarget();
+  const selectedBeforeCtrl = [{ id: 'already-selected' }];
+  const selectCalls = [];
+
+  Object.assign(win, {
+    requestAnimationFrame: (callback) => {
+      callback();
+      return 1;
+    },
+    cancelAnimationFrame: () => {},
+  });
+  Object.assign(doc, {
+    defaultView: win,
+    documentElement: html,
+    querySelectorAll: () => [],
+    createElement: () => ({
+      style: {},
+      setAttribute: () => {},
+      remove: () => {},
+    }),
+  });
+  Object.assign(body, {
+    ownerDocument: doc,
+    style: {},
+    dataset: {},
+    appendChild: () => {},
+    querySelectorAll: () => [],
+  });
+
+  const eventBase = {
+    pointerId: 9,
+    ctrlKey: true,
+    button: 0,
+    target: {
+      closest: () => null,
+      setPointerCapture: () => {},
+    },
+    preventDefault: () => {},
+    stopPropagation: () => {},
+  };
+
+  const detach = attachCanvasMarqueeSelection({
+    Canvas: {
+      getBody: () => body,
+    },
+    getSelectedAll: () => selectedBeforeCtrl,
+    select(components) {
+      selectCalls.push(components);
+    },
+  });
+
+  doc.emit('pointerdown', {
+    ...eventBase,
+    clientX: 10,
+    clientY: 10,
+  });
+  win.emit('pointerup', {
+    ...eventBase,
+    clientX: 10,
+    clientY: 10,
+  });
+
+  assert.deepEqual(selectCalls, [[], selectedBeforeCtrl]);
+  assert.equal(body.dataset.ccuiMarqueeSelecting, undefined);
+
+  detach();
+});
+
+test('attachCanvasMarqueeSelection toggles marquee hits against existing selection when ctrl shift is held', () => {
+  const win = createMarqueeEventTarget();
+  const doc = createMarqueeEventTarget();
+  const html = createMarqueeEventTarget();
+  const body = createMarqueeEventTarget();
+  const retainedSelection = {
+    get: (key) => (key === 'selectable' ? true : undefined),
+    parents: () => [],
+  };
+  const toggledOffSelection = {
+    get: (key) => (key === 'selectable' ? true : undefined),
+    parents: () => [],
+  };
+  const toggledOnSelection = {
+    get: (key) => (key === 'selectable' ? true : undefined),
+    parents: () => [],
+  };
+  const selectCalls = [];
+
+  Object.assign(win, {
+    requestAnimationFrame: (callback) => {
+      callback();
+      return 1;
+    },
+    cancelAnimationFrame: () => {},
+  });
+  Object.assign(doc, {
+    defaultView: win,
+    documentElement: html,
+    querySelectorAll: () => [],
+    createElement: () => ({
+      style: {},
+      setAttribute: () => {},
+      remove: () => {},
+    }),
+  });
+  Object.assign(body, {
+    ownerDocument: doc,
+    style: {},
+    dataset: {},
+    appendChild: () => {},
+    querySelectorAll: () => [
+      {
+        __gjsv: { model: toggledOffSelection },
+        closest: () => null,
+        getBoundingClientRect: () => ({ left: 10, top: 10, right: 30, bottom: 30, width: 20, height: 20 }),
+      },
+      {
+        __gjsv: { model: toggledOnSelection },
+        closest: () => null,
+        getBoundingClientRect: () => ({ left: 40, top: 10, right: 60, bottom: 30, width: 20, height: 20 }),
+      },
+    ],
+  });
+
+  const eventBase = {
+    pointerId: 4,
+    ctrlKey: true,
+    shiftKey: true,
+    button: 0,
+    target: {
+      closest: () => null,
+      setPointerCapture: () => {},
+    },
+    preventDefault: () => {},
+    stopPropagation: () => {},
+  };
+
+  const detach = attachCanvasMarqueeSelection({
+    Canvas: {
+      getBody: () => body,
+    },
+    getSelectedAll: () => [retainedSelection, toggledOffSelection],
+    select(components) {
+      selectCalls.push(components);
+    },
+  });
+
+  doc.emit('pointerdown', {
+    ...eventBase,
+    clientX: 0,
+    clientY: 0,
+  });
+  win.emit('pointermove', {
+    ...eventBase,
+    clientX: 80,
+    clientY: 80,
+  });
+  win.emit('pointerup', {
+    ...eventBase,
+    clientX: 80,
+    clientY: 80,
+  });
+
+  assert.deepEqual(selectCalls, [[retainedSelection, toggledOnSelection]]);
 
   detach();
 });

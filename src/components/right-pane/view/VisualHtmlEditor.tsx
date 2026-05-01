@@ -63,6 +63,10 @@ type ToolbarAction = {
 type CanvasDevice = 'desktop' | 'tablet' | 'mobile';
 type PreviewRuntimeElementStyles = Record<string, string>;
 
+function stripStyleMarkupFromHtml(markup: string): string {
+  return markup.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '').trim();
+}
+
 function OutlineIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" {...props}>
@@ -430,12 +434,18 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
       return controller.documentText;
     }
 
+    const editorCss = canvasEditorRef.current.getCss() ?? '';
+    const css = [editorCss, canvasDocument.styles]
+      .map((styleText) => styleText.trim())
+      .filter(Boolean)
+      .join('\n\n');
+
     return buildSavedHtml({
       snapshot: canvasDocument.snapshot,
-      bodyHtml: canvasEditorRef.current.getHtml(),
-      css: canvasEditorRef.current.getCss() ?? '',
+      bodyHtml: stripStyleMarkupFromHtml(canvasEditorRef.current.getHtml()),
+      css,
     });
-  }, [canvasDocument.snapshot, controller.documentText]);
+  }, [canvasDocument.snapshot, canvasDocument.styles, controller.documentText]);
 
   const applyPreviewRuntimeStateToDesign = useCallback(() => {
     const previewDocument = previewFrameRef.current?.contentDocument;
@@ -1109,6 +1119,11 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
   ];
 
   const modeActions = activeMode === 'design' ? designActions : sourceActions;
+  const designCanvasDocument = buildSavedHtml({
+    snapshot: canvasDocument.snapshot,
+    bodyHtml: canvasDocument.bodyHtml,
+    css: canvasDocument.styles,
+  });
   const previewDocument = buildSavedHtml({
     snapshot: canvasDocument.snapshot,
     bodyHtml: canvasDocument.bodyHtml,
@@ -1316,9 +1331,7 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
                   </div>
                 ) : (
                   <VisualCanvasPane
-                    bodyHtml={canvasDocument.bodyHtml}
-                    headMarkup={canvasDocument.snapshot.headMarkup}
-                    styles={canvasDocument.styles}
+                    fullHtml={designCanvasDocument}
                     onDirtyChange={(isDirty, editor) => {
                       canvasEditorRef.current = editor;
                       if (isDirty) {

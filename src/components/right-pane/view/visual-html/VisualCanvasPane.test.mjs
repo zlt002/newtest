@@ -12,6 +12,18 @@ test('VisualCanvasPane source defines an isolated design surface around GrapesJS
   assert.match(source, /grapesjsZhCn/);
   assert.match(source, /locale: 'zh-CN'/);
   assert.match(source, /messagesAdd/);
+  assert.match(source, /normalizeDesignCanvasHtml/);
+  assert.match(source, /extractRootCustomProperties/);
+  assert.match(source, /inlineCustomPropertyReferences/);
+  assert.match(source, /collectStyleMarkup/);
+  assert.match(source, /injectRawCanvasStyles/);
+  assert.match(source, /const canvasHtml = normalizeDesignCanvasHtml\(fullHtml\);/);
+  assert.match(source, /const rawStyleMarkup = collectStyleMarkup\(canvasHtml\);/);
+  assert.doesNotMatch(source, /const canvasStructureHtml = stripStyleMarkup\(canvasHtml\);/);
+  assert.match(source, /editor\.getWrapper\(\)\?\.components\(canvasHtml/);
+  assert.match(source, /asDocument: true/);
+  assert.match(source, /allowScripts: true/);
+  assert.match(source, /detectDocument: true/);
   assert.match(source, /editor\.on\('update'/);
   assert.match(source, /onDirtyChange/);
   assert.match(source, /onEditorReady/);
@@ -24,14 +36,15 @@ test('VisualCanvasPane source owns editor lifecycle and reload wiring', async ()
 
   assert.match(source, /editor\.destroy\(\)/);
   assert.match(source, /editor\.clearDirtyCount\(\)/);
-  assert.match(source, /bodyHtml/);
-  assert.match(source, /headMarkup/);
-  assert.match(source, /styles/);
+  assert.match(source, /fullHtml/);
   assert.match(source, /onEditorReadyRef/);
   assert.match(source, /onDirtyChangeRef/);
-  assert.match(source, /injectCanvasHeadMarkup/);
-  assert.match(source, /\}, \[bodyHtml, headMarkup, styles\]\)/);
-  assert.doesNotMatch(source, /\}, \[bodyHtml, headMarkup, onDirtyChange, onEditorReady, styles\]\)/);
+  assert.match(source, /injectCanvasHeadMarkup\(editor, ''\)/);
+  assert.match(source, /injectRawCanvasStyles\(editor, rawStyleMarkup\)/);
+  assert.match(source, /scheduleCanvasHeadMarkupSync/);
+  assert.match(source, /canvas:frame:load:body/);
+  assert.match(source, /\}, \[fullHtml\]\)/);
+  assert.doesNotMatch(source, /\}, \[fullHtml, onDirtyChange, onEditorReady\]\)/);
 });
 
 test('VisualCanvasPane source separates design and source toolbar states', async () => {

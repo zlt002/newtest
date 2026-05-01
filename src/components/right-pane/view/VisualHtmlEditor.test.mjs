@@ -150,6 +150,9 @@ test('VisualHtmlEditor hides the inspector pane while preview mode is active', a
 test('VisualHtmlEditor treats preview as a read-only browser-like canvas state', async () => {
   const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
 
+  assert.match(source, /function stripStyleMarkupFromHtml\(markup: string\)/);
+  assert.match(source, /const css = \[editorCss, canvasDocument\.styles\]/);
+  assert.match(source, /bodyHtml: stripStyleMarkupFromHtml\(canvasEditorRef\.current\.getHtml\(\)\)/);
   assert.match(source, /const showSpacingOverlay = !isPreviewActive && !eligibilityError && activeMode === 'design' && canvasEditor && grapesLikeBridge/);
   assert.match(source, /const previewDocument = buildSavedHtml\(\{/);
   assert.match(source, /const previewViewportWidth = canvasDevice === 'desktop'\s*\?\s*'100%'\s*:\s*canvasDevice === 'tablet'\s*\?\s*'770px'\s*:\s*'320px';/);
