@@ -72,9 +72,11 @@ test('VisualHtmlEditor source converges design and source state only on mode swi
   assert.match(source, /handleSwitchToSource/);
   assert.match(source, /dirtyDesign/);
   assert.match(source, /applyCurrentEditorDocument\(nextHtml, 'design'\)/);
+  assert.match(source, /syncCanvasDocumentFromHtml\(nextHtml\)/);
+  assert.match(source, /syncCanvasDocumentFromHtml\(controllerRef\.current\.documentText\)/);
   assert.match(source, /handleSwitchToDesign/);
   assert.match(source, /dirtySource/);
-  assert.match(source, /setCanvasDocument\(createWorkspaceDocument\(controllerRef\.current\.documentText\)\)/);
+  assert.doesNotMatch(source, /setCanvasDocument\(createWorkspaceDocument\(controllerRef\.current\.documentText\)\)/);
   assert.match(source, /activeMode === 'design' && canvasEditorRef\.current/);
   assert.match(source, /if \(canvasEditorRef\.current\?\.Canvas\?\.refresh\) \{/);
   assert.match(source, /canvasEditorRef\.current\.refresh\(\{ tools: true \}\)/);
@@ -91,11 +93,27 @@ test('VisualHtmlEditor save flow blocks when a sync conflict is active', async (
   assert.match(source, /broadcastFileSyncEvent/);
 });
 
+test('VisualHtmlEditor save flow keeps only canvas body html and strips browser injected markup', async () => {
+  const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /function extractCanvasBodyHtmlForSave/);
+  assert.match(source, /function stripCanvasRuntimeArtifacts/);
+  assert.match(source, /DOMParser/);
+  assert.match(source, /<body>\$\{markup\}<\/body>/);
+  assert.match(source, /plasmo-csui/);
+  assert.match(source, /buildSavedHtmlPreservingHead/);
+  assert.match(source, /sourceHtml: controllerRef\.current\.documentText/);
+  assert.match(source, /bodyHtml: extractCanvasBodyHtmlForSave\(canvasEditorRef\.current\.getHtml\(\)\)/);
+  assert.match(source, /canvasCss: canvasEditorRef\.current\.getCss\(\)/);
+  assert.doesNotMatch(source, /bodyHtml: stripStyleMarkupFromHtml\(canvasEditorRef\.current\.getHtml\(\)\)/);
+});
+
 test('VisualHtmlEditor rebuilds source-location mapping from the current editor document', async () => {
   const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
 
   assert.match(source, /buildSourceLocationMap/);
   assert.match(source, /const sourceLocationMapRef = useRef/);
+  assert.match(source, /const persistedSourceLocationMapRef = useRef/);
   assert.match(source, /const rebuildSourceLocationMap = useCallback\(/);
   assert.match(source, /sourceLocationMapRef\.current = mapping/);
   assert.match(source, /controllerRef\.current\.setSourceLocationResult\(\{/);
@@ -104,6 +122,19 @@ test('VisualHtmlEditor rebuilds source-location mapping from the current editor 
   assert.match(source, /const applyCurrentEditorDocument = useCallback\(/);
   assert.match(source, /const revision = controllerRef\.current\.updateCurrentDocument\(nextHtml, origin\)/);
   assert.match(source, /rebuildSourceLocationMap\(nextHtml, revision\)/);
+  assert.doesNotMatch(source, /useMemo\(\s*\(\) => buildSourceLocationMap\(controller\.persistedText/);
+});
+
+test('VisualHtmlEditor performance diagnostics cover load, parsing, and source mapping', async () => {
+  const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /CCUI_DEBUG_VISUAL_CANVAS_PERF/);
+  assert.match(source, /function logVisualHtmlPerf/);
+  assert.match(source, /logVisualHtmlPerf\('load-start'/);
+  assert.match(source, /logVisualHtmlPerf\('read-file'/);
+  assert.match(source, /logVisualHtmlPerf\('create-workspace-document'/);
+  assert.match(source, /logVisualHtmlPerf\('source-location-map'/);
+  assert.match(source, /logVisualHtmlPerf\('load-complete'/);
 });
 
 test('VisualHtmlEditor initializes and refreshes mapping on load and before saving design html', async () => {
@@ -117,7 +148,7 @@ test('VisualHtmlEditor initializes and refreshes mapping on load and before savi
   assert.match(source, /applyCurrentEditorDocument\(nextHtml, 'design'\)/);
   assert.match(source, /const flushDocumentToFile = useCallback\(async \(\{/);
   assert.match(source, /reason: 'manual-save'/);
-  assert.match(source, /if \(!flushedFromDesign \|\| activeMode !== 'design'\) \{\s*setCanvasDocument\(createWorkspaceDocument\(nextHtml\)\);\s*\}/);
+  assert.match(source, /if \(!flushedFromDesign \|\| activeMode !== 'design'\) \{\s*syncCanvasDocumentFromHtml\(nextHtml\);\s*\}/);
   assert.doesNotMatch(source, /controllerRef\.current\.applyDesignToSource\(nextHtml\);/);
 });
 
@@ -153,14 +184,14 @@ test('VisualHtmlEditor treats preview as a read-only browser-like canvas state',
   const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
 
   assert.match(source, /function stripStyleMarkupFromHtml\(markup: string\)/);
-  assert.match(source, /const css = \[editorCss, canvasDocument\.styles\]/);
-  assert.match(source, /bodyHtml: stripStyleMarkupFromHtml\(canvasEditorRef\.current\.getHtml\(\)\)/);
+  assert.doesNotMatch(source, /const css = \[editorCss, canvasDocument\.styles\]/);
+  assert.match(source, /bodyHtml: extractCanvasBodyHtmlForSave\(canvasEditorRef\.current\.getHtml\(\)\)/);
   assert.match(source, /const showSpacingOverlay = !isPreviewActive && !eligibilityError && activeMode === 'design' && canvasEditor && grapesLikeBridge/);
   assert.match(source, /const previewDocument = buildSavedHtml\(\{/);
   assert.match(source, /const previewViewportWidth = canvasDevice === 'desktop'\s*\?\s*'100%'\s*:\s*canvasDevice === 'tablet'\s*\?\s*'770px'\s*:\s*'320px';/);
   assert.match(source, /setCanvasDevice\(device\);/);
   assert.match(source, /if \(!editor\) \{\s*return;\s*\}/);
-  assert.match(source, /setCanvasDocument\(createWorkspaceDocument\(nextHtml\)\);/);
+  assert.match(source, /syncCanvasDocumentFromHtml\(nextHtml\);/);
   assert.match(source, /if \(isPreviewActive\) \{\s*applyPreviewRuntimeStateToDesign\(\);\s*setIsPreviewActive\(false\);\s*return;\s*\}/);
   assert.match(source, /if \(!editor\) \{\s*return;\s*\}/);
   assert.match(source, /editor\.stopCommand\('preview'\);/);
@@ -187,8 +218,8 @@ test('VisualHtmlEditor applies live preview DOM state back to the design canvas 
   assert.match(source, /const applyPreviewRuntimeStateToDesign = useCallback\(\(\) => \{/);
   assert.match(source, /const previewBodyHtml = previewDocument\.body\.innerHTML/);
   assert.match(source, /pendingPreviewRuntimeStylesRef\.current = collectPreviewRuntimeElementStyles\(previewDocument\)/);
-  assert.match(source, /setCanvasDocument\(createWorkspaceDocument\(nextHtml\)\)/);
-  assert.match(source, /buildSavedHtml\(\{\s*snapshot: canvasDocument\.snapshot,\s*bodyHtml: previewBodyHtml,\s*css: canvasDocument\.styles,\s*\}\)/);
+  assert.match(source, /syncCanvasDocumentFromHtml\(nextHtml\)/);
+  assert.match(source, /buildSavedHtmlPreservingHead\(\{\s*sourceHtml: controllerRef\.current\.documentText,\s*bodyHtml: previewBodyHtml,\s*\}\)/);
   assert.match(source, /schedulePreviewRuntimeElementStyleRestore\(editor, pendingPreviewRuntimeStyles\)/);
   assert.match(source, /editor\.Canvas\.getDocument\?\.\(\)\?\.getElementById\(elementId\)/);
   assert.match(source, /component\?\.addAttributes\?\.\(\{ style: styleText \}/);

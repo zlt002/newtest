@@ -15,6 +15,30 @@ type VisualCanvasPaneProps = {
 
 const RAW_CANVAS_STYLE_ATTRIBUTE = 'data-ccui-raw-canvas-style';
 
+function isCanvasPerfDebugEnabled() {
+  return (globalThis as typeof globalThis & { CCUI_DEBUG_VISUAL_CANVAS_PERF?: boolean }).CCUI_DEBUG_VISUAL_CANVAS_PERF === true;
+}
+
+function getPerfNow() {
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+    return performance.now();
+  }
+
+  return Date.now();
+}
+
+function logCanvasPerf(stage: string, payload: Record<string, unknown> = {}) {
+  if (!isCanvasPerfDebugEnabled()) {
+    return;
+  }
+
+  console.info('[VisualCanvasPerf]', {
+    stage,
+    at: new Date().toISOString(),
+    ...payload,
+  });
+}
+
 function extractRootCustomProperties(fullHtml: string): Record<string, string> {
   const styleContents = Array.from(fullHtml.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi))
     .map((match) => match[1] ?? '')
@@ -101,6 +125,59 @@ function collectStyleMarkup(fullHtml: string): string {
     .join('\n');
 }
 
+function stripHeadRuntimeMarkup(markup: string): string {
+  return markup
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+    .trim();
+}
+
+function stripCanvasStructureRuntimeMarkup(markup: string): string {
+  const strippedMarkup = markup
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<meta\b[^>]*>/gi, '')
+    .replace(/<link\b[^>]*>/gi, '')
+    .replace(/<base\b[^>]*>/gi, '')
+    .replace(/<title\b[^>]*>[\s\S]*?<\/title>/gi, '')
+    .trim();
+
+  if (typeof DOMParser === 'undefined') {
+    return strippedMarkup;
+  }
+
+  const parsed = new DOMParser().parseFromString(`<body>${strippedMarkup}</body>`, 'text/html');
+  return parsed.body.innerHTML.trim();
+}
+
+function readTagAttributes(fullHtml: string, tagName: 'html' | 'body'): string {
+  const match = fullHtml.match(new RegExp(`<${tagName}\\b([^>]*)>`, 'i'));
+  return match?.[1]?.trim() ? ` ${match[1].trim()}` : '';
+}
+
+function readBodyMarkup(fullHtml: string): string {
+  return fullHtml.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1] ?? fullHtml;
+}
+
+function collectCanvasHeadMarkup(fullHtml: string): string {
+  const headMarkup = fullHtml.match(/<head\b[^>]*>([\s\S]*?)<\/head>/i)?.[1] ?? '';
+  return stripHeadRuntimeMarkup(headMarkup);
+}
+
+function createCanvasStructureHtml(fullHtml: string): string {
+  const htmlAttributes = readTagAttributes(fullHtml, 'html');
+  const bodyAttributes = readTagAttributes(fullHtml, 'body');
+  const bodyMarkup = stripCanvasStructureRuntimeMarkup(readBodyMarkup(fullHtml));
+
+  return `<!doctype html>
+<html${htmlAttributes}>
+<head></head>
+<body${bodyAttributes}>
+${bodyMarkup}
+</body>
+</html>`;
+}
+
 function injectRawCanvasStyles(editor: ReturnType<typeof grapesjs.init>, styleMarkup: string) {
   const canvasDocument = editor.Canvas.getDocument?.();
   if (!canvasDocument?.head) {
@@ -122,6 +199,101 @@ function injectRawCanvasStyles(editor: ReturnType<typeof grapesjs.init>, styleMa
     clone.setAttribute(RAW_CANVAS_STYLE_ATTRIBUTE, 'true');
     canvasDocument.head.appendChild(clone);
   });
+}
+
+function hasSyncedCanvasHeadMarkup({
+  canvasDocument,
+  canvasHeadMarkup,
+  rawStyleMarkup,
+}: {
+  canvasDocument: Document;
+  canvasHeadMarkup: string;
+  rawStyleMarkup: string;
+}) {
+  const hasRawStyles = !rawStyleMarkup.trim()
+    || Boolean(canvasDocument.head.querySelector(`[${RAW_CANVAS_STYLE_ATTRIBUTE}]`));
+  const hasHeadMarkup = !canvasHeadMarkup.trim()
+    || Boolean(canvasDocument.head.querySelector('[data-ccui-canvas-head-node]'));
+
+  return hasRawStyles && hasHeadMarkup;
+}
+
+function isElementCompletelyOutsideViewport(rect: DOMRect, viewportWidth: number, viewportHeight: number) {
+  return rect.right <= 0 || rect.bottom <= 0 || rect.left >= viewportWidth || rect.top >= viewportHeight;
+}
+
+function isNonVisualEditableElement(element: HTMLElement, viewportWidth: number, viewportHeight: number) {
+  if (element === element.ownerDocument.body || element === element.ownerDocument.documentElement) {
+    return false;
+  }
+
+  const style = element.ownerDocument.defaultView?.getComputedStyle(element);
+  if (!style) {
+    return false;
+  }
+
+  const display = style.display;
+  const visibility = style.visibility;
+  const opacity = style.opacity;
+  if (display === 'none' || visibility === 'hidden' || opacity === '0') {
+    return true;
+  }
+
+  const rect = element.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) {
+    return true;
+  }
+
+  const position = style.position;
+  return (position === 'absolute' || position === 'fixed')
+    && isElementCompletelyOutsideViewport(rect, viewportWidth, viewportHeight);
+}
+
+function readComponentChildren(component: any) {
+  const children = component?.components?.();
+  if (Array.isArray(children)) {
+    return children;
+  }
+
+  const items: any[] = [];
+  if (typeof children?.forEach === 'function') {
+    children.forEach((child: any) => {
+      items.push(child);
+    });
+  }
+
+  return items;
+}
+
+function disableNonVisualEditableCanvasComponents(editor: ReturnType<typeof grapesjs.init>) {
+  const canvasDocument = editor.Canvas.getDocument?.();
+  const canvasWindow = canvasDocument?.defaultView;
+  const wrapper = editor.DomComponents?.getWrapper?.() as any;
+  if (!canvasDocument?.body || !canvasWindow || !wrapper) {
+    return;
+  }
+
+  const viewportWidth = canvasWindow.innerWidth || canvasDocument.documentElement.clientWidth || canvasDocument.body.clientWidth;
+  const viewportHeight = canvasWindow.innerHeight || canvasDocument.documentElement.clientHeight || canvasDocument.body.clientHeight;
+  const visit = (component: any) => {
+    readComponentChildren(component).forEach(visit);
+
+    const element = component?.getEl?.() as HTMLElement | null;
+    if (!element || !canvasDocument.body.contains(element)) {
+      return;
+    }
+
+    if (isNonVisualEditableElement(element, viewportWidth, viewportHeight)) {
+      component.set?.({
+        selectable: false,
+        hoverable: false,
+        draggable: false,
+        editable: false,
+      }, { silent: true });
+    }
+  };
+
+  readComponentChildren(wrapper).forEach(visit);
 }
 
 export default function VisualCanvasPane({
@@ -149,7 +321,26 @@ export default function VisualCanvasPane({
 
     const canvasHtml = normalizeDesignCanvasHtml(fullHtml);
     const rawStyleMarkup = collectStyleMarkup(canvasHtml);
+    const canvasHeadMarkup = collectCanvasHeadMarkup(canvasHtml);
+    const canvasStructureHtml = createCanvasStructureHtml(canvasHtml);
+    logCanvasPerf('prepared', {
+      fullHtmlLength: fullHtml.length,
+      normalizedHtmlLength: canvasHtml.length,
+      structureHtmlLength: canvasStructureHtml.length,
+      rawStyleMarkupLength: rawStyleMarkup.length,
+      canvasHeadMarkupLength: canvasHeadMarkup.length,
+      structureReductionPercent: canvasHtml.length > 0
+        ? Math.round((1 - canvasStructureHtml.length / canvasHtml.length) * 10000) / 100
+        : 0,
+    });
     const pendingStyleSyncTimeouts: number[] = [];
+    const visualEditableFilterRef = { current: false };
+    const lastHeadSyncRef: {
+      current: {
+        document: Document;
+        key: string;
+      } | null;
+    } = { current: null };
     const editor = grapesjs.init({
       container: containerRef.current,
       fromElement: false,
@@ -180,7 +371,8 @@ export default function VisualCanvasPane({
       ],
     });
 
-    editor.getWrapper()?.components(canvasHtml, {
+    const componentsStartedAt = getPerfNow();
+    editor.getWrapper()?.components(canvasStructureHtml, {
       asDocument: true,
       parserOptions: {
         allowScripts: true,
@@ -191,6 +383,10 @@ export default function VisualCanvasPane({
         allowScripts: boolean;
         detectDocument: boolean;
       };
+    });
+    logCanvasPerf('components', {
+      durationMs: Math.round(getPerfNow() - componentsStartedAt),
+      structureHtmlLength: canvasStructureHtml.length,
     });
 
     editorRef.current = editor;
@@ -219,13 +415,59 @@ export default function VisualCanvasPane({
       onDirtyChangeRef.current?.(editor.getDirtyCount() > 0, editor);
     };
     const syncCanvasHeadMarkup = () => {
-      injectCanvasHeadMarkup(editor, '');
+      const canvasDocument = editor.Canvas.getDocument?.();
+      if (!canvasDocument?.head) {
+        return;
+      }
+
+      const headSyncKey = `${canvasHeadMarkup.length}:${rawStyleMarkup.length}`;
+      if (
+        lastHeadSyncRef.current?.document === canvasDocument
+        && lastHeadSyncRef.current.key === headSyncKey
+        && hasSyncedCanvasHeadMarkup({
+          canvasDocument,
+          canvasHeadMarkup,
+          rawStyleMarkup,
+        })
+      ) {
+        logCanvasPerf('head-sync-skip', {
+          reason: 'same-document',
+          rawStyleMarkupLength: rawStyleMarkup.length,
+          canvasHeadMarkupLength: canvasHeadMarkup.length,
+        });
+        return;
+      }
+
+      const headSyncStartedAt = getPerfNow();
+      injectCanvasHeadMarkup(editor, canvasHeadMarkup);
       injectRawCanvasStyles(editor, rawStyleMarkup);
+      lastHeadSyncRef.current = {
+        document: canvasDocument,
+        key: headSyncKey,
+      };
+      logCanvasPerf('head-sync', {
+        durationMs: Math.round(getPerfNow() - headSyncStartedAt),
+        rawStyleMarkupLength: rawStyleMarkup.length,
+        canvasHeadMarkupLength: canvasHeadMarkup.length,
+      });
     };
     const scheduleCanvasHeadMarkupSync = () => {
+      const disableInitialNonVisualEditableComponents = () => {
+        if (visualEditableFilterRef.current) {
+          return;
+        }
+
+        disableNonVisualEditableCanvasComponents(editor);
+        visualEditableFilterRef.current = true;
+      };
+
       syncCanvasHeadMarkup();
+      disableInitialNonVisualEditableComponents();
       [0, 50, 150, 350].forEach((delay) => {
-        const timeout = window.setTimeout(syncCanvasHeadMarkup, delay);
+        const timeout = window.setTimeout(() => {
+          syncCanvasHeadMarkup();
+          disableInitialNonVisualEditableComponents();
+        }, delay);
         pendingStyleSyncTimeouts.push(timeout);
       });
     };

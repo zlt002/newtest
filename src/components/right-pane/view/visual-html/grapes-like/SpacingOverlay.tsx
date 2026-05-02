@@ -220,7 +220,15 @@ function isSpacingOverlayDebugEnabled() {
   return (globalThis as typeof globalThis & { CCUI_DEBUG_SPACING_OVERLAY?: boolean }).CCUI_DEBUG_SPACING_OVERLAY === true;
 }
 
+function isVisualSendToChatDebugEnabled() {
+  return (globalThis as typeof globalThis & { CCUI_DEBUG_VISUAL_SEND_TO_CHAT?: boolean }).CCUI_DEBUG_VISUAL_SEND_TO_CHAT === true;
+}
+
 function logVisualSendToChat(stage: string, payload: Record<string, unknown> = {}) {
+  if (!isVisualSendToChatDebugEnabled()) {
+    return;
+  }
+
   console.info('[VisualSendToChat]', stage, {
     at: new Date().toISOString(),
     ...payload,

@@ -1917,6 +1917,14 @@ test('SpacingOverlay toolbar profiling logs stay behind a debug gate', () => {
   }
 });
 
+test('SpacingOverlay send-to-chat diagnostic logs stay behind a debug gate', async () => {
+  const source = await readFile(new URL('./SpacingOverlay.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /CCUI_DEBUG_VISUAL_SEND_TO_CHAT/);
+  assert.match(source, /function isVisualSendToChatDebugEnabled\(\)/);
+  assert.match(source, /if \(!isVisualSendToChatDebugEnabled\(\)\) \{\s*return;\s*\}/);
+});
+
 test('syncSpacingOverlayToolbar skips editor.refresh until Canvas.refresh is ready', () => {
   let refreshCalls = 0;
   const editor = {

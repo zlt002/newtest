@@ -21,7 +21,7 @@ import { api } from '../../../utils/api';
 import { broadcastFileSyncEvent, subscribeToFileSyncEvents } from '../../../utils/fileSyncEvents';
 import { isHtmlEligibleForVisualEditing } from '../utils/htmlVisualEligibility';
 import type { RightPaneVisualHtmlTarget } from '../types';
-import { buildSavedHtml, createWorkspaceDocument } from './visual-html/htmlDocumentTransforms';
+import { buildSavedHtml, buildSavedHtmlPreservingHead, createWorkspaceDocument } from './visual-html/htmlDocumentTransforms';
 import { formatHtmlDocument } from './visual-html/formatHtmlDocument';
 import GrapesLikeInspectorPane from './visual-html/grapes-like/GrapesLikeInspectorPane';
 import { createGrapesLikeInspectorBridge } from './visual-html/grapes-like/createGrapesLikeInspectorBridge';
@@ -46,6 +46,7 @@ type VisualHtmlEditorProps = {
 
 const SAVE_SUCCESS_TIMEOUT_MS = 2000;
 const AUTO_FLUSH_DELAY_MS = 500;
+const EMPTY_HTML_DOCUMENT = '<!doctype html><html><head></head><body></body></html>';
 
 type ToolbarIcon = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -65,6 +66,45 @@ type PreviewRuntimeElementStyles = Record<string, string>;
 
 function stripStyleMarkupFromHtml(markup: string): string {
   return markup.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '').trim();
+}
+
+function extractLastBodyInnerHtml(markup: string): string {
+  let bodyHtml = markup.trim();
+
+  for (let depth = 0; depth < 5; depth += 1) {
+    const bodyMatch = bodyHtml.match(/<body\b[^>]*>([\s\S]*)<\/body>/i);
+    if (!bodyMatch?.[1]) {
+      break;
+    }
+
+    bodyHtml = bodyMatch[1].trim();
+  }
+
+  return bodyHtml;
+}
+
+function stripCanvasRuntimeArtifacts(markup: string): string {
+  if (typeof DOMParser === 'undefined') {
+    return stripStyleMarkupFromHtml(markup)
+      .replace(/<plasmo-csui\b[^>]*>[\s\S]*?<\/plasmo-csui>/gi, '')
+      .replace(/<plasmo-csui\b[^>]*\/?>/gi, '')
+      .replace(/<(script|meta|link|base|title)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
+      .replace(/<(script|meta|link|base|title)\b[^>]*\/?>/gi, '')
+      .trim();
+  }
+
+  const parsed = new DOMParser().parseFromString(`<body>${markup}</body>`, 'text/html');
+  parsed.body
+    .querySelectorAll('plasmo-csui, script, style, meta, link, base, title, [data-ccui-raw-canvas-style], [data-ccui-canvas-head-node]')
+    .forEach((node) => {
+      node.remove();
+    });
+
+  return parsed.body.innerHTML.trim();
+}
+
+function extractCanvasBodyHtmlForSave(markup: string): string {
+  return stripCanvasRuntimeArtifacts(extractLastBodyInnerHtml(markup));
 }
 
 function OutlineIcon(props: SVGProps<SVGSVGElement>) {
@@ -112,6 +152,30 @@ function getErrorMessage(error: unknown): string {
   }
 
   return String(error);
+}
+
+function isVisualHtmlPerfDebugEnabled() {
+  return (globalThis as typeof globalThis & { CCUI_DEBUG_VISUAL_CANVAS_PERF?: boolean }).CCUI_DEBUG_VISUAL_CANVAS_PERF === true;
+}
+
+function getVisualHtmlPerfNow() {
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+    return performance.now();
+  }
+
+  return Date.now();
+}
+
+function logVisualHtmlPerf(stage: string, payload: Record<string, unknown> = {}) {
+  if (!isVisualHtmlPerfDebugEnabled()) {
+    return;
+  }
+
+  console.info('[VisualHtmlPerf]', {
+    stage,
+    at: new Date().toISOString(),
+    ...payload,
+  });
 }
 
 const CANVAS_OUTLINE_STYLE_ID = 'ccui-visual-outline-override';
@@ -395,7 +459,7 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
   const controllerRef = useRef(controller);
   const [activeMode, setActiveMode] = useState<'design' | 'source'>('design');
   const [canvasDocument, setCanvasDocument] = useState(() =>
-    createWorkspaceDocument('<!doctype html><html><head></head><body></body></html>'),
+    createWorkspaceDocument(EMPTY_HTML_DOCUMENT),
   );
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -412,10 +476,12 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
   const previewFrameRef = useRef<HTMLIFrameElement | null>(null);
   const pendingPreviewRuntimeStylesRef = useRef<PreviewRuntimeElementStyles | null>(null);
   const sourceLocationMapRef = useRef(buildSourceLocationMap('', 0));
+  const persistedSourceLocationMapRef = useRef(buildSourceLocationMap('', 0));
   const pendingSourceCursorEntryRef = useRef<SourceLocationEntry | null>(null);
   const pendingDesignSyncFrameRef = useRef<number | null>(null);
   const pendingFileFlushTimeoutRef = useRef<number | null>(null);
   const loadRequestSequenceRef = useRef(0);
+  const canvasDocumentSourceRef = useRef(EMPTY_HTML_DOCUMENT);
   const syncSourceIdRef = useRef(`visual-html-editor-${Math.random().toString(36).slice(2)}`);
   const saveSuccessTimeoutRef = useRef<number | null>(null);
   const targetProjectName = target.projectName ?? null;
@@ -423,29 +489,37 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
   controllerRef.current = controller;
   const hasUnsavedChanges = controller.dirtySource || controller.dirtyDesign;
   const sourceLocationParseWarning = sourceLocationMapRef.current.parseErrors?.[0] ?? null;
-  const persistedSourceLocationMap = useMemo(
-    () => buildSourceLocationMap(controller.persistedText, 0),
-    [controller.persistedText],
-  );
+  const persistedSourceLocationMap = persistedSourceLocationMapRef.current;
   const grapesLikeBridge = useMemo(() => createGrapesLikeInspectorBridge(canvasEditor), [canvasEditor]);
+
+  const syncCanvasDocumentFromHtml = useCallback((nextHtml: string) => {
+    if (canvasDocumentSourceRef.current === nextHtml) {
+      return;
+    }
+
+    const startedAt = getVisualHtmlPerfNow();
+    const nextCanvasDocument = createWorkspaceDocument(nextHtml);
+    canvasDocumentSourceRef.current = nextHtml;
+    logVisualHtmlPerf('create-workspace-document', {
+      durationMs: Math.round(getVisualHtmlPerfNow() - startedAt),
+      htmlLength: nextHtml.length,
+      bodyHtmlLength: nextCanvasDocument.bodyHtml.length,
+      stylesLength: nextCanvasDocument.styles.length,
+    });
+    setCanvasDocument(nextCanvasDocument);
+  }, []);
 
   const collectCanvasHtml = useCallback(() => {
     if (!canvasEditorRef.current) {
       return controller.documentText;
     }
 
-    const editorCss = canvasEditorRef.current.getCss() ?? '';
-    const css = [editorCss, canvasDocument.styles]
-      .map((styleText) => styleText.trim())
-      .filter(Boolean)
-      .join('\n\n');
-
-    return buildSavedHtml({
-      snapshot: canvasDocument.snapshot,
-      bodyHtml: stripStyleMarkupFromHtml(canvasEditorRef.current.getHtml()),
-      css,
+    return buildSavedHtmlPreservingHead({
+      sourceHtml: controllerRef.current.documentText,
+      bodyHtml: extractCanvasBodyHtmlForSave(canvasEditorRef.current.getHtml()),
+      canvasCss: canvasEditorRef.current.getCss(),
     });
-  }, [canvasDocument.snapshot, canvasDocument.styles, controller.documentText]);
+  }, [controller.documentText]);
 
   const applyPreviewRuntimeStateToDesign = useCallback(() => {
     const previewDocument = previewFrameRef.current?.contentDocument;
@@ -455,20 +529,27 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
 
     const previewBodyHtml = previewDocument.body.innerHTML;
     pendingPreviewRuntimeStylesRef.current = collectPreviewRuntimeElementStyles(previewDocument);
-    const nextHtml = buildSavedHtml({
-      snapshot: canvasDocument.snapshot,
+    const nextHtml = buildSavedHtmlPreservingHead({
+      sourceHtml: controllerRef.current.documentText,
       bodyHtml: previewBodyHtml,
-      css: canvasDocument.styles,
     });
-    setCanvasDocument(createWorkspaceDocument(nextHtml));
-  }, [canvasDocument.snapshot, canvasDocument.styles]);
+    syncCanvasDocumentFromHtml(nextHtml);
+  }, [syncCanvasDocumentFromHtml]);
 
   const clearPendingSourceCursorEntry = useCallback(() => {
     pendingSourceCursorEntryRef.current = null;
   }, []);
 
   const rebuildSourceLocationMap = useCallback((nextHtml: string, revision: number) => {
+    const startedAt = getVisualHtmlPerfNow();
     const mapping = buildSourceLocationMap(nextHtml, revision);
+    logVisualHtmlPerf('source-location-map', {
+      durationMs: Math.round(getVisualHtmlPerfNow() - startedAt),
+      htmlLength: nextHtml.length,
+      revision,
+      status: mapping.status,
+      entries: mapping.entries.length,
+    });
     sourceLocationMapRef.current = mapping;
     controllerRef.current.setSourceLocationResult({
       revision,
@@ -634,9 +715,10 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
       clearPendingSourceCursorEntry();
       controllerRef.current.setPersistedDocument({ content: nextHtml, version: data.version ?? null });
       if (!flushedFromDesign || activeMode !== 'design') {
-        setCanvasDocument(createWorkspaceDocument(nextHtml));
+        syncCanvasDocumentFromHtml(nextHtml);
       }
       const mapping = rebuildSourceLocationMap(nextHtml, revision);
+      persistedSourceLocationMapRef.current = mapping;
       canvasEditorRef.current?.clearDirtyCount();
       broadcastFileSyncEvent({
         projectName: targetProjectName,
@@ -736,22 +818,25 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
       cancelPendingDesignDocumentSync();
       const nextHtml = collectCanvasHtml();
       applyCurrentEditorDocument(nextHtml, 'design');
+      syncCanvasDocumentFromHtml(nextHtml);
       controllerRef.current.setDirtyDesign(false);
       controllerRef.current.setDirtySource(false);
+    } else {
+      syncCanvasDocumentFromHtml(controllerRef.current.documentText);
     }
 
     setActiveMode('source');
-  }, [applyCurrentEditorDocument, cancelPendingDesignDocumentSync, collectCanvasHtml]);
+  }, [applyCurrentEditorDocument, cancelPendingDesignDocumentSync, collectCanvasHtml, syncCanvasDocumentFromHtml]);
 
   const handleSwitchToDesign = useCallback(() => {
     if (controllerRef.current.dirtySource) {
-      setCanvasDocument(createWorkspaceDocument(controllerRef.current.documentText));
+      syncCanvasDocumentFromHtml(controllerRef.current.documentText);
       controllerRef.current.setDirtyDesign(false);
       controllerRef.current.setDirtySource(false);
     }
 
     setActiveMode('design');
-  }, []);
+  }, [syncCanvasDocumentFromHtml]);
 
   const togglePreview = useCallback(() => {
     if (isPreviewActive) {
@@ -768,7 +853,7 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
     cancelPendingDesignDocumentSync();
     const nextHtml = collectCanvasHtml();
     applyCurrentEditorDocument(nextHtml, 'design');
-    setCanvasDocument(createWorkspaceDocument(nextHtml));
+    syncCanvasDocumentFromHtml(nextHtml);
     editor.stopCommand('preview');
     editor.select?.();
     setIsPreviewActive(true);
@@ -778,6 +863,7 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
     cancelPendingDesignDocumentSync,
     collectCanvasHtml,
     isPreviewActive,
+    syncCanvasDocumentFromHtml,
   ]);
 
   const handleCanvasUndo = useCallback(() => {
@@ -845,8 +931,14 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
   }, []);
 
   const loadFileContent = useCallback(async ({ markLoading = true }: { markLoading?: boolean } = {}) => {
+    const loadStartedAt = getVisualHtmlPerfNow();
     const requestId = loadRequestSequenceRef.current + 1;
     loadRequestSequenceRef.current = requestId;
+    logVisualHtmlPerf('load-start', {
+      requestId,
+      filePath: target.filePath,
+      markLoading,
+    });
     cancelPendingDesignDocumentSync();
     cancelPendingFileFlush();
 
@@ -869,12 +961,20 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
       setEligibilityError(null);
       controllerRef.current.markSyncConflict('');
 
+      const readStartedAt = getVisualHtmlPerfNow();
       const response = await api.readFile(targetProjectName, target.filePath);
       if (!response.ok) {
         throw new Error(`Failed to load file: ${response.status} ${response.statusText}`);
       }
 
       const data = await response.json();
+      logVisualHtmlPerf('read-file', {
+        requestId,
+        durationMs: Math.round(getVisualHtmlPerfNow() - readStartedAt),
+        ok: response.ok,
+        status: response.status,
+        contentLength: String(data.content ?? '').length,
+      });
       if (requestId !== loadRequestSequenceRef.current) {
         return;
       }
@@ -882,8 +982,9 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
       const revision = controllerRef.current.editorRevision + 1;
       clearPendingSourceCursorEntry();
       controllerRef.current.setPersistedDocument({ content: fileContent, version: data.version ?? null });
-      setCanvasDocument(createWorkspaceDocument(fileContent));
-      rebuildSourceLocationMap(fileContent, revision);
+      syncCanvasDocumentFromHtml(fileContent);
+      const mapping = rebuildSourceLocationMap(fileContent, revision);
+      persistedSourceLocationMapRef.current = mapping;
 
       if (!isHtmlEligibleForVisualEditing(fileContent)) {
         setEligibilityError('当前文件暂不支持可视化编辑，已切换到源码模式。');
@@ -892,6 +993,13 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
       }
 
       setActiveMode('design');
+      logVisualHtmlPerf('load-complete', {
+        requestId,
+        durationMs: Math.round(getVisualHtmlPerfNow() - loadStartedAt),
+        htmlLength: fileContent.length,
+        mappingStatus: mapping.status,
+        mappingEntries: mapping.entries.length,
+      });
     } catch (error) {
       if (requestId !== loadRequestSequenceRef.current) {
         return;
@@ -903,7 +1011,14 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
         setLoading(false);
       }
     }
-  }, [cancelPendingDesignDocumentSync, clearPendingSourceCursorEntry, rebuildSourceLocationMap, target.filePath, targetProjectName]);
+  }, [
+    cancelPendingDesignDocumentSync,
+    clearPendingSourceCursorEntry,
+    rebuildSourceLocationMap,
+    syncCanvasDocumentFromHtml,
+    target.filePath,
+    targetProjectName,
+  ]);
 
   useEffect(() => {
     void loadFileContent();
