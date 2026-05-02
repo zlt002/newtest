@@ -13,6 +13,8 @@ test('VisualCanvasPane source defines an isolated design surface around GrapesJS
   assert.match(source, /locale: 'zh-CN'/);
   assert.match(source, /messagesAdd/);
   assert.match(source, /normalizeDesignCanvasHtml/);
+  assert.match(source, /stripCanvasSecurityPolicyMeta/);
+  assert.match(source, /http-equiv\\s\*=\\s\*\(\["'\]\)\?Content-Security-Policy/);
   assert.match(source, /extractRootCustomProperties/);
   assert.match(source, /inlineCustomPropertyReferences/);
   assert.match(source, /collectStyleMarkup/);

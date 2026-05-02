@@ -127,7 +127,9 @@ test('VisualHtmlEditor exposes live source-location mapping and a freshness help
   assert.match(source, /const ensureFreshSourceLocationMap = useCallback\(/);
   assert.match(source, /const ensureLatestSourceContextForChat = useCallback\(async \(\) => \{/);
   assert.match(source, /const flushDocumentToFile = useCallback\(async \(\{/);
-  assert.match(source, /reason: 'send-to-ai'/);
+  assert.match(source, /const sourceText = controllerRef\.current\.documentText;/);
+  assert.match(source, /const mapping = sourceLocationMapRef\.current;/);
+  assert.doesNotMatch(source, /reason: 'send-to-ai'/);
   assert.match(source, /if \(pendingDesignSyncFrameRef\.current !== null\) \{\s*window\.cancelAnimationFrame\(pendingDesignSyncFrameRef\.current\);\s*flushDesignDocumentSync\(\);\s*return sourceLocationMapRef\.current;\s*\}/);
   assert.match(source, /controllerRef\.current\.sourceLocationState\.isStale/);
   assert.match(source, /sourceLocationMapRef\.current/);

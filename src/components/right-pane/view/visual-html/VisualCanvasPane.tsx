@@ -69,10 +69,18 @@ function appendInlineStyleAttribute(tagSource: string, declarations: string): st
   return tagSource.replace(/>$/, ` style="${declarations}">`);
 }
 
+function stripCanvasSecurityPolicyMeta(fullHtml: string): string {
+  return fullHtml.replace(
+    /<meta\b(?=[^>]*\bhttp-equiv\s*=\s*(["'])?Content-Security-Policy\1?)[^>]*>/gi,
+    '',
+  );
+}
+
 function normalizeDesignCanvasHtml(fullHtml: string): string {
-  const rootCustomProperties = extractRootCustomProperties(fullHtml);
+  const htmlWithoutCanvasCsp = stripCanvasSecurityPolicyMeta(fullHtml);
+  const rootCustomProperties = extractRootCustomProperties(htmlWithoutCanvasCsp);
   const rootDeclarations = serializeCustomProperties(rootCustomProperties);
-  const htmlWithInlinedVariables = inlineCustomPropertyReferences(fullHtml, rootCustomProperties);
+  const htmlWithInlinedVariables = inlineCustomPropertyReferences(htmlWithoutCanvasCsp, rootCustomProperties);
   if (!rootDeclarations) {
     return htmlWithInlinedVariables;
   }

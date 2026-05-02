@@ -704,20 +704,17 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
   }, [cancelPendingFileFlush, flushDocumentToFile, targetProjectName]);
 
   const ensureLatestSourceContextForChat = useCallback(async () => {
-    const result = await flushDocumentToFile({
-      reason: 'send-to-ai',
-      indicateSaving: false,
-      indicateSuccess: false,
-    });
+    const sourceText = controllerRef.current.documentText;
+    const mapping = sourceLocationMapRef.current;
 
     return {
-      sourceText: result.html,
-      sourceLocationMap: result.mapping,
-      persistedSourceText: result.html,
-      persistedSourceLocationMap: result.mapping,
+      sourceText,
+      sourceLocationMap: mapping,
+      persistedSourceText: controllerRef.current.persistedText,
+      persistedSourceLocationMap: persistedSourceLocationMap,
       preferPersistedLocation: false,
     };
-  }, [flushDocumentToFile]);
+  }, [persistedSourceLocationMap]);
 
   const handleSourceCursorChange = useCallback((position: HtmlSourceCursorPosition) => {
     const mapping = ensureFreshSourceLocationMap();

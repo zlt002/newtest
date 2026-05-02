@@ -23,6 +23,7 @@ import {
 type GrapesEditor = ReturnType<typeof grapesjs.init>;
 type SpacingKind = 'margin' | 'padding';
 type SpacingSide = 'top' | 'right' | 'bottom' | 'left';
+type ResizeHandle = 'top' | 'right' | 'bottom' | 'left' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 type PositionMode = 'absolute' | 'fixed';
 
 type SpacingBoxMetrics = BoxValue & {
@@ -47,7 +48,9 @@ type SelectedSpacingBox = {
   top: number;
   width: number;
   height: number;
+  display: string;
   positionMode: PositionMode | null;
+  resizeValue: ResizeDragValue;
   marginBox: {
     left: number;
     top: number;
@@ -102,6 +105,12 @@ type PositionDragValue = {
   top: { value: string; unit: string };
 };
 
+type ResizeDragValue = {
+  width: { value: string; unit: string };
+  height: { value: string; unit: string };
+  aspectRatio: number;
+};
+
 type SpacingDragState = {
   pointerId: number;
   kind: SpacingKind;
@@ -118,6 +127,17 @@ type PositionDragState = {
   startX: number;
   startY: number;
   startValue: PositionDragValue;
+  handle: HTMLButtonElement | null;
+  target: SpacingStyleTarget | null;
+};
+
+type ResizeDragState = {
+  pointerId: number;
+  handleName: ResizeHandle;
+  startX: number;
+  startY: number;
+  startValue: ResizeDragValue;
+  display: string;
   handle: HTMLButtonElement | null;
   target: SpacingStyleTarget | null;
 };
@@ -189,11 +209,22 @@ const HANDLE_COLORS: Record<SpacingKind, string> = {
 };
 
 function logSpacingOverlay(event: string, payload: Record<string, unknown>) {
-  if ((globalThis as typeof globalThis & { CCUI_DEBUG_SPACING_OVERLAY?: boolean }).CCUI_DEBUG_SPACING_OVERLAY !== true) {
+  if (!isSpacingOverlayDebugEnabled()) {
     return;
   }
 
   console.log('[SpacingOverlay]', event, payload);
+}
+
+function isSpacingOverlayDebugEnabled() {
+  return (globalThis as typeof globalThis & { CCUI_DEBUG_SPACING_OVERLAY?: boolean }).CCUI_DEBUG_SPACING_OVERLAY === true;
+}
+
+function logVisualSendToChat(stage: string, payload: Record<string, unknown> = {}) {
+  console.info('[VisualSendToChat]', stage, {
+    at: new Date().toISOString(),
+    ...payload,
+  });
 }
 
 function getTimingNow() {
@@ -369,6 +400,60 @@ export function applyPositionDragDelta(start: PositionDragValue, delta: { x: num
       unit: start.top.unit || 'px',
     },
   };
+}
+
+const MIN_RESIZE_SIZE_PX = 8;
+
+function getResizeDelta(handleName: ResizeHandle, delta: { x: number; y: number }) {
+  return {
+    width: handleName.includes('left') ? -delta.x : handleName.includes('right') ? delta.x : 0,
+    height: handleName.includes('top') ? -delta.y : handleName.includes('bottom') ? delta.y : 0,
+  };
+}
+
+export function applyResizeDragDelta(
+  start: ResizeDragValue,
+  delta: { x: number; y: number },
+  handleName: ResizeHandle,
+  modifiers: { shiftKey?: boolean },
+): Omit<ResizeDragValue, 'aspectRatio'> {
+  const resizeDelta = getResizeDelta(handleName, delta);
+  const startWidth = Number(start.width.value) || 0;
+  const startHeight = Number(start.height.value) || 0;
+  let nextWidth = Math.max(startWidth + resizeDelta.width, MIN_RESIZE_SIZE_PX);
+  let nextHeight = Math.max(startHeight + resizeDelta.height, MIN_RESIZE_SIZE_PX);
+
+  if (modifiers.shiftKey && Number.isFinite(start.aspectRatio) && start.aspectRatio > 0) {
+    if (Math.abs(resizeDelta.width) >= Math.abs(resizeDelta.height)) {
+      nextHeight = Math.max(nextWidth / start.aspectRatio, MIN_RESIZE_SIZE_PX);
+    } else {
+      nextWidth = Math.max(nextHeight * start.aspectRatio, MIN_RESIZE_SIZE_PX);
+    }
+  }
+
+  return {
+    width: { value: formatNumber(nextWidth), unit: start.width.unit || 'px' },
+    height: { value: formatNumber(nextHeight), unit: start.height.unit || 'px' },
+  };
+}
+
+export function applyResizeStylesToTarget(
+  target: SpacingStyleTarget | null,
+  value: Omit<ResizeDragValue, 'aspectRatio'>,
+  display: string | null | undefined,
+) {
+  if (!target) {
+    return;
+  }
+
+  const style: Record<string, string> = {
+    width: `${value.width.value}${value.width.unit || 'px'}`,
+    height: `${value.height.value}${value.height.unit || 'px'}`,
+  };
+  if (display === 'inline') {
+    style.display = 'inline-block';
+  }
+  target.addStyle?.(style);
 }
 
 export function applyPositionStylesToTarget(
@@ -943,6 +1028,12 @@ export function attachCanvasMarqueeSelection(editor: MarqueeSelectionEditor) {
     if (!blockNextClick) {
       return;
     }
+    const target = event.target as HTMLElement | null;
+    if (target?.closest?.('[data-spacing-multi-toolbar="true"], [data-spacing-selected-box="true"], [data-spacing-handle-hover-zone="true"], .ccui-spacing-handle')) {
+      blockNextClick = false;
+      return;
+    }
+
     blockNextClick = false;
     event.preventDefault();
     event.stopPropagation();
@@ -1173,7 +1264,13 @@ function buildSpacingBoxesForElement(
     top: rect.top,
     width: rect.width,
     height: rect.height,
+    display: computed.display,
     positionMode: isPositionDragEnabled(computed.position) ? computed.position : null,
+    resizeValue: {
+      width: { value: formatNumber(rect.width), unit: 'px' },
+      height: { value: formatNumber(rect.height), unit: 'px' },
+      aspectRatio: rect.height > 0 ? rect.width / rect.height : 1,
+    },
     marginBox: {
       left: rect.left - margin.leftPx,
       top: rect.top - margin.topPx,
@@ -1385,57 +1482,71 @@ export async function buildSendSelectionToChatPayload({
   const effectivePersistedSourceText = latestSourceContext?.persistedSourceText ?? persistedSourceText;
   const effectivePersistedSourceLocationMap = latestSourceContext?.persistedSourceLocationMap ?? persistedSourceLocationMap;
   const shouldPreferPersistedLocation = latestSourceContext?.preferPersistedLocation ?? preferPersistedLocation;
-  const mapping = ensureFreshSourceLocationMap
+  const mapping = latestSourceContext
+    ? effectiveSourceLocationMap
+    : ensureFreshSourceLocationMap
     ? await ensureFreshSourceLocationMap()
     : effectiveSourceLocationMap;
+  logVisualSendToChat('payload-targets', {
+    targetCount: targets.length,
+    mappingStatus: mapping.status,
+    mappingRevision: mapping.revision,
+    mappingEntries: mapping.entries.length,
+    sourceTextLength: effectiveSourceText.length,
+    hasLatestSourceContext: Boolean(latestSourceContext),
+  });
   const resolvedTargets = targets.map((target) => {
     const identity = extractComponentIdentity(target);
-    const persistedFallback = shouldPreferPersistedLocation
-      ? findClosestElementSourceLocationWithDiagnostics({
-        sourceText: effectivePersistedSourceText,
-        element: target.getEl?.() ?? null,
-      })
-      : { location: null, attempts: [] as Array<{ tagName: string; matched: boolean }> };
-    const persistedLocation = shouldPreferPersistedLocation
-      ? (
-        (effectivePersistedSourceLocationMap ? findSourceLocationByIdentity(effectivePersistedSourceLocationMap, identity) : null)
-        ?? persistedFallback.location
-      )
+    const element = target.getEl?.() ?? null;
+    const persistedMappingLocation = shouldPreferPersistedLocation && effectivePersistedSourceLocationMap
+      ? findSourceLocationByIdentity(effectivePersistedSourceLocationMap, identity)
       : null;
     const mappingLocation = findSourceLocationByIdentity(mapping, identity);
-    const fallback = findClosestElementSourceLocationWithDiagnostics({
-      sourceText: effectiveSourceText,
-      element: target.getEl?.() ?? null,
-    });
+    const persistedFallback = shouldPreferPersistedLocation && !persistedMappingLocation && !mappingLocation
+      ? findClosestElementSourceLocationWithDiagnostics({
+        sourceText: effectivePersistedSourceText,
+        element,
+      })
+      : { location: null, attempts: [] as Array<{ tagName: string; matched: boolean }> };
+    const persistedLocation = persistedMappingLocation ?? persistedFallback.location;
+    const fallback = !persistedLocation && !mappingLocation
+      ? findClosestElementSourceLocationWithDiagnostics({
+        sourceText: effectiveSourceText,
+        element,
+      })
+      : { location: null, attempts: [] as Array<{ tagName: string; matched: boolean }> };
     const location = persistedLocation ?? mappingLocation ?? fallback.location;
-    const lookupCounts = countLookupCandidates(mapping, identity);
+    const shouldLogLookupDiagnostics = isSpacingOverlayDebugEnabled();
+    const lookupCounts = shouldLogLookupDiagnostics ? countLookupCandidates(mapping, identity) : null;
     const targetId = String(target.getId?.() ?? target.get?.('id') ?? '').trim();
 
-    logSpacingOverlay('send-to-chat-lookup', {
-      targetId,
-      identity,
-      preferPersistedLocation: shouldPreferPersistedLocation,
-      mappingStatus: mapping.status,
-      mappingRevision: mapping.revision,
-      mappingEntryCount: mapping.entries.length,
-      lookupCounts,
-      persistedMappingStatus: effectivePersistedSourceLocationMap?.status ?? null,
-      persistedMappingRevision: effectivePersistedSourceLocationMap?.revision ?? null,
-      persistedSourceTextLength: effectivePersistedSourceText.length,
-      resolvedBy: persistedLocation
-        ? 'persisted'
-        : mappingLocation
-          ? 'mapping'
-          : fallback.location
-            ? 'fallback'
-            : 'unresolved',
-      persistedFallbackAttempts: persistedFallback.attempts,
-      fallbackAttempts: fallback.attempts,
-      sourceTextLength: effectiveSourceText.length,
-      location: location
-        ? `${location.startLine}:${location.startColumn}-${location.endLine}:${location.endColumn}`
-        : null,
-    });
+    if (shouldLogLookupDiagnostics) {
+      logSpacingOverlay('send-to-chat-lookup', {
+        targetId,
+        identity,
+        preferPersistedLocation: shouldPreferPersistedLocation,
+        mappingStatus: mapping.status,
+        mappingRevision: mapping.revision,
+        mappingEntryCount: mapping.entries.length,
+        lookupCounts,
+        persistedMappingStatus: effectivePersistedSourceLocationMap?.status ?? null,
+        persistedMappingRevision: effectivePersistedSourceLocationMap?.revision ?? null,
+        persistedSourceTextLength: effectivePersistedSourceText.length,
+        resolvedBy: persistedLocation
+          ? 'persisted'
+          : mappingLocation
+            ? 'mapping'
+            : fallback.location
+              ? 'fallback'
+              : 'unresolved',
+        persistedFallbackAttempts: persistedFallback.attempts,
+        fallbackAttempts: fallback.attempts,
+        sourceTextLength: effectiveSourceText.length,
+        location: location
+          ? `${location.startLine}:${location.startColumn}-${location.endLine}:${location.endColumn}`
+          : null,
+      });
+    }
 
     return {
       identity,
@@ -1621,72 +1732,144 @@ export default function SpacingOverlay({
     x: number;
     y: number;
   } | null>(null);
+  const [resizeDragPreview, setResizeDragPreview] = useState<{
+    width: string;
+    height: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const dragStateRef = useRef<SpacingDragState | null>(null);
   const positionDragStateRef = useRef<PositionDragState | null>(null);
+  const resizeDragStateRef = useRef<ResizeDragState | null>(null);
   const removeDragSessionListenersRef = useRef<(() => void) | null>(null);
   const removePositionDragSessionListenersRef = useRef<(() => void) | null>(null);
+  const removeResizeDragSessionListenersRef = useRef<(() => void) | null>(null);
   const rafRef = useRef<number | null>(null);
   const lastSendRef = useRef<{ targetId: string; at: number } | null>(null);
+  const sendSelectionPendingRef = useRef(false);
   const spacingHoverHideTimerRef = useRef<number | null>(null);
   const [spacingHoverActive, setSpacingHoverActive] = useState(false);
   const [hoveredSpacingBoxKey, setHoveredSpacingBoxKey] = useState<string | null>(null);
 
   const handleSendSelectionToChat = async () => {
-    if (!editor || !onAppendToChatInput) {
-      return;
-    }
-
-    let latestSourceContext = null;
-    if (ensureLatestSourceContextForChat) {
-      try {
-        latestSourceContext = await ensureLatestSourceContextForChat();
-      } catch (error) {
-        logSpacingOverlay('send-to-chat-sync-failed', {
-          filePath,
-          message: error instanceof Error ? error.message : String(error),
-        });
-        return;
-      }
-    }
-
-    const payload = await buildSendSelectionToChatPayload({
-      editor,
-      filePath,
-      sourceText,
-      sourceLocationMap,
-      ensureFreshSourceLocationMap,
-      latestSourceContext,
-      persistedSourceText,
-      persistedSourceLocationMap,
-      preferPersistedLocation,
+    const startedAt = getTimingNow();
+    logVisualSendToChat('click', {
+      hasEditor: Boolean(editor),
+      hasAppendHandler: Boolean(onAppendToChatInput),
+      pending: sendSelectionPendingRef.current,
     });
-    if (!payload) {
+
+    if (!editor || !onAppendToChatInput) {
+      logVisualSendToChat('abort-missing-dependency', {
+        hasEditor: Boolean(editor),
+        hasAppendHandler: Boolean(onAppendToChatInput),
+      });
       return;
     }
-
-    const now = Date.now();
-    const nextSend = {
-      targetId: payload.targetId,
-      at: now,
-    };
-
-    if (shouldSuppressDuplicateSend(lastSendRef.current, nextSend)) {
+    if (sendSelectionPendingRef.current) {
+      logVisualSendToChat('abort-pending');
       logSpacingOverlay('send-to-chat-suppressed', {
-        targetId: payload.targetId,
-        location: payload.location,
+        reason: 'pending',
       });
       return;
     }
 
-    lastSendRef.current = nextSend;
+    sendSelectionPendingRef.current = true;
 
-    onAppendToChatInput(payload.prompt);
-    logSpacingOverlay('send-to-chat', {
-      filePath,
-      identity: payload.identity,
-      location: payload.location,
-      targetId: payload.targetId,
-    });
+    try {
+      let latestSourceContext = null;
+      if (ensureLatestSourceContextForChat) {
+        try {
+          const latestContextStartedAt = getTimingNow();
+          logVisualSendToChat('latest-context-start');
+          latestSourceContext = await ensureLatestSourceContextForChat();
+          logVisualSendToChat('latest-context-done', {
+            durationMs: Math.round(getTimingNow() - latestContextStartedAt),
+            sourceTextLength: latestSourceContext?.sourceText?.length ?? 0,
+            mappingStatus: latestSourceContext?.sourceLocationMap?.status ?? null,
+            mappingEntries: latestSourceContext?.sourceLocationMap?.entries?.length ?? 0,
+          });
+        } catch (error) {
+          logVisualSendToChat('latest-context-error', {
+            message: error instanceof Error ? error.message : String(error),
+          });
+          logSpacingOverlay('send-to-chat-sync-failed', {
+            filePath,
+            message: error instanceof Error ? error.message : String(error),
+          });
+          return;
+        }
+      }
+
+      const payloadStartedAt = getTimingNow();
+      logVisualSendToChat('payload-start', {
+        hasLatestSourceContext: Boolean(latestSourceContext),
+      });
+      const payload = await buildSendSelectionToChatPayload({
+        editor,
+        filePath,
+        sourceText,
+        sourceLocationMap,
+        ensureFreshSourceLocationMap,
+        latestSourceContext,
+        persistedSourceText,
+        persistedSourceLocationMap,
+        preferPersistedLocation,
+      });
+      logVisualSendToChat('payload-done', {
+        durationMs: Math.round(getTimingNow() - payloadStartedAt),
+        hasPayload: Boolean(payload),
+        targetId: payload?.targetId ?? null,
+        locations: payload?.locations?.length ?? (payload?.location ? 1 : 0),
+        promptLength: payload?.prompt?.length ?? 0,
+      });
+      if (!payload) {
+        logVisualSendToChat('abort-empty-payload', {
+          totalDurationMs: Math.round(getTimingNow() - startedAt),
+        });
+        return;
+      }
+
+      const now = Date.now();
+      const nextSend = {
+        targetId: payload.targetId,
+        at: now,
+      };
+
+      if (shouldSuppressDuplicateSend(lastSendRef.current, nextSend)) {
+        logVisualSendToChat('abort-duplicate', {
+          targetId: payload.targetId,
+          sinceLastMs: lastSendRef.current ? now - lastSendRef.current.at : null,
+        });
+        logSpacingOverlay('send-to-chat-suppressed', {
+          targetId: payload.targetId,
+          location: payload.location,
+        });
+        return;
+      }
+
+      lastSendRef.current = nextSend;
+
+      logVisualSendToChat('append-start', {
+        targetId: payload.targetId,
+        promptLength: payload.prompt.length,
+      });
+      onAppendToChatInput(payload.prompt);
+      logVisualSendToChat('append-called', {
+        totalDurationMs: Math.round(getTimingNow() - startedAt),
+      });
+      logSpacingOverlay('send-to-chat', {
+        filePath,
+        identity: payload.identity,
+        location: payload.location,
+        targetId: payload.targetId,
+      });
+    } finally {
+      sendSelectionPendingRef.current = false;
+      logVisualSendToChat('finish', {
+        totalDurationMs: Math.round(getTimingNow() - startedAt),
+      });
+    }
   };
 
   useEffect(() => {
@@ -1713,6 +1896,10 @@ export default function SpacingOverlay({
         .gjs-fixedmargin-v-el,
         .gjs-fixedpadding-v-el {
           display: none !important;
+        }
+        .gjs-resizer {
+          display: none !important;
+          visibility: hidden !important;
         }
         body[data-ccui-overlay-dragging="true"] .gjs-toolbar,
         body[data-ccui-overlay-dragging="true"] .gjs-badge {
@@ -1801,12 +1988,16 @@ export default function SpacingOverlay({
       removeDragSessionListenersRef.current = null;
       removePositionDragSessionListenersRef.current?.();
       removePositionDragSessionListenersRef.current = null;
+      removeResizeDragSessionListenersRef.current?.();
+      removeResizeDragSessionListenersRef.current = null;
       setCanvasDragChromeHidden(document, false);
       setCanvasChromeVisibility(document, false);
       dragStateRef.current = null;
       positionDragStateRef.current = null;
+      resizeDragStateRef.current = null;
       setDragPreview(null);
       setPositionDragPreview(null);
+      setResizeDragPreview(null);
     };
   }, [editor]);
 
@@ -1939,16 +2130,23 @@ export default function SpacingOverlay({
     top: snapshot.borderBox.top,
     width: snapshot.borderBox.width,
     height: snapshot.borderBox.height,
+    display: 'block',
     positionMode: snapshot.positionMode,
+    resizeValue: {
+      width: { value: formatNumber(snapshot.borderBox.width), unit: 'px' },
+      height: { value: formatNumber(snapshot.borderBox.height), unit: 'px' },
+      aspectRatio: snapshot.borderBox.height > 0 ? snapshot.borderBox.width / snapshot.borderBox.height : 1,
+    },
     marginBox: snapshot.marginBox,
     paddingBox: snapshot.paddingBox,
     margin: snapshot.margin,
     padding: snapshot.padding,
   };
   const shouldShowSpacingHandles = Boolean(dragPreview || (spacingHoverActive && hoveredSpacingBox));
-  const visibleKinds = positionDragPreview || !shouldShowSpacingHandles ? [] : getVisibleSpacingKinds(dragPreview?.kind ?? null);
-  const shouldShowPositionHandle = Boolean(snapshot.positionMode && !dragPreview && !positionDragPreview);
-  const shouldShowMultiSelectionToolbar = Boolean(snapshot.multiSelectionBox && !dragPreview && !positionDragPreview);
+  const visibleKinds = positionDragPreview || resizeDragPreview || !shouldShowSpacingHandles ? [] : getVisibleSpacingKinds(dragPreview?.kind ?? null);
+  const shouldShowPositionHandle = Boolean(snapshot.positionMode && !dragPreview && !positionDragPreview && !resizeDragPreview);
+  const shouldShowResizeHandles = Boolean(!dragPreview && !positionDragPreview && (spacingHoverActive || resizeDragPreview) && activeSpacingBox);
+  const shouldShowMultiSelectionToolbar = Boolean(snapshot.multiSelectionBox && !dragPreview && !positionDragPreview && !resizeDragPreview);
   const sideHighlightBox = dragPreview && activeDragSide
     ? buildSideHighlightBox(
       dragPreview.kind === 'margin' ? activeSpacingBox.marginBox : activeSpacingBox,
@@ -2238,6 +2436,107 @@ export default function SpacingOverlay({
     };
   };
 
+  const startResizeDragSession = (
+    event: PointerEvent,
+    currentTarget: HTMLButtonElement,
+    handleName: ResizeHandle,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation?.();
+    currentTarget.setPointerCapture?.(event.pointerId);
+    removeResizeDragSessionListenersRef.current?.();
+    showSpacingHandles(activeSpacingBox.key);
+
+    resizeDragStateRef.current = {
+      pointerId: event.pointerId,
+      handleName,
+      startX: event.clientX,
+      startY: event.clientY,
+      startValue: activeSpacingBox.resizeValue,
+      display: activeSpacingBox.display,
+      handle: currentTarget,
+      target: activeSpacingBox.target,
+    };
+
+    const doc = snapshot.portalRoot.ownerDocument;
+    const win = doc.defaultView;
+    if (doc.body) {
+      doc.body.style.cursor = getResizeCursor(handleName);
+      doc.body.style.userSelect = 'none';
+    }
+    setCanvasDragChromeHidden(doc, true);
+    setCanvasChromeVisibility(doc, true);
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const dragState = resizeDragStateRef.current;
+      if (!dragState || dragState.pointerId !== moveEvent.pointerId) {
+        return;
+      }
+
+      const nextValue = applyResizeDragDelta(
+        dragState.startValue,
+        {
+          x: moveEvent.clientX - dragState.startX,
+          y: moveEvent.clientY - dragState.startY,
+        },
+        dragState.handleName,
+        { shiftKey: moveEvent.shiftKey },
+      );
+      const nextPreview = {
+        width: `${nextValue.width.value}${nextValue.width.unit || 'px'}`,
+        height: `${nextValue.height.value}${nextValue.height.unit || 'px'}`,
+        x: moveEvent.clientX,
+        y: moveEvent.clientY,
+      };
+
+      setResizeDragPreview(nextPreview);
+      applyResizeStylesToTarget(dragState.target, nextValue, dragState.display);
+    };
+
+    const finishResizeDragSession = (endEvent: PointerEvent | Event) => {
+      const pointerId = 'pointerId' in endEvent ? endEvent.pointerId : resizeDragStateRef.current?.pointerId;
+      const dragState = resizeDragStateRef.current;
+      if (!dragState || (pointerId !== undefined && dragState.pointerId !== pointerId)) {
+        return;
+      }
+
+      resizeDragStateRef.current = null;
+      setResizeDragPreview(null);
+      if (doc.body) {
+        doc.body.style.cursor = '';
+        doc.body.style.userSelect = '';
+      }
+      setCanvasDragChromeHidden(doc, false);
+      setCanvasChromeVisibility(doc, false);
+      if (pointerId !== undefined) {
+        dragState.handle?.releasePointerCapture?.(pointerId);
+      }
+      removeResizeDragSessionListenersRef.current?.();
+      removeResizeDragSessionListenersRef.current = null;
+    };
+
+    const handle = currentTarget;
+    const resizeMoveListenerOptions: AddEventListenerOptions = { passive: true };
+    handle.addEventListener('pointermove', handlePointerMove, resizeMoveListenerOptions);
+    handle.addEventListener('pointerup', finishResizeDragSession as EventListener);
+    handle.addEventListener('pointercancel', finishResizeDragSession as EventListener);
+    handle.addEventListener('lostpointercapture', finishResizeDragSession as EventListener);
+    win?.addEventListener('pointermove', handlePointerMove, resizeMoveListenerOptions);
+    win?.addEventListener('pointerup', finishResizeDragSession as EventListener);
+    win?.addEventListener('pointercancel', finishResizeDragSession as EventListener);
+
+    removeResizeDragSessionListenersRef.current = () => {
+      handle.removeEventListener('pointermove', handlePointerMove, resizeMoveListenerOptions);
+      handle.removeEventListener('pointerup', finishResizeDragSession as EventListener);
+      handle.removeEventListener('pointercancel', finishResizeDragSession as EventListener);
+      handle.removeEventListener('lostpointercapture', finishResizeDragSession as EventListener);
+      win?.removeEventListener('pointermove', handlePointerMove, resizeMoveListenerOptions);
+      win?.removeEventListener('pointerup', finishResizeDragSession as EventListener);
+      win?.removeEventListener('pointercancel', finishResizeDragSession as EventListener);
+    };
+  };
+
   return createPortal(
     <div
       aria-hidden="true"
@@ -2302,6 +2601,15 @@ export default function SpacingOverlay({
           isDragging={Boolean(positionDragPreview)}
           onPointerDown={startPositionDragSession}
           showDragSurface={Boolean(snapshot.positionMode)}
+        />
+      ) : null}
+
+      {shouldShowResizeHandles ? (
+        <ResizeHandles
+          box={activeSpacingBox}
+          onPointerEnter={() => showSpacingHandles(activeSpacingBox.key)}
+          onPointerLeave={scheduleHideSpacingHandles}
+          onPointerDown={startResizeDragSession}
         />
       ) : null}
 
@@ -2460,6 +2768,44 @@ export default function SpacingOverlay({
           </div>
         </div>
       ) : null}
+
+      {resizeDragPreview ? (
+        <div
+          style={{
+            position: 'fixed',
+            left: resizeDragPreview.x,
+            top: resizeDragPreview.y,
+            zIndex: 2147483647,
+            pointerEvents: 'none',
+            transform: 'translate(-50%, -128%)',
+          }}
+        >
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              borderRadius: 999,
+              padding: '8px 12px',
+              background: 'rgba(15, 23, 42, 0.96)',
+              color: '#fff',
+              boxShadow: '0 16px 36px rgba(15, 23, 42, 0.34)',
+              border: '1px solid rgba(37, 99, 235, 0.9)',
+              fontSize: 12,
+              fontWeight: 600,
+              whiteSpace: 'nowrap',
+              letterSpacing: '0.01em',
+            }}
+          >
+            <span style={{ opacity: 0.72 }}>尺寸</span>
+            <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+              {resizeDragPreview.width}
+              {' x '}
+              {resizeDragPreview.height}
+            </span>
+          </div>
+        </div>
+      ) : null}
     </div>,
     snapshot.portalRoot,
   );
@@ -2501,6 +2847,77 @@ function PositionDragHandle({
           <span style={{ display: 'none' }}>定</span>
         </SpacingHandleButton>
       ) : null}
+    </>
+  );
+}
+
+function getResizeCursor(handleName: ResizeHandle) {
+  if (handleName === 'top' || handleName === 'bottom') {
+    return 'ns-resize';
+  }
+  if (handleName === 'left' || handleName === 'right') {
+    return 'ew-resize';
+  }
+  if (handleName === 'top-left' || handleName === 'bottom-right') {
+    return 'nwse-resize';
+  }
+  return 'nesw-resize';
+}
+
+function ResizeHandles({
+  box,
+  onPointerEnter,
+  onPointerLeave,
+  onPointerDown,
+}: {
+  box: { left: number; top: number; width: number; height: number };
+  onPointerEnter: () => void;
+  onPointerLeave: () => void;
+  onPointerDown: (event: PointerEvent, currentTarget: HTMLButtonElement, handleName: ResizeHandle) => void;
+}) {
+  const size = 8;
+  const half = size / 2;
+  const handles: Array<{ name: ResizeHandle; left: number; top: number }> = [
+    { name: 'top-left', left: box.left - half, top: box.top - half },
+    { name: 'top', left: box.left + (box.width / 2) - half, top: box.top - half },
+    { name: 'top-right', left: box.left + box.width - half, top: box.top - half },
+    { name: 'right', left: box.left + box.width - half, top: box.top + (box.height / 2) - half },
+    { name: 'bottom-right', left: box.left + box.width - half, top: box.top + box.height - half },
+    { name: 'bottom', left: box.left + (box.width / 2) - half, top: box.top + box.height - half },
+    { name: 'bottom-left', left: box.left - half, top: box.top + box.height - half },
+    { name: 'left', left: box.left - half, top: box.top + (box.height / 2) - half },
+  ];
+
+  return (
+    <>
+      {handles.map((handle) => (
+        <SpacingHandleButton
+          key={handle.name}
+          ariaLabel={`调整尺寸 ${handle.name}`}
+          title="拖动调整宽高，按住 Shift 保持比例"
+          cursor={getResizeCursor(handle.name)}
+          style={{
+            position: 'absolute',
+            left: handle.left,
+            top: handle.top,
+            width: size,
+            height: size,
+            border: '1px solid #fff',
+            borderRadius: 2,
+            background: SELECTED_OVERLAY_BORDER_COLOR,
+            padding: 0,
+            pointerEvents: 'auto',
+            touchAction: 'none',
+            boxShadow: '0 0 0 1px rgba(37, 99, 235, 0.6)',
+            zIndex: 4,
+          }}
+          onPointerEnter={onPointerEnter}
+          onPointerLeave={onPointerLeave}
+          onPointerDown={(event, currentTarget) => onPointerDown(event, currentTarget, handle.name)}
+        >
+          <span style={{ display: 'none' }}>缩放</span>
+        </SpacingHandleButton>
+      ))}
     </>
   );
 }

@@ -21,10 +21,12 @@ register(`data:text/javascript,${encodeURIComponent(loaderSource)}`, import.meta
 
 const {
   applyPositionDragDelta,
+  applyResizeDragDelta,
   attachCanvasMarqueeSelection,
   attachSpacingOverlayToolbarSync,
   applyInlineStyleToTarget,
   applyPositionStylesToTarget,
+  applyResizeStylesToTarget,
   applySpacingDragDelta,
   buildElementStyleChatPrompt,
   buildSendSelectionToChatPayload,
@@ -283,6 +285,56 @@ test('applyPositionDragDelta updates left and top from pointer movement in px', 
       top: { value: '9', unit: 'px' },
     },
   );
+});
+
+test('applyResizeDragDelta resizes from edges and corners with a minimum size', () => {
+  assert.deepEqual(
+    applyResizeDragDelta(
+      { width: { value: '120', unit: 'px' }, height: { value: '80', unit: 'px' }, aspectRatio: 1.5 },
+      { x: 20, y: 10 },
+      'bottom-right',
+      {},
+    ),
+    { width: { value: '140', unit: 'px' }, height: { value: '90', unit: 'px' } },
+  );
+  assert.deepEqual(
+    applyResizeDragDelta(
+      { width: { value: '120', unit: 'px' }, height: { value: '80', unit: 'px' }, aspectRatio: 1.5 },
+      { x: 200, y: 0 },
+      'left',
+      {},
+    ),
+    { width: { value: '8', unit: 'px' }, height: { value: '80', unit: 'px' } },
+  );
+});
+
+test('applyResizeDragDelta preserves aspect ratio while shift is held', () => {
+  assert.deepEqual(
+    applyResizeDragDelta(
+      { width: { value: '120', unit: 'px' }, height: { value: '80', unit: 'px' }, aspectRatio: 1.5 },
+      { x: 30, y: 5 },
+      'bottom-right',
+      { shiftKey: true },
+    ),
+    { width: { value: '150', unit: 'px' }, height: { value: '100', unit: 'px' } },
+  );
+});
+
+test('applyResizeStylesToTarget writes inline width height and promotes inline display', () => {
+  const styles = [];
+  const target = {
+    addStyle(style) {
+      styles.push(style);
+    },
+  };
+
+  applyResizeStylesToTarget(
+    target,
+    { width: { value: '150', unit: 'px' }, height: { value: '100', unit: 'px' } },
+    'inline',
+  );
+
+  assert.deepEqual(styles, [{ width: '150px', height: '100px', display: 'inline-block' }]);
 });
 
 test('applyPositionStylesToTarget rewrites inset-based positioning to left/top only', () => {
@@ -641,6 +693,51 @@ test('buildSendSelectionToChatPayload includes all selected component locations 
       '2. 代码位置：`src/pages/login.html:3:3-3:43`',
     ].join('\n'),
   );
+});
+
+test('buildSendSelectionToChatPayload skips expensive source fallback when mapping resolves multi-select targets', async () => {
+  const sourceText = [
+    '<section>',
+    '  <label data-ccui-component-id="label">用户名</label>',
+    '  <input data-ccui-component-id="input" />',
+    '</section>',
+  ].join('\n');
+  let outerHtmlReads = 0;
+  const createElement = () => ({
+    dataset: {},
+    get outerHTML() {
+      outerHtmlReads += 1;
+      return '<div>slow fallback</div>';
+    },
+  });
+
+  const payload = await buildSendSelectionToChatPayload({
+    editor: {
+      getSelectedAll() {
+        return [
+          {
+            getId: () => 'label',
+            getAttributes: () => ({}),
+            getEl: createElement,
+          },
+          {
+            getId: () => 'input',
+            getAttributes: () => ({}),
+            getEl: createElement,
+          },
+        ];
+      },
+      getSelected() {
+        return null;
+      },
+    },
+    filePath: 'src/pages/login.html',
+    sourceText,
+    sourceLocationMap: buildSourceLocationMap(sourceText, 1),
+  });
+
+  assert.equal(payload?.locations?.length, 2);
+  assert.equal(outerHtmlReads, 0);
 });
 
 test('buildSendSelectionToChatPayload uses the latest mapping returned by freshness helper across repeated sends', async () => {
@@ -1016,6 +1113,51 @@ test('buildSendSelectionToChatPayload prefers host-provided latest source contex
   assert.equal(payload?.location?.startLine, 2);
   assert.equal(payload?.location?.startColumn, 3);
   assert.equal(payload?.prompt, '文件路径：`src/pages/login.html`\n代码位置：`src/pages/login.html:2:3-4:9`');
+});
+
+test('buildSendSelectionToChatPayload does not re-run freshness helper when latest source context is provided', async () => {
+  const latestFileText = [
+    '<section>',
+    '  <div data-ccui-component-id="hero" class="login-header">Welcome back</div>',
+    '</section>',
+  ].join('\n');
+  let ensureFreshCalls = 0;
+
+  const payload = await buildSendSelectionToChatPayload({
+    editor: {
+      getSelectedAll() {
+        return [{
+          getId() {
+            return 'hero';
+          },
+          getAttributes() {
+            return {};
+          },
+          getEl() {
+            return { dataset: {} };
+          },
+        }];
+      },
+      getSelected() {
+        return null;
+      },
+    },
+    filePath: 'src/pages/login.html',
+    sourceText: '<div />',
+    sourceLocationMap: buildSourceLocationMap('<div />', 1),
+    ensureFreshSourceLocationMap: async () => {
+      ensureFreshCalls += 1;
+      return buildSourceLocationMap('<div />', 2);
+    },
+    latestSourceContext: {
+      sourceText: latestFileText,
+      sourceLocationMap: buildSourceLocationMap(latestFileText, 10),
+      preferPersistedLocation: false,
+    },
+  });
+
+  assert.equal(ensureFreshCalls, 0);
+  assert.equal(payload?.location?.startLine, 2);
 });
 
 test('getVisibleSpacingHandleSides keeps only the active drag side visible while dragging', () => {
@@ -1635,6 +1777,103 @@ test('attachCanvasMarqueeSelection toggles marquee hits against existing selecti
   });
 
   assert.deepEqual(selectCalls, [[retainedSelection, toggledOnSelection]]);
+
+  detach();
+});
+
+test('attachCanvasMarqueeSelection does not swallow the first toolbar click after marquee selection', () => {
+  const win = createMarqueeEventTarget();
+  const doc = createMarqueeEventTarget();
+  const html = createMarqueeEventTarget();
+  const body = createMarqueeEventTarget();
+  const selectedComponent = {
+    get: (key) => (key === 'selectable' ? true : undefined),
+    parents: () => [],
+  };
+  const clickEvent = {
+    target: {
+      closest: (selector) => (selector.includes('data-spacing-multi-toolbar') ? {} : null),
+    },
+    preventDefaultCalled: false,
+    stopPropagationCalled: false,
+    preventDefault() {
+      this.preventDefaultCalled = true;
+    },
+    stopPropagation() {
+      this.stopPropagationCalled = true;
+    },
+  };
+
+  Object.assign(win, {
+    requestAnimationFrame: (callback) => {
+      callback();
+      return 1;
+    },
+    cancelAnimationFrame: () => {},
+  });
+  Object.assign(doc, {
+    defaultView: win,
+    documentElement: html,
+    querySelectorAll: () => [],
+    createElement: () => ({
+      style: {},
+      setAttribute: () => {},
+      remove: () => {},
+    }),
+  });
+  Object.assign(body, {
+    ownerDocument: doc,
+    style: {},
+    dataset: {},
+    appendChild: () => {},
+    querySelectorAll: () => [
+      {
+        __gjsv: { model: selectedComponent },
+        closest: () => null,
+        getBoundingClientRect: () => ({ left: 10, top: 10, right: 30, bottom: 30, width: 20, height: 20 }),
+      },
+    ],
+  });
+
+  const eventBase = {
+    pointerId: 11,
+    ctrlKey: true,
+    button: 0,
+    target: {
+      closest: () => null,
+      setPointerCapture: () => {},
+    },
+    preventDefault: () => {},
+    stopPropagation: () => {},
+  };
+
+  const detach = attachCanvasMarqueeSelection({
+    Canvas: {
+      getBody: () => body,
+    },
+    getSelectedAll: () => [],
+    select() {},
+  });
+
+  doc.emit('pointerdown', {
+    ...eventBase,
+    clientX: 0,
+    clientY: 0,
+  });
+  win.emit('pointermove', {
+    ...eventBase,
+    clientX: 80,
+    clientY: 80,
+  });
+  win.emit('pointerup', {
+    ...eventBase,
+    clientX: 80,
+    clientY: 80,
+  });
+  win.emit('click', clickEvent);
+
+  assert.equal(clickEvent.preventDefaultCalled, false);
+  assert.equal(clickEvent.stopPropagationCalled, false);
 
   detach();
 });
