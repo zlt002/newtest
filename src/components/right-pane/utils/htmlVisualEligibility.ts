@@ -6,6 +6,8 @@ const DOCTYPE_PATTERN = /^\s*<!doctype\s+html\b/i;
 const SCRIPT_TAG_PATTERN = /<script\b([^>]*)>[\s\S]*?<\/script>/gi;
 const SCRIPT_SRC_PATTERN = /\bsrc\s*=\s*(["'])(.*?)\1/i;
 const TAILWIND_CDN_SRC_PATTERN = /^https:\/\/cdn\.tailwindcss\.com\/?(?:[?#].*)?$/i;
+const NON_VISUAL_TEMPLATE_CONTEXT_PATTERN = /<(pre|code|script|style|textarea|template)\b[^>]*>[\s\S]*?<\/\1>/gi;
+const HTML_COMMENT_PATTERN = /<!--[\s\S]*?-->/g;
 
 function hasTrustedHtmlStructure(content: string): boolean {
   if (!HTML_ROOT_PATTERN.test(content) || !BODY_PATTERN.test(content)) {
@@ -30,6 +32,14 @@ function hasNoExternalScripts(content: string): boolean {
   return true;
 }
 
+function hasVisualTemplateSyntax(content: string): boolean {
+  const sanitized = content
+    .replace(NON_VISUAL_TEMPLATE_CONTEXT_PATTERN, '')
+    .replace(HTML_COMMENT_PATTERN, '');
+
+  return TEMPLATE_PATTERNS.some((pattern) => pattern.test(sanitized));
+}
+
 export function isHtmlEligibleForVisualEditing(content: string): boolean {
   const normalized = content.trim();
   if (!normalized) {
@@ -40,7 +50,7 @@ export function isHtmlEligibleForVisualEditing(content: string): boolean {
     return false;
   }
 
-  if (TEMPLATE_PATTERNS.some((pattern) => pattern.test(normalized))) {
+  if (hasVisualTemplateSyntax(normalized)) {
     return false;
   }
 

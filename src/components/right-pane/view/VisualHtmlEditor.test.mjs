@@ -91,6 +91,14 @@ test('VisualHtmlEditor source converges design and source state only on mode swi
   assert.match(source, /broadcastFileSyncEvent/);
 });
 
+test('VisualHtmlEditor source passes preview-based asset url context to the design canvas', async () => {
+  const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /function resolveCanvasAssetBaseUrl/);
+  assert.match(source, /const canvasAssetBaseUrl = useMemo\(\(\) => resolveCanvasAssetBaseUrl\(previewRouteUrl\), \[previewRouteUrl\]\);/);
+  assert.match(source, /<VisualCanvasPane[\s\S]*assetBaseUrl=\{canvasAssetBaseUrl\}/);
+});
+
 test('VisualHtmlEditor save flow blocks when a sync conflict is active', async () => {
   const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
 

@@ -118,6 +118,25 @@ function decodeTemporaryHiddenLayerStyle(value: string) {
   }
 }
 
+function resolveCanvasAssetBaseUrl(previewRouteUrl: string | null): string | null {
+  const normalizedUrl = previewRouteUrl?.trim();
+  if (!normalizedUrl) {
+    return null;
+  }
+
+  try {
+    const url = new URL(normalizedUrl);
+    const pathname = url.pathname;
+    const lastSlashIndex = pathname.lastIndexOf('/');
+    url.pathname = lastSlashIndex >= 0 ? pathname.slice(0, lastSlashIndex + 1) : '/';
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 function stripCanvasRuntimeArtifacts(markup: string): string {
   if (typeof DOMParser === 'undefined') {
     return stripStyleMarkupFromHtml(markup)
@@ -548,6 +567,7 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
   const sourceLocationParseWarning = sourceLocationMapRef.current.parseErrors?.[0] ?? null;
   const persistedSourceLocationMap = persistedSourceLocationMapRef.current;
   const grapesLikeBridge = useMemo(() => createGrapesLikeInspectorBridge(canvasEditor), [canvasEditor]);
+  const canvasAssetBaseUrl = useMemo(() => resolveCanvasAssetBaseUrl(previewRouteUrl), [previewRouteUrl]);
 
   const syncCanvasDocumentFromHtml = useCallback((nextHtml: string) => {
     if (canvasDocumentSourceRef.current === nextHtml) {
@@ -1645,6 +1665,7 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
                 ) : (
                   <VisualCanvasPane
                     fullHtml={designCanvasDocument}
+                    assetBaseUrl={canvasAssetBaseUrl}
                     showHiddenLayers={isHiddenLayerEditing}
                     hiddenLayerFilter={hiddenLayerFilter}
                     onDirtyChange={(isDirty, editor) => {

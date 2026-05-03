@@ -19,6 +19,22 @@ type ParsedHtmlDocument = {
   bodyEventAttributes: Record<string, Record<string, string>>;
 };
 
+type CanvasCssDeclaration = {
+  property: string;
+  value: string;
+};
+
+type CanvasCssRule = {
+  selector: string;
+  declarations: CanvasCssDeclaration[];
+};
+
+const NON_PERSISTENT_CANVAS_SELECTOR_PATTERNS = [
+  /^#plasmo-/i,
+  /^#__hcfy__$/i,
+  /^\[data-ccui-hidden-layer-preview/i,
+];
+
 function serializeAttributesFromElement(element: Element): string {
   return Array.from(element.attributes)
     .map(({ name, value }) => (value ? ` ${name}="${value.replace(/"/g, '&quot;')}"` : ` ${name}`))
@@ -71,6 +87,175 @@ function splitCanvasCssDeclarations(cssText: string) {
       return { property, value };
     })
     .filter((declaration): declaration is { property: string; value: string } => Boolean(declaration));
+}
+
+function collectCanvasCssRules(css: string): CanvasCssRule[] {
+  const rules: CanvasCssRule[] = [];
+
+  for (const match of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const selector = String(match[1] ?? '').trim().replace(/\s+/g, ' ');
+    const body = String(match[2] ?? '').trim();
+    if (!selector || selector.startsWith('@')) {
+      continue;
+    }
+
+    const declarations = splitCanvasCssDeclarations(body);
+    if (declarations.length === 0) {
+      continue;
+    }
+
+    rules.push({ selector, declarations });
+  }
+
+  return rules;
+}
+
+function serializeCanvasCssRules(rules: CanvasCssRule[]) {
+  return rules
+    .map(({ selector, declarations }) => {
+      const body = declarations
+        .map(({ property, value }) => `${property}:${value};`)
+        .join('');
+      return body ? `${selector}{${body}}` : '';
+    })
+    .filter(Boolean)
+    .join('');
+}
+
+function collectMarkupElementIds(markup: string) {
+  return new Set(
+    Array.from(markup.matchAll(/\bid\s*=\s*(["'])(.*?)\1/gi))
+      .map((match) => String(match[2] ?? '').trim())
+      .filter(Boolean),
+  );
+}
+
+function readSimpleIdSelector(selector: string) {
+  const normalized = selector.trim();
+  const match = normalized.match(/^#([A-Za-z][\w:-]*)$/);
+  return match?.[1] ?? null;
+}
+
+function isRuntimeCanvasSelector(selector: string) {
+  const normalized = selector.trim();
+  return NON_PERSISTENT_CANVAS_SELECTOR_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+function isGeneratedCanvasComponentId(id: string) {
+  return /^i[a-z0-9]{3,}$/i.test(id);
+}
+
+function mergeStyleDeclarationText(existingStyle: string, declarations: CanvasCssDeclaration[]) {
+  const declarationMap = new Map<string, string>();
+  const declarationOrder: string[] = [];
+  const pushDeclaration = (property: string, value: string) => {
+    if (!declarationMap.has(property)) {
+      declarationOrder.push(property);
+    }
+    declarationMap.set(property, value);
+  };
+
+  splitCanvasCssDeclarations(existingStyle).forEach(({ property, value }) => {
+    pushDeclaration(property, value);
+  });
+  declarations.forEach(({ property, value }) => {
+    pushDeclaration(property, value);
+  });
+
+  return declarationOrder
+    .map((property) => `${property}: ${declarationMap.get(property)};`)
+    .join(' ');
+}
+
+function inlineCanvasRuleDeclarationsIntoBody(bodyHtml: string, rules: CanvasCssRule[]) {
+  if (rules.length === 0) {
+    return bodyHtml;
+  }
+
+  if (typeof DOMParser !== 'undefined') {
+    const parsed = new DOMParser().parseFromString(`<body>${bodyHtml}</body>`, 'text/html');
+    rules.forEach(({ selector, declarations }) => {
+      const id = readSimpleIdSelector(selector);
+      if (!id) {
+        return;
+      }
+
+      const element = parsed.body.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
+      if (!element) {
+        return;
+      }
+
+      const mergedStyle = mergeStyleDeclarationText(element.getAttribute('style') ?? '', declarations);
+      if (mergedStyle) {
+        element.setAttribute('style', mergedStyle);
+      }
+    });
+
+    return parsed.body.innerHTML.trim();
+  }
+
+  const fragment = parseFragment(bodyHtml) as any;
+  const nodesById = indexParse5NodesById(fragment);
+  rules.forEach(({ selector, declarations }) => {
+    const id = readSimpleIdSelector(selector);
+    if (!id) {
+      return;
+    }
+
+    const node = nodesById.get(id);
+    if (!node) {
+      return;
+    }
+
+    const mergedStyle = mergeStyleDeclarationText(String(getNodeAttribute(node, 'style') ?? ''), declarations);
+    if (mergedStyle) {
+      setNodeAttribute(node, 'style', mergedStyle);
+    }
+  });
+
+  return serialize(fragment).trim();
+}
+
+function normalizePersistentCanvasEdits({
+  sourceHtml,
+  bodyHtml,
+  canvasCss,
+}: {
+  sourceHtml: string;
+  bodyHtml: string;
+  canvasCss: string;
+}) {
+  const sourceIds = collectMarkupElementIds(readBodyInnerMarkup(sourceHtml));
+  const sourceNonEditableIds = collectSourceNonEditableElementIds(sourceHtml);
+  const bodyIds = collectMarkupElementIds(bodyHtml);
+  const rules = collectCanvasCssRules(canvasCss);
+  const rulesToInline: CanvasCssRule[] = [];
+  const persistentRules: CanvasCssRule[] = [];
+
+  rules.forEach((rule) => {
+    const id = readSimpleIdSelector(rule.selector);
+    const keepForSourceNonEditableElement = Boolean(id && sourceNonEditableIds.has(id));
+
+    if (isRuntimeCanvasSelector(rule.selector) && !keepForSourceNonEditableElement) {
+      return;
+    }
+
+    if (id && !bodyIds.has(id)) {
+      return;
+    }
+
+    if (id && bodyIds.has(id) && !sourceIds.has(id) && isGeneratedCanvasComponentId(id)) {
+      rulesToInline.push(rule);
+      return;
+    }
+
+    persistentRules.push(rule);
+  });
+
+  return {
+    bodyHtml: inlineCanvasRuleDeclarationsIntoBody(bodyHtml, rulesToInline),
+    canvasCss: serializeCanvasCssRules(persistentRules),
+  };
 }
 
 function coalesceCanvasCss(css: string) {
@@ -669,6 +854,33 @@ function collectTopLevelDomNonEditableElements(root: ParentNode) {
   return elements;
 }
 
+function collectDomElementIds(root: ParentNode | Element) {
+  const ids = new Set<string>();
+  const elements = root instanceof Element
+    ? [root, ...Array.from(root.querySelectorAll('[id]'))]
+    : Array.from(root.querySelectorAll('[id]'));
+
+  elements.forEach((element) => {
+    const id = element.getAttribute('id')?.trim();
+    if (id) {
+      ids.add(id);
+    }
+  });
+
+  return ids;
+}
+
+function collectDomNonEditableElementIds(sourceHtml: string) {
+  const sourceDocument = new DOMParser().parseFromString(sourceHtml, 'text/html');
+  const ids = new Set<string>();
+
+  collectTopLevelDomNonEditableElements(sourceDocument.body).forEach((element) => {
+    collectDomElementIds(element).forEach((id) => ids.add(id));
+  });
+
+  return ids;
+}
+
 function restoreMissingDomRuntimeAttributes(sourceDocument: Document, canvasDocument: Document) {
   sourceDocument.body.querySelectorAll<HTMLElement>('[id]').forEach((sourceElement) => {
     const canvasElement = canvasDocument.getElementById(sourceElement.id);
@@ -775,6 +987,42 @@ function collectTopLevelParse5NonEditableElements(root: any) {
   return elements;
 }
 
+function collectParse5ElementIds(root: any) {
+  const ids = new Set<string>();
+  const rootId = String(getNodeAttribute(root, 'id') ?? '').trim();
+  if (rootId) {
+    ids.add(rootId);
+  }
+
+  walkElementNodes(root, (node) => {
+    const id = String(getNodeAttribute(node, 'id') ?? '').trim();
+    if (id) {
+      ids.add(id);
+    }
+  });
+
+  return ids;
+}
+
+function collectParse5NonEditableElementIds(sourceHtml: string) {
+  const sourceFragment = parseFragment(readBodyInnerMarkup(sourceHtml)) as any;
+  const ids = new Set<string>();
+
+  collectTopLevelParse5NonEditableElements(sourceFragment).forEach((node) => {
+    collectParse5ElementIds(node).forEach((id) => ids.add(id));
+  });
+
+  return ids;
+}
+
+function collectSourceNonEditableElementIds(sourceHtml: string) {
+  if (typeof DOMParser !== 'undefined') {
+    return collectDomNonEditableElementIds(sourceHtml);
+  }
+
+  return collectParse5NonEditableElementIds(sourceHtml);
+}
+
 function indexParse5NodesById(root: any) {
   const nodesById = new Map<string, any>();
 
@@ -875,9 +1123,14 @@ export function buildSavedHtmlPreservingHead({
   const sourceStyleMarkup = collectStyleMarkup(sourceHtml);
   const previousCanvasCssBlocks = collectManagedCanvasStyleContents(sourceHtml);
   const previousCanvasCss = previousCanvasCssBlocks[previousCanvasCssBlocks.length - 1] ?? '';
-  const cleanCanvasCss = mergeCanvasCssBlocks(previousCanvasCss, canvasCss);
-  const canvasStyleMarkup = cleanCanvasCss
-    ? `<style data-ccui-visual-html-canvas-style="true">\n${cleanCanvasCss}\n</style>`
+  const mergedCanvasCss = mergeCanvasCssBlocks(previousCanvasCss, canvasCss);
+  const persistentCanvasEdits = normalizePersistentCanvasEdits({
+    sourceHtml,
+    bodyHtml: cleanBodyHtml,
+    canvasCss: mergedCanvasCss,
+  });
+  const canvasStyleMarkup = persistentCanvasEdits.canvasCss
+    ? `<style data-ccui-visual-html-canvas-style="true">${persistentCanvasEdits.canvasCss}</style>`
     : '';
   const headParts = [headMarkup, sourceStyleMarkup, canvasStyleMarkup].filter(Boolean);
 
@@ -887,7 +1140,7 @@ export function buildSavedHtmlPreservingHead({
 ${headParts.join('\n')}
 </head>
 <body${snapshot.bodyAttributes}>
-${cleanBodyHtml}
+${persistentCanvasEdits.bodyHtml}
 ${snapshot.bodyScriptMarkup ?? ''}
 </body>
 </html>

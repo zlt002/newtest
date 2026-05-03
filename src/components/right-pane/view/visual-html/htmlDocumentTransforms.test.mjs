@@ -237,7 +237,7 @@ test('buildSavedHtmlPreservingHead appends canvas css without replacing source s
   assert.match(html, /#menu-item\{padding-left:40px;color:#ffffff;background-color:#232f3d;\}/);
 });
 
-test('buildSavedHtmlPreservingHead coalesces stale canvas css instead of accumulating style tags', () => {
+test('buildSavedHtmlPreservingHead removes stale orphan canvas css instead of accumulating style tags', () => {
   const source = `<!doctype html>
 <html>
 <head>
@@ -251,13 +251,13 @@ test('buildSavedHtmlPreservingHead coalesces stale canvas css instead of accumul
   const html = buildSavedHtmlPreservingHead({
     sourceHtml: source,
     bodyHtml: '<main id="app">new</main>',
-    canvasCss: '#new{left:3px}',
+    canvasCss: '#app{left:3px}',
   });
 
   assert.match(html, /\.business\{color:red\}/);
   assert.doesNotMatch(html, /#old\{left:1px\}/);
-  assert.match(html, /#older\{left:2px;\}/);
-  assert.match(html, /#new\{left:3px;\}/);
+  assert.doesNotMatch(html, /#older\{left:2px;\}/);
+  assert.match(html, /#app\{left:3px;\}/);
   assert.equal((html.match(/data-ccui-visual-html-canvas-style="true"/g) ?? []).length, 1);
 });
 
@@ -308,6 +308,138 @@ test('buildSavedHtmlPreservingHead coalesces repeated canvas selector declaratio
   assert.equal((html.match(/padding-bottom:/g) ?? []).length, 1);
   assert.equal((html.match(/\*\{box-sizing:border-box;\}/g) ?? []).length, 1);
   assert.equal((html.match(/body\{margin:0;\}/g) ?? []).length, 1);
+});
+
+test('buildSavedHtmlPreservingHead inlines generated Grapes component id rules into body markup', () => {
+  const source = `<!doctype html>
+<html>
+<head><style>.business{color:red}</style></head>
+<body><section><div>原始内容</div></section></body>
+</html>`;
+
+  const html = buildSavedHtmlPreservingHead({
+    sourceHtml: source,
+    bodyHtml: '<section><div id="ivrdw">原始内容</div></section>',
+    canvasCss: '#ivrdw{padding-left:40px;color:#ffffff;background-color:#232f3d;}',
+  });
+
+  assert.match(html, /\.business\{color:red\}/);
+  assert.match(html, /id="ivrdw"[^>]+style="padding-left: 40px; color: #ffffff; background-color: #232f3d;"/);
+  assert.doesNotMatch(html, /#ivrdw\{/);
+});
+
+test('buildSavedHtmlPreservingHead drops runtime and orphan canvas selectors during save', () => {
+  const source = `<!doctype html>
+<html>
+<head><style>.business{color:red}</style></head>
+<body>
+  <div id="menu-item">订单中心</div>
+</body>
+</html>`;
+
+  const html = buildSavedHtmlPreservingHead({
+    sourceHtml: source,
+    bodyHtml: '<div id="menu-item">订单中心</div>',
+    canvasCss: `
+      #menu-item{padding-left:20px;}
+      #el-popover-1{display:none;width:200px;}
+      #dropdown-menu-3{display:none;}
+      #ghost-node{left:12px;}
+      #plasmo-overlay-0{display:flex;}
+    `,
+  });
+
+  assert.match(html, /#menu-item\{padding-left:20px;\}/);
+  assert.doesNotMatch(html, /#el-popover-1\{/);
+  assert.doesNotMatch(html, /#dropdown-menu-3\{/);
+  assert.doesNotMatch(html, /#ghost-node\{/);
+  assert.doesNotMatch(html, /#plasmo-overlay-0\{/);
+});
+
+test('buildSavedHtmlPreservingHead keeps canvas rules for source hidden runtime nodes', () => {
+  const source = `<!doctype html>
+<html>
+<head><style>.business{color:red}</style></head>
+<body>
+  <micro-app name="otp-tms">
+    <div id="content">内容</div>
+    <div role="tooltip" id="el-popover-1" style="display:none;position:absolute;left:-9999px;top:0;">隐藏弹层</div>
+  </micro-app>
+</body>
+</html>`;
+
+  const html = buildSavedHtmlPreservingHead({
+    sourceHtml: source,
+    bodyHtml: '<micro-app name="otp-tms"><div id="content">内容</div></micro-app>',
+    canvasCss: '#el-popover-1{display:none;width:200px;left:-9999px;top:0;}#dropdown-menu-3{display:none;}',
+  });
+
+  assert.match(html, /id="el-popover-1"[^>]+display:none/);
+  assert.match(html, /#el-popover-1\{display:none;width:200px;left:-9999px;top:0;\}/);
+  assert.doesNotMatch(html, /#dropdown-menu-3\{/);
+});
+
+test('buildSavedHtmlPreservingHead keeps rules for body nodes even when ids do not match known runtime prefixes', () => {
+  const source = `<!doctype html>
+<html>
+<head></head>
+<body><div id="content">内容</div></body>
+</html>`;
+
+  const html = buildSavedHtmlPreservingHead({
+    sourceHtml: source,
+    bodyHtml: '<div id="content">内容</div><div id="custom-layer-1" style="display:none;position:absolute;left:-9999px;top:0;">隐藏层</div>',
+    canvasCss: '#custom-layer-1{display:none;width:240px;left:-9999px;top:0;}#ghost-node{left:12px;}',
+  });
+
+  assert.match(html, /id="custom-layer-1"[^>]+display:none/);
+  assert.match(html, /#custom-layer-1\{display:none;width:240px;left:-9999px;top:0;\}/);
+  assert.doesNotMatch(html, /#ghost-node\{/);
+});
+
+test('buildSavedHtmlPreservingHead removes managed canvas css when the related element is deleted', () => {
+  const source = `<!doctype html>
+<html>
+<head>
+  <style>.business{color:red}</style>
+  <style data-ccui-visual-html-canvas-style="true">#deleted-panel{padding-left:20px;color:#fff;}#deleted-child{background-color:#232f3d;}#survivor{margin-left:-4px;}</style>
+</head>
+<body>
+  <div id="deleted-panel">
+    <span id="deleted-child">待删除</span>
+  </div>
+  <div id="survivor">保留</div>
+</body>
+</html>`;
+
+  const html = buildSavedHtmlPreservingHead({
+    sourceHtml: source,
+    bodyHtml: '<div id="survivor">保留</div>',
+    canvasCss: '#survivor{margin-left:-8px;}',
+  });
+
+  assert.doesNotMatch(html, /#deleted-panel\{/);
+  assert.doesNotMatch(html, /#deleted-child\{/);
+  assert.match(html, /#survivor\{margin-left:-8px;\}/);
+});
+
+test('buildSavedHtmlPreservingHead serializes managed canvas css in a single line', () => {
+  const source = `<!doctype html>
+<html>
+<head></head>
+<body><div id="menu-item">订单中心</div><div id="menu-child">子菜单</div></body>
+</html>`;
+
+  const html = buildSavedHtmlPreservingHead({
+    sourceHtml: source,
+    bodyHtml: '<div id="menu-item">订单中心</div><div id="menu-child">子菜单</div>',
+    canvasCss: '#menu-item{padding-left:20px;color:#fff;}#menu-child{padding-left:40px;color:#fff;}',
+  });
+
+  assert.match(
+    html,
+    /<style data-ccui-visual-html-canvas-style="true">\s*#menu-item\{padding-left:20px;color:#fff;\}#menu-child\{padding-left:40px;color:#fff;\}\s*<\/style>/,
+  );
 });
 
 test('buildSavedHtmlPreservingHead strips temporary hidden layer edit markup', () => {

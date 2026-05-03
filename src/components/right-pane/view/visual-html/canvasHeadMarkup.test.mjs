@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { splitCanvasHeadMarkup } from './canvasHeadMarkup.ts';
+import { rewriteCanvasHeadAssetUrls, splitCanvasHeadMarkup } from './canvasHeadMarkup.ts';
 
 test('splitCanvasHeadMarkup keeps non-script head markup and extracts script tags separately', () => {
   const result = splitCanvasHeadMarkup(`
@@ -27,4 +27,18 @@ test('splitCanvasHeadMarkup keeps non-script head markup and extracts script tag
     attributes: {},
     content: 'window.demo = true;',
   });
+});
+
+test('rewriteCanvasHeadAssetUrls rewrites relative asset paths against the preview directory', () => {
+  const result = rewriteCanvasHeadAssetUrls(`
+    <link rel="stylesheet" href="index.css">
+    <script src="./scripts/app.js"></script>
+    <img src="images/avatar.png">
+    <link rel="icon" href="https://example.com/favicon.ico">
+  `, 'http://localhost:5173/api/projects/demo/preview/archive/index.html');
+
+  assert.match(result, /href="http:\/\/localhost:5173\/api\/projects\/demo\/preview\/archive\/index\.css"/);
+  assert.match(result, /src="http:\/\/localhost:5173\/api\/projects\/demo\/preview\/archive\/scripts\/app\.js"/);
+  assert.match(result, /src="http:\/\/localhost:5173\/api\/projects\/demo\/preview\/archive\/images\/avatar\.png"/);
+  assert.match(result, /href="https:\/\/example\.com\/favicon\.ico"/);
 });

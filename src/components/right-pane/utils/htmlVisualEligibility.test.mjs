@@ -18,6 +18,25 @@ test('isHtmlEligibleForVisualEditing returns false for template-heavy html', () 
   assert.equal(isHtmlEligibleForVisualEditing(content), false);
 });
 
+test('isHtmlEligibleForVisualEditing ignores template syntax inside code-like blocks', () => {
+  const content = `
+    <!doctype html>
+    <html>
+      <head><title>Docs</title></head>
+      <body>
+        <article>
+          <pre><code>{{ message }}</code></pre>
+          <code>{% if featureEnabled %}</code>
+          <textarea><%= legacy_partial %></textarea>
+          <p>这是说明文档页面。</p>
+        </article>
+      </body>
+    </html>
+  `;
+
+  assert.equal(isHtmlEligibleForVisualEditing(content), true);
+});
+
 test('isHtmlEligibleForVisualEditing returns true for simple complete html', () => {
   const content = `
     <!doctype html>

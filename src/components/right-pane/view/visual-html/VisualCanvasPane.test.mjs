@@ -20,11 +20,12 @@ test('VisualCanvasPane source defines an isolated design surface around GrapesJS
   assert.match(source, /collectStyleMarkup/);
   assert.match(source, /injectRawCanvasStyles/);
   assert.match(source, /collectCanvasHeadMarkup/);
+  assert.match(source, /rewriteCanvasHeadAssetUrls/);
   assert.match(source, /createCanvasStructureHtml/);
   assert.match(source, /logCanvasPerf/);
   assert.match(source, /const canvasHtml = normalizeDesignCanvasHtml\(fullHtml\);/);
   assert.match(source, /const rawStyleMarkup = collectStyleMarkup\(canvasHtml\);/);
-  assert.match(source, /const canvasHeadMarkup = collectCanvasHeadMarkup\(canvasHtml\);/);
+  assert.match(source, /const canvasHeadMarkup = rewriteCanvasHeadAssetUrls\(\s*collectCanvasHeadMarkup\(canvasHtml\),\s*assetBaseUrl,\s*\);/);
   assert.match(source, /const canvasStructureHtml = createCanvasStructureHtml\(canvasHtml\);/);
   assert.doesNotMatch(source, /editor\.getWrapper\(\)\?\.components\(canvasHtml/);
   assert.match(source, /editor\.getWrapper\(\)\?\.components\(canvasStructureHtml/);

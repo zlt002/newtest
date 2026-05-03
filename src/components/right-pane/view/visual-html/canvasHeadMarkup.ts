@@ -3,6 +3,14 @@ import grapesjs from 'grapesjs';
 const SCRIPT_TAG_PATTERN = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
 const SCRIPT_ATTRIBUTE_PATTERN = /([:@\w-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
 const MANAGED_HEAD_NODE_ATTRIBUTE = 'data-ccui-canvas-head-node';
+const RELATIVE_ASSET_ATTRIBUTE_SELECTORS = [
+  ['link[href]', 'href'],
+  ['script[src]', 'src'],
+  ['img[src]', 'src'],
+  ['source[src]', 'src'],
+  ['video[src]', 'src'],
+  ['audio[src]', 'src'],
+] as const;
 
 type CanvasHeadScript = {
   attributes: Record<string, string>;
@@ -43,6 +51,58 @@ export function splitCanvasHeadMarkup(headMarkup: string): {
       content: (match[2] ?? '').trim(),
     })),
   };
+}
+
+function shouldRewriteRelativeAssetUrl(value: string) {
+  const normalized = value.trim();
+  if (!normalized) {
+    return false;
+  }
+
+  return !/^(?:[a-z]+:|\/\/|#|data:|blob:|about:|javascript:)/i.test(normalized);
+}
+
+export function rewriteCanvasHeadAssetUrls(headMarkup: string, assetBaseUrl: string | null | undefined) {
+  const normalizedMarkup = String(headMarkup ?? '').trim();
+  const normalizedBaseUrl = String(assetBaseUrl ?? '').trim();
+  if (!normalizedMarkup || !normalizedBaseUrl) {
+    return normalizedMarkup;
+  }
+
+  if (typeof DOMParser === 'undefined') {
+    return normalizedMarkup.replace(
+      /\b(href|src)\s*=\s*(["'])(.*?)\2/gi,
+      (fullMatch, attributeName: string, quote: string, rawValue: string) => {
+        if (!shouldRewriteRelativeAssetUrl(rawValue)) {
+          return fullMatch;
+        }
+
+        try {
+          return `${attributeName}=${quote}${new URL(rawValue, normalizedBaseUrl).toString()}${quote}`;
+        } catch {
+          return fullMatch;
+        }
+      },
+    );
+  }
+
+  const parsed = new DOMParser().parseFromString(`<head>${normalizedMarkup}</head>`, 'text/html');
+  RELATIVE_ASSET_ATTRIBUTE_SELECTORS.forEach(([selector, attributeName]) => {
+    parsed.head.querySelectorAll<HTMLElement>(selector).forEach((element) => {
+      const rawValue = element.getAttribute(attributeName)?.trim();
+      if (!rawValue || !shouldRewriteRelativeAssetUrl(rawValue)) {
+        return;
+      }
+
+      try {
+        element.setAttribute(attributeName, new URL(rawValue, normalizedBaseUrl).toString());
+      } catch {
+        // Ignore malformed asset URLs and keep original markup.
+      }
+    });
+  });
+
+  return parsed.head.innerHTML.trim();
 }
 
 export function injectCanvasHeadMarkup(editor: ReturnType<typeof grapesjs.init>, headMarkup: string) {

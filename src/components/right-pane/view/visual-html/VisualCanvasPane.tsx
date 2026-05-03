@@ -2,13 +2,14 @@ import grapesjs from 'grapesjs';
 import 'grapesjs/dist/css/grapes.min.css';
 import './VisualCanvasPane.css';
 import { useEffect, useRef } from 'react';
-import { injectCanvasHeadMarkup } from './canvasHeadMarkup';
+import { injectCanvasHeadMarkup, rewriteCanvasHeadAssetUrls } from './canvasHeadMarkup';
 import { registerVisualHtmlBlocks } from './grapesjsBlockRegistry';
 import { registerVisualHtmlComponentTypes } from './grapesjsComponentRegistry';
 import grapesjsZhCn from './grapesjsZhCn';
 
 type VisualCanvasPaneProps = {
   fullHtml: string;
+  assetBaseUrl?: string | null;
   showHiddenLayers?: boolean;
   hiddenLayerFilter?: HiddenLayerFilter;
   onEditorReady?: (editor: ReturnType<typeof grapesjs.init> | null) => void;
@@ -753,6 +754,7 @@ function applyHiddenLayerEditing(
 
 export default function VisualCanvasPane({
   fullHtml,
+  assetBaseUrl = null,
   showHiddenLayers = false,
   hiddenLayerFilter = {
     reasons: ['display-none', 'visibility-hidden', 'opacity-zero', 'zero-size', 'offscreen', 'ancestor-hidden'],
@@ -791,7 +793,10 @@ export default function VisualCanvasPane({
 
     const canvasHtml = normalizeDesignCanvasHtml(fullHtml);
     const rawStyleMarkup = collectStyleMarkup(canvasHtml);
-    const canvasHeadMarkup = collectCanvasHeadMarkup(canvasHtml);
+    const canvasHeadMarkup = rewriteCanvasHeadAssetUrls(
+      collectCanvasHeadMarkup(canvasHtml),
+      assetBaseUrl,
+    );
     const canvasStructureHtml = createCanvasStructureHtml(canvasHtml);
     logCanvasPerf('prepared', {
       fullHtmlLength: fullHtml.length,
