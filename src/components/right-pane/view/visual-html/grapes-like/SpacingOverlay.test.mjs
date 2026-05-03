@@ -410,6 +410,27 @@ test('findElementSourceLocation ignores GrapesJS runtime classes and attributes'
   );
 });
 
+test('findElementSourceLocation ignores hidden-layer runtime attrs and preview style', () => {
+  const sourceText = [
+    '<div id="thankYou" class="thank-you">',
+    '  <h2>提交成功，感谢您的参与111！</h2>',
+    '</div>',
+  ].join('\n');
+
+  assert.deepEqual(
+    findElementSourceLocation({
+      sourceText,
+      elementOuterHtml: '<div id="thankYou" class="thank-you" data-ccui-hidden-layer-preview="true" data-ccui-hidden-layer-original-style="display%3Anone" style="display:block; visibility:visible; z-index:1003"><h2>提交成功，感谢您的参与111！</h2></div>',
+    }),
+    {
+      startLine: 1,
+      startColumn: 1,
+      endLine: 3,
+      endColumn: 7,
+    },
+  );
+});
+
 test('findClosestElementSourceLocation falls back to the nearest ancestor that exists in source', () => {
   const sourceText = [
     '<section class="card">',

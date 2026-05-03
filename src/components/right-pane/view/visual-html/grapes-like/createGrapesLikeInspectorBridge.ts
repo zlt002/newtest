@@ -29,6 +29,7 @@ type GrapesComponent = ReturnType<GrapesEditor['getSelected']> & {
   getType?: () => string;
   get?: (key: string) => unknown;
   getStyle?: () => Record<string, unknown>;
+  getEl?: () => Element | null | undefined;
   getSelectorsString?: () => string;
   getClasses?: () => Array<string | { get?: (key: string) => unknown }>;
   addClass?: (className: string) => void;
@@ -74,6 +75,62 @@ type GrapesLayerManager = {
 type GrapesStyleManager = {
   getModelToStyle?: (component: GrapesComponent) => GrapesStyleTarget;
 };
+
+const COMPUTED_STYLE_PROPERTIES = [
+  'display',
+  'float',
+  'position',
+  'top',
+  'right',
+  'bottom',
+  'left',
+  'z-index',
+  'width',
+  'height',
+  'max-width',
+  'min-height',
+  'flex-direction',
+  'flex-wrap',
+  'justify-content',
+  'align-items',
+  'align-content',
+  'order',
+  'flex-basis',
+  'flex-grow',
+  'flex-shrink',
+  'align-self',
+  'margin-top',
+  'margin-right',
+  'margin-bottom',
+  'margin-left',
+  'padding-top',
+  'padding-right',
+  'padding-bottom',
+  'padding-left',
+  'color',
+  'font-family',
+  'font-size',
+  'font-weight',
+  'letter-spacing',
+  'line-height',
+  'text-align',
+  'background-color',
+  'border-top-width',
+  'border-right-width',
+  'border-bottom-width',
+  'border-left-width',
+  'border-style',
+  'border-color',
+  'border-top-left-radius',
+  'border-top-right-radius',
+  'border-bottom-right-radius',
+  'border-bottom-left-radius',
+  'box-shadow',
+  'opacity',
+  'transition',
+  'transform',
+  'perspective',
+];
 
 const COMPONENT_TYPE_LABELS: Record<string, string> = {
   div: '容器',
@@ -447,23 +504,67 @@ function sanitizeStyleRecord(style: Record<string, unknown> | null | undefined):
   ) as Record<string, string | number | null | undefined>;
 }
 
+function normalizeComputedColor(value: string) {
+  const trimmed = value.trim();
+  const rgbMatch = trimmed.match(/^rgba?\(\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)(?:\s*,\s*(\d?(?:\.\d+)?))?\s*\)$/i);
+  if (!rgbMatch) {
+    return trimmed;
+  }
+
+  const alpha = rgbMatch[4] === undefined ? 1 : Number(rgbMatch[4]);
+  if (Number.isFinite(alpha) && alpha < 1) {
+    return trimmed;
+  }
+
+  return `#${[rgbMatch[1], rgbMatch[2], rgbMatch[3]]
+    .map((channel) => Math.max(0, Math.min(255, Math.round(Number(channel))))
+      .toString(16)
+      .padStart(2, '0'))
+    .join('')}`;
+}
+
+function readComputedStyleRecord(component: GrapesComponent): Record<string, string> {
+  const element = component.getEl?.();
+  const view = element?.ownerDocument?.defaultView;
+  if (!element || !view?.getComputedStyle) {
+    return {};
+  }
+
+  const computedStyle = view.getComputedStyle(element);
+  return COMPUTED_STYLE_PROPERTIES.reduce<Record<string, string>>((record, property) => {
+    const rawValue = computedStyle.getPropertyValue(property).trim();
+    if (!rawValue) {
+      return record;
+    }
+
+    record[property] = property.includes('color') ? normalizeComputedColor(rawValue) : rawValue;
+    return record;
+  }, {});
+}
+
 function getStyleSourceForComponent(editor: GrapesEditor, component: GrapesComponent, index: number) {
   const primaryTarget = index === 0
     ? (editor.getSelectedToStyle?.() as GrapesStyleTarget | undefined)
     : undefined;
   const styleTarget = primaryTarget ?? getStyleManager(editor)?.getModelToStyle?.(component);
-  return sanitizeStyleRecord(styleTarget?.getStyle?.() ?? component?.getStyle?.());
+  return {
+    ...readComputedStyleRecord(component),
+    ...sanitizeStyleRecord(styleTarget?.getStyle?.() ?? component?.getStyle?.()),
+  };
 }
 
 function getStyleTargetsForSelection(editor: GrapesEditor): GrapesStyleTarget[] {
   const selected = getSelectedComponents(editor);
   const primaryTarget = editor.getSelectedToStyle?.() as GrapesStyleTarget | undefined;
   const styleManager = getStyleManager(editor);
-  const targets = selected.map((component, index) => (
-    index === 0
-      ? (primaryTarget ?? styleManager?.getModelToStyle?.(component))
-      : styleManager?.getModelToStyle?.(component)
-  ));
+  const targets = selected.map((component) => {
+    const componentTarget = styleManager?.getModelToStyle?.(component);
+    if (componentTarget) {
+      return componentTarget;
+    }
+
+    return selected.length === 1 ? primaryTarget : undefined;
+  });
 
   return targets.filter(Boolean) as GrapesStyleTarget[];
 }

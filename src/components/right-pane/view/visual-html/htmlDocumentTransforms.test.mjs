@@ -143,6 +143,26 @@ test('buildSavedHtml restores inline event attributes stripped by the visual can
   assert.match(html, /<h2[^>]+id="title"[^>]+onclick="showModal\(\)"/);
 });
 
+test('buildSavedHtml restores inline event attributes for classed elements without ids', () => {
+  const source = `<!doctype html>
+<html>
+<head></head>
+<body>
+  <span class="popup-trigger" onclick="showPopup()">111</span>
+  <script>function showPopup() {}</script>
+</body>
+</html>`;
+  const workspaceDocument = createWorkspaceDocument(source);
+
+  const html = buildSavedHtml({
+    snapshot: workspaceDocument.snapshot,
+    bodyHtml: '<span class="popup-trigger">111</span>',
+    css: '',
+  });
+
+  assert.match(html, /<span[^>]+class="popup-trigger"[^>]+onclick="showPopup\(\)"/);
+});
+
 test('buildSavedHtmlPreservingHead replaces only body html and keeps source head styles intact', () => {
   const source = `<!doctype html>
 <html lang="zh-CN">
@@ -215,6 +235,101 @@ test('buildSavedHtmlPreservingHead appends canvas css without replacing source s
   assert.match(html, /\.el-menu\{color:white\}/);
   assert.match(html, /data-ccui-visual-html-canvas-style="true"/);
   assert.match(html, /#menu-item\{padding-left:40px;color:#ffffff;background-color:#232f3d;\}/);
+});
+
+test('buildSavedHtmlPreservingHead coalesces stale canvas css instead of accumulating style tags', () => {
+  const source = `<!doctype html>
+<html>
+<head>
+  <style>.business{color:red}</style>
+  <style data-ccui-visual-html-canvas-style="true">#old{left:1px}</style>
+  <style data-ccui-visual-html-canvas-style="true">#older{left:2px}</style>
+</head>
+<body><main id="app">old</main></body>
+</html>`;
+
+  const html = buildSavedHtmlPreservingHead({
+    sourceHtml: source,
+    bodyHtml: '<main id="app">new</main>',
+    canvasCss: '#new{left:3px}',
+  });
+
+  assert.match(html, /\.business\{color:red\}/);
+  assert.doesNotMatch(html, /#old\{left:1px\}/);
+  assert.match(html, /#older\{left:2px;\}/);
+  assert.match(html, /#new\{left:3px;\}/);
+  assert.equal((html.match(/data-ccui-visual-html-canvas-style="true"/g) ?? []).length, 1);
+});
+
+test('buildSavedHtmlPreservingHead keeps previous canvas css when reopening and saving without new Grapes css', () => {
+  const source = `<!doctype html>
+<html>
+<head>
+  <style>.business{color:red}</style>
+  <style data-ccui-visual-html-canvas-style="true">#irki{background-color:#b46464;}</style>
+</head>
+<body><h1 id="irki">用户满意度调研</h1></body>
+</html>`;
+
+  const html = buildSavedHtmlPreservingHead({
+    sourceHtml: source,
+    bodyHtml: '<h1 id="irki">用户满意度调研</h1>',
+    canvasCss: '* { box-sizing: border-box; } body {margin: 0;}',
+  });
+
+  assert.match(html, /\.business\{color:red\}/);
+  assert.match(html, /#irki\{background-color:#b46464;\}/);
+  assert.match(html, /\*\{box-sizing:border-box;\}/);
+  assert.match(html, /body\{margin:0;\}/);
+  assert.equal((html.match(/data-ccui-visual-html-canvas-style="true"/g) ?? []).length, 1);
+});
+
+test('buildSavedHtmlPreservingHead coalesces repeated canvas selector declarations to the latest value', () => {
+  const source = `<!doctype html>
+<html>
+<head>
+  <style data-ccui-visual-html-canvas-style="true">
+    * { box-sizing: border-box; } body { margin: 0; } #irki { background-color: #b46464; }
+    * { box-sizing: border-box; } body { margin: 0; } #irki { padding-bottom: 16px; }
+    * { box-sizing: border-box; } body { margin: 0; } #irki { padding-bottom: 18px; }
+  </style>
+</head>
+<body><h1 id="irki">用户满意度调研</h1></body>
+</html>`;
+
+  const html = buildSavedHtmlPreservingHead({
+    sourceHtml: source,
+    bodyHtml: '<h1 id="irki">用户满意度调研</h1>',
+    canvasCss: '* { box-sizing: border-box; } body { margin: 0; } #irki { padding-bottom: 24px; padding-top: 8px; }',
+  });
+
+  assert.match(html, /#irki\{background-color:#b46464;padding-bottom:24px;padding-top:8px;\}/);
+  assert.equal((html.match(/#irki\{/g) ?? []).length, 1);
+  assert.equal((html.match(/padding-bottom:/g) ?? []).length, 1);
+  assert.equal((html.match(/\*\{box-sizing:border-box;\}/g) ?? []).length, 1);
+  assert.equal((html.match(/body\{margin:0;\}/g) ?? []).length, 1);
+});
+
+test('buildSavedHtmlPreservingHead strips temporary hidden layer edit markup', () => {
+  const source = `<!doctype html>
+<html>
+<head><style>.modal{display:none}</style></head>
+<body><div id="modal" class="modal">详情</div></body>
+</html>`;
+
+  const html = buildSavedHtmlPreservingHead({
+    sourceHtml: source,
+    bodyHtml: '<div id="modal" class="modal" style="display: block !important; visibility: visible !important;" data-ccui-hidden-layer-preview="true" data-ccui-hidden-layer-original-style="display%3A%20none%3B">详情</div>',
+    canvasCss: '[data-ccui-hidden-layer-preview]{display:block!important;}',
+  });
+
+  assert.doesNotMatch(html, /data-ccui-hidden-layer-preview/);
+  assert.doesNotMatch(html, /data-ccui-hidden-layer-original-style/);
+  assert.doesNotMatch(html, /data-ccui-hidden-layer-edit-style/);
+  assert.doesNotMatch(html, /visibility: visible/);
+  assert.match(html, /style="display: none;"/);
+  assert.doesNotMatch(html, /data-ccui-hidden-layer-preview\]\{display:block/);
+  assert.match(html, /\.modal\{display:none\}/);
 });
 
 test('buildSavedHtmlPreservingHead patches runtime snapshots without replacing popover body structure', () => {

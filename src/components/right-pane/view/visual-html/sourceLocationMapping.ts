@@ -50,6 +50,7 @@ const FINGERPRINT_ATTRIBUTES = ['data-ccui-fingerprint'];
 const DOM_PATH_ATTRIBUTES = ['data-ccui-dom-path'];
 const RUNTIME_ONLY_ATTRIBUTE_PATTERNS = [
   /^data-gjs-/i,
+  /^data-ccui-hidden-layer-/i,
 ];
 const RUNTIME_ONLY_ATTRIBUTES = new Set([
   'contenteditable',
@@ -57,6 +58,7 @@ const RUNTIME_ONLY_ATTRIBUTES = new Set([
   'spellcheck',
   'data-highlightable',
   'data-gjs-highlightable',
+  'style',
 ]);
 export const FINGERPRINT_PRIORITY_ATTRIBUTES = [
   'id',

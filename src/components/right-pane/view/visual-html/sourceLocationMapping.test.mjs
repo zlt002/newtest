@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   buildSourceLocationMap,
+  buildSourceLocationFingerprint,
   findSourceLocationByIdentity,
 } from './sourceLocationMapping.ts';
 
@@ -138,6 +139,34 @@ test('findSourceLocationByIdentity prefers domPath suffix when loose fingerprint
   assert.equal(resolved?.tagName, 'div');
   assert.equal(resolved?.startLine, 6);
   assert.equal(resolved?.startColumn, 9);
+});
+
+test('findSourceLocationByIdentity ignores hidden-layer runtime attrs and preview style', () => {
+  const html = `<!doctype html>
+<html>
+  <body>
+    <div id="thankYou" class="thank-you">
+      <h2>提交成功</h2>
+    </div>
+  </body>
+</html>`;
+
+  const mapping = buildSourceLocationMap(html);
+  const resolved = findSourceLocationByIdentity(mapping, {
+    componentId: '',
+    fingerprint: buildSourceLocationFingerprint('div', {
+      id: 'thankYou',
+      class: 'thank-you',
+      style: 'display:block; visibility:visible; z-index:1003',
+      'data-ccui-hidden-layer-preview': 'true',
+      'data-ccui-hidden-layer-original-style': 'display%3Anone',
+    }),
+    domPath: 'html > body > div',
+  });
+
+  assert.equal(resolved?.tagName, 'div');
+  assert.equal(resolved?.attributes.id, 'thankYou');
+  assert.equal(resolved?.startLine, 4);
 });
 
 test('buildSourceLocationMap keeps usable entries when parse5 can recover from malformed html', () => {

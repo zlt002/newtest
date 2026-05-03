@@ -9,11 +9,32 @@ import grapesjsZhCn from './grapesjsZhCn';
 
 type VisualCanvasPaneProps = {
   fullHtml: string;
+  showHiddenLayers?: boolean;
+  hiddenLayerFilter?: HiddenLayerFilter;
   onEditorReady?: (editor: ReturnType<typeof grapesjs.init> | null) => void;
   onDirtyChange?: (isDirty: boolean, editor: ReturnType<typeof grapesjs.init>) => void;
 };
 
 const RAW_CANVAS_STYLE_ATTRIBUTE = 'data-ccui-raw-canvas-style';
+const HIDDEN_LAYER_EDIT_STYLE_ATTRIBUTE = 'data-ccui-hidden-layer-edit-style';
+const HIDDEN_LAYER_PREVIEW_ATTRIBUTE = 'data-ccui-hidden-layer-preview';
+const HIDDEN_LAYER_ORIGINAL_STYLE_ATTRIBUTE = 'data-ccui-hidden-layer-original-style';
+const HIDDEN_LAYER_PASS_THROUGH_ATTRIBUTE = 'data-ccui-hidden-layer-pass-through';
+type HiddenLayerDisplayMode = 'block' | 'flex' | 'grid' | 'inline-flex' | 'table-row' | 'table-header-group' | 'table-row-group' | 'table-footer-group' | 'table-cell' | 'list-item';
+type HiddenLayerReason = 'display-none' | 'visibility-hidden' | 'opacity-zero' | 'zero-size' | 'offscreen' | 'ancestor-hidden';
+type HiddenLayerFilter = {
+  reasons: HiddenLayerReason[];
+  includeInternal: boolean;
+  includeDescendants: boolean;
+  textQuery: string;
+};
+type HiddenLayerRecord = {
+  element: HTMLElement;
+  reason: HiddenLayerReason;
+  isCanvasInternal: boolean;
+  hasHiddenAncestor: boolean;
+  computedStyle: CSSStyleDeclaration;
+};
 
 function isCanvasPerfDebugEnabled() {
   return (globalThis as typeof globalThis & { CCUI_DEBUG_VISUAL_CANVAS_PERF?: boolean }).CCUI_DEBUG_VISUAL_CANVAS_PERF === true;
@@ -34,6 +55,17 @@ function logCanvasPerf(stage: string, payload: Record<string, unknown> = {}) {
 
   console.info('[VisualCanvasPerf]', {
     stage,
+    at: new Date().toISOString(),
+    ...payload,
+  });
+}
+
+function logHiddenLayerDebug(payload: Record<string, unknown>) {
+  if (!isCanvasPerfDebugEnabled()) {
+    return;
+  }
+
+  console.info('[VisualCanvasHiddenLayers]', {
     at: new Date().toISOString(),
     ...payload,
   });
@@ -222,31 +254,288 @@ function isElementCompletelyOutsideViewport(rect: DOMRect, viewportWidth: number
   return rect.right <= 0 || rect.bottom <= 0 || rect.left >= viewportWidth || rect.top >= viewportHeight;
 }
 
-function isNonVisualEditableElement(element: HTMLElement, viewportWidth: number, viewportHeight: number) {
+function isCanvasHTMLElement(value: unknown, canvasDocument: Document): value is HTMLElement {
+  const canvasWindow = canvasDocument.defaultView;
+  return Boolean(
+    canvasWindow
+      && value instanceof canvasWindow.HTMLElement
+      && value.ownerDocument === canvasDocument
+      && canvasDocument.body.contains(value),
+  );
+}
+
+function getDirectHiddenLayerReason(
+  element: HTMLElement,
+  viewportWidth: number,
+  viewportHeight: number,
+): HiddenLayerReason | null {
   if (element === element.ownerDocument.body || element === element.ownerDocument.documentElement) {
-    return false;
+    return null;
   }
 
   const style = element.ownerDocument.defaultView?.getComputedStyle(element);
   if (!style) {
-    return false;
+    return null;
   }
 
   const display = style.display;
   const visibility = style.visibility;
   const opacity = style.opacity;
   if (display === 'none' || visibility === 'hidden' || opacity === '0') {
-    return true;
+    if (display === 'none') {
+      return 'display-none';
+    }
+    if (visibility === 'hidden') {
+      return 'visibility-hidden';
+    }
+    return 'opacity-zero';
   }
 
   const rect = element.getBoundingClientRect();
   if (rect.width <= 0 || rect.height <= 0) {
-    return true;
+    return 'zero-size';
   }
 
   const position = style.position;
-  return (position === 'absolute' || position === 'fixed')
-    && isElementCompletelyOutsideViewport(rect, viewportWidth, viewportHeight);
+  if ((position === 'absolute' || position === 'fixed')
+    && isElementCompletelyOutsideViewport(rect, viewportWidth, viewportHeight)) {
+    return 'offscreen';
+  }
+
+  return null;
+}
+
+function hasDirectHiddenAncestor(
+  element: HTMLElement,
+  viewportWidth: number,
+  viewportHeight: number,
+) {
+  let current = element.parentElement;
+  while (current) {
+    if (getDirectHiddenLayerReason(current, viewportWidth, viewportHeight)) {
+      return true;
+    }
+    current = current.parentElement;
+  }
+
+  return false;
+}
+
+function classifyHiddenLayerElement(
+  element: HTMLElement,
+  viewportWidth: number,
+  viewportHeight: number,
+): HiddenLayerRecord | null {
+  const computedStyle = element.ownerDocument.defaultView?.getComputedStyle(element);
+  if (!computedStyle) {
+    return null;
+  }
+
+  const directReason = getDirectHiddenLayerReason(element, viewportWidth, viewportHeight);
+  const hasHiddenAncestor = hasDirectHiddenAncestor(element, viewportWidth, viewportHeight);
+  const reason = directReason ?? (hasHiddenAncestor ? 'ancestor-hidden' : null);
+  if (!reason) {
+    return null;
+  }
+
+  return {
+    element,
+    reason,
+    isCanvasInternal: isCanvasInternalElement(element),
+    hasHiddenAncestor,
+    computedStyle,
+  };
+}
+
+function isNonVisualEditableElement(element: HTMLElement, viewportWidth: number, viewportHeight: number) {
+  return Boolean(classifyHiddenLayerElement(element, viewportWidth, viewportHeight));
+}
+
+function decodeTemporaryStyle(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function hasHiddenLayerPreviewAncestor(element: HTMLElement) {
+  let current = element.parentElement;
+  while (current) {
+    if (current.hasAttribute(HIDDEN_LAYER_PREVIEW_ATTRIBUTE)) {
+      return true;
+    }
+    current = current.parentElement;
+  }
+
+  return false;
+}
+
+function isCanvasInternalElement(element: HTMLElement) {
+  const matchesInternalClass = (node: HTMLElement | null) => {
+    if (!node) {
+      return false;
+    }
+
+    const className = node.className;
+    if (typeof className !== 'string') {
+      return false;
+    }
+
+    return className
+      .split(/\s+/)
+      .filter(Boolean)
+      .some((classToken) => classToken.startsWith('gjs-'));
+  };
+
+  if (matchesInternalClass(element)) {
+    return true;
+  }
+
+  let current = element.parentElement;
+  while (current) {
+    if (matchesInternalClass(current)) {
+      return true;
+    }
+    current = current.parentElement;
+  }
+
+  return false;
+}
+
+function shouldDisplayHiddenLayerRecord(record: HiddenLayerRecord, filter: HiddenLayerFilter) {
+  if (!filter.reasons.includes(record.reason)) {
+    return false;
+  }
+  if (!filter.includeInternal && record.isCanvasInternal) {
+    return false;
+  }
+  if (!filter.includeDescendants && record.hasHiddenAncestor) {
+    return false;
+  }
+  const textQuery = filter.textQuery.trim().toLowerCase();
+  if (textQuery) {
+    const elementText = record.element.textContent?.trim().toLowerCase() ?? '';
+    if (!elementText.includes(textQuery)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function getPreviewZIndex(element: HTMLElement, computedStyle: CSSStyleDeclaration) {
+  const parsedZIndex = Number.parseInt(computedStyle.zIndex, 10);
+  const baseZIndex = Number.isFinite(parsedZIndex) ? parsedZIndex : 0;
+  let depth = 0;
+  let current = element.parentElement;
+  while (current) {
+    depth += 1;
+    current = current.parentElement;
+  }
+
+  return Math.max(baseZIndex, 1000 + depth);
+}
+
+function getHiddenLayerPreviewDisplay(element: HTMLElement, style: CSSStyleDeclaration): HiddenLayerDisplayMode {
+  const tagName = element.tagName.toLowerCase();
+  if (tagName === 'tr') {
+    return 'table-row';
+  }
+  if (tagName === 'thead') {
+    return 'table-header-group';
+  }
+  if (tagName === 'tbody') {
+    return 'table-row-group';
+  }
+  if (tagName === 'tfoot') {
+    return 'table-footer-group';
+  }
+  if (tagName === 'td' || tagName === 'th') {
+    return 'table-cell';
+  }
+  if (tagName === 'li') {
+    return 'list-item';
+  }
+  if (style.display === 'inline-flex') {
+    return 'inline-flex';
+  }
+  if (style.display === 'flex' || style.justifyContent !== 'normal' || style.alignItems !== 'normal') {
+    return 'flex';
+  }
+  if (style.display === 'grid' || style.display === 'inline-grid') {
+    return 'grid';
+  }
+  return 'block';
+}
+
+function applyTemporaryHiddenLayerStyle(
+  element: HTMLElement,
+  computedStyle: CSSStyleDeclaration,
+  viewportWidth: number,
+  viewportHeight: number,
+) {
+  if (!element.hasAttribute(HIDDEN_LAYER_ORIGINAL_STYLE_ATTRIBUTE)) {
+    element.setAttribute(
+      HIDDEN_LAYER_ORIGINAL_STYLE_ATTRIBUTE,
+      encodeURIComponent(element.getAttribute('style') ?? ''),
+    );
+  }
+
+  element.style.setProperty('display', getHiddenLayerPreviewDisplay(element, computedStyle), 'important');
+  element.style.setProperty('visibility', 'visible', 'important');
+  if (computedStyle.opacity === '0') {
+    element.style.setProperty('opacity', '0.82', 'important');
+  } else {
+    element.style.setProperty('opacity', computedStyle.opacity, 'important');
+  }
+  element.style.setProperty('z-index', String(getPreviewZIndex(element, computedStyle)), 'important');
+
+  const rect = element.getBoundingClientRect();
+  if (rect.width <= 0) {
+    element.style.setProperty('min-width', '96px', 'important');
+  } else {
+    element.style.removeProperty('min-width');
+  }
+  if (rect.height <= 0) {
+    element.style.setProperty('min-height', '32px', 'important');
+  } else {
+    element.style.removeProperty('min-height');
+  }
+  const shouldReposition = isElementCompletelyOutsideViewport(rect, viewportWidth, viewportHeight);
+  if (shouldReposition) {
+    element.style.setProperty('position', 'relative', 'important');
+    element.style.setProperty('left', 'auto', 'important');
+    element.style.setProperty('right', 'auto', 'important');
+    element.style.setProperty('top', 'auto', 'important');
+    element.style.setProperty('bottom', 'auto', 'important');
+    element.style.setProperty('transform', 'none', 'important');
+    return;
+  }
+
+  element.style.removeProperty('position');
+  element.style.removeProperty('left');
+  element.style.removeProperty('right');
+  element.style.removeProperty('top');
+  element.style.removeProperty('bottom');
+  element.style.removeProperty('transform');
+}
+
+function restoreTemporaryHiddenLayerStyle(element: HTMLElement) {
+  const encodedOriginalStyle = element.getAttribute(HIDDEN_LAYER_ORIGINAL_STYLE_ATTRIBUTE);
+  element.removeAttribute(HIDDEN_LAYER_PREVIEW_ATTRIBUTE);
+  element.removeAttribute(HIDDEN_LAYER_ORIGINAL_STYLE_ATTRIBUTE);
+  element.removeAttribute(HIDDEN_LAYER_PASS_THROUGH_ATTRIBUTE);
+  if (encodedOriginalStyle == null) {
+    return;
+  }
+
+  const originalStyle = decodeTemporaryStyle(encodedOriginalStyle);
+  if (originalStyle.trim()) {
+    element.setAttribute('style', originalStyle);
+  } else {
+    element.removeAttribute('style');
+  }
 }
 
 function readComponentChildren(component: any) {
@@ -278,8 +567,8 @@ function disableNonVisualEditableCanvasComponents(editor: ReturnType<typeof grap
   const visit = (component: any) => {
     readComponentChildren(component).forEach(visit);
 
-    const element = component?.getEl?.() as HTMLElement | null;
-    if (!element || !canvasDocument.body.contains(element)) {
+    const element = component?.getEl?.();
+    if (!isCanvasHTMLElement(element, canvasDocument)) {
       return;
     }
 
@@ -296,8 +585,181 @@ function disableNonVisualEditableCanvasComponents(editor: ReturnType<typeof grap
   readComponentChildren(wrapper).forEach(visit);
 }
 
+function applyHiddenLayerEditing(
+  editor: ReturnType<typeof grapesjs.init>,
+  enabled: boolean,
+  hiddenLayerFilter: HiddenLayerFilter,
+) {
+  const canvasDocument = editor.Canvas.getDocument?.();
+  const canvasWindow = canvasDocument?.defaultView;
+  const wrapper = editor.DomComponents?.getWrapper?.() as any;
+  if (!canvasDocument?.body || !canvasWindow || !wrapper) {
+    return;
+  }
+
+  canvasDocument.documentElement.classList.toggle('ccui-hidden-layer-editing', enabled);
+  canvasDocument.body.classList.toggle('ccui-hidden-layer-editing', enabled);
+  canvasDocument.head.querySelectorAll(`[${HIDDEN_LAYER_EDIT_STYLE_ATTRIBUTE}]`).forEach((node) => {
+    node.remove();
+  });
+  canvasDocument.body.querySelectorAll<HTMLElement>(
+    `[${HIDDEN_LAYER_PREVIEW_ATTRIBUTE}], [${HIDDEN_LAYER_ORIGINAL_STYLE_ATTRIBUTE}]`,
+  ).forEach((element) => {
+    restoreTemporaryHiddenLayerStyle(element);
+  });
+
+  if (!enabled) {
+    disableNonVisualEditableCanvasComponents(editor);
+    return;
+  }
+
+  const viewportWidth = canvasWindow.innerWidth || canvasDocument.documentElement.clientWidth || canvasDocument.body.clientWidth;
+  const viewportHeight = canvasWindow.innerHeight || canvasDocument.documentElement.clientHeight || canvasDocument.body.clientHeight;
+  const matchedElements: Array<{ id: string; tagName: string; className: string; display: string; position: string }> = [];
+  const previewedElements: HTMLElement[] = [];
+  const visitedElements = new Set<HTMLElement>();
+  const componentByElement = new Map<HTMLElement, any>();
+  let visitedCount = 0;
+  let infoModalVisited = false;
+  const visit = (component: any) => {
+    const element = component?.getEl?.();
+    if (isCanvasHTMLElement(element, canvasDocument)) {
+      visitedCount += 1;
+      visitedElements.add(element);
+      componentByElement.set(element, component);
+      if (element.id === 'infoModal') {
+        infoModalVisited = true;
+      }
+    }
+
+    readComponentChildren(component).forEach(visit);
+  };
+
+  readComponentChildren(wrapper).forEach(visit);
+  const hiddenLayerRecords: HiddenLayerRecord[] = [];
+  canvasDocument.body.querySelectorAll<HTMLElement>('*').forEach((element) => {
+    if (element.id === 'infoModal') {
+      infoModalVisited = true;
+    }
+    const record = classifyHiddenLayerElement(element, viewportWidth, viewportHeight);
+    if (!record) {
+      return;
+    }
+
+    hiddenLayerRecords.push(record);
+    if (!shouldDisplayHiddenLayerRecord(record, hiddenLayerFilter)) {
+      return;
+    }
+
+    matchedElements.push({
+      id: element.id || '',
+      tagName: element.tagName.toLowerCase(),
+      className: element.className || '',
+      display: record.computedStyle.display,
+      position: record.computedStyle.position,
+    });
+    element.setAttribute(HIDDEN_LAYER_PREVIEW_ATTRIBUTE, 'true');
+    applyTemporaryHiddenLayerStyle(element, record.computedStyle, viewportWidth, viewportHeight);
+    previewedElements.push(element);
+    const component = componentByElement.get(element);
+    component?.set?.({
+      selectable: true,
+      hoverable: true,
+      draggable: true,
+      editable: true,
+    }, { silent: true });
+  });
+
+  previewedElements.forEach((element) => {
+    const hasNestedPreview = Boolean(
+      element.querySelector(`[${HIDDEN_LAYER_PREVIEW_ATTRIBUTE}]`),
+    );
+    if (!hasNestedPreview) {
+      return;
+    }
+
+    element.setAttribute(HIDDEN_LAYER_PASS_THROUGH_ATTRIBUTE, 'true');
+    const component = componentByElement.get(element);
+    component?.set?.({
+      selectable: false,
+      hoverable: false,
+      draggable: false,
+      editable: false,
+    }, { silent: true });
+  });
+
+  const infoModal = canvasDocument.getElementById('infoModal');
+  const infoModalStyle = infoModal ? canvasWindow.getComputedStyle(infoModal) : null;
+  const infoModalRect = infoModal?.getBoundingClientRect?.();
+  logHiddenLayerDebug({
+    enabled,
+    visitedCount,
+    infoModalVisited,
+    hiddenLayerFilter,
+    hiddenLayerCountsByReason: hiddenLayerRecords.reduce<Record<string, number>>((counts, record) => {
+      counts[record.reason] = (counts[record.reason] ?? 0) + 1;
+      return counts;
+    }, {}),
+    matchedCount: matchedElements.length,
+    matchedElements: matchedElements.slice(0, 20),
+    infoModalFound: Boolean(infoModal),
+    infoModalTagName: infoModal?.tagName.toLowerCase() ?? null,
+    infoModalClassName: infoModal?.className ?? null,
+    infoModalPreviewFlag: infoModal?.getAttribute(HIDDEN_LAYER_PREVIEW_ATTRIBUTE) ?? null,
+    infoModalInlineStyle: infoModal?.getAttribute('style') ?? null,
+    infoModalComputedDisplay: infoModalStyle?.display ?? null,
+    infoModalComputedVisibility: infoModalStyle?.visibility ?? null,
+    infoModalComputedOpacity: infoModalStyle?.opacity ?? null,
+    infoModalComputedPosition: infoModalStyle?.position ?? null,
+    infoModalRect: infoModalRect
+      ? {
+        width: Math.round(infoModalRect.width),
+        height: Math.round(infoModalRect.height),
+        top: Math.round(infoModalRect.top),
+        right: Math.round(infoModalRect.right),
+        bottom: Math.round(infoModalRect.bottom),
+        left: Math.round(infoModalRect.left),
+      }
+      : null,
+  });
+
+  const style = canvasDocument.createElement('style');
+  style.setAttribute(HIDDEN_LAYER_EDIT_STYLE_ATTRIBUTE, 'true');
+  style.textContent = `
+    [${HIDDEN_LAYER_PREVIEW_ATTRIBUTE}] {
+      visibility: visible !important;
+      pointer-events: auto !important;
+      outline: 2px dashed #f59e0b !important;
+      outline-offset: 2px !important;
+    }
+    [${HIDDEN_LAYER_PASS_THROUGH_ATTRIBUTE}] {
+      pointer-events: none !important;
+    }
+    [${HIDDEN_LAYER_PREVIEW_ATTRIBUTE}]::before {
+      content: "隐藏层";
+      display: inline-flex;
+      margin: 0 0 4px 0;
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: #f59e0b;
+      color: #111827;
+      font-size: 11px;
+      line-height: 16px;
+      font-weight: 600;
+    }
+  `;
+  canvasDocument.head.appendChild(style);
+}
+
 export default function VisualCanvasPane({
   fullHtml,
+  showHiddenLayers = false,
+  hiddenLayerFilter = {
+    reasons: ['display-none', 'visibility-hidden', 'opacity-zero', 'zero-size', 'offscreen', 'ancestor-hidden'],
+    includeInternal: false,
+    includeDescendants: true,
+    textQuery: '',
+  },
   onEditorReady,
   onDirtyChange,
 }: VisualCanvasPaneProps) {
@@ -313,6 +775,14 @@ export default function VisualCanvasPane({
   useEffect(() => {
     onDirtyChangeRef.current = onDirtyChange;
   }, [onDirtyChange]);
+
+  useEffect(() => {
+    if (!editorRef.current) {
+      return;
+    }
+
+    applyHiddenLayerEditing(editorRef.current, showHiddenLayers, hiddenLayerFilter);
+  }, [hiddenLayerFilter, showHiddenLayers]);
 
   useEffect(() => {
     if (!containerRef.current) {
@@ -457,7 +927,7 @@ export default function VisualCanvasPane({
           return;
         }
 
-        disableNonVisualEditableCanvasComponents(editor);
+        applyHiddenLayerEditing(editor, showHiddenLayers, hiddenLayerFilter);
         visualEditableFilterRef.current = true;
       };
 

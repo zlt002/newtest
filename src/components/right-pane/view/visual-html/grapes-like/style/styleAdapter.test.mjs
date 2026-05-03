@@ -5,16 +5,25 @@ import { readStyleSnapshot, readStyleState } from '../styleAdapter.ts';
 test('readStyleSnapshot marks mixed values and rule target', () => {
   const result = readStyleSnapshot({
     selection: [
-      { styles: { width: '100px' }, classes: ['btn'] },
-      { styles: { width: '120px' }, classes: ['btn'] },
+      { styles: { width: '100px', color: '#111111', 'background-color': '#eeeeee' }, classes: ['btn'] },
+      { styles: { width: '120px', color: '#222222', 'background-color': '#ffffff' }, classes: ['btn'] },
     ],
     activeState: '',
   });
 
   const layout = result.sectors.find((sector) => sector.key === 'layout');
+  const text = result.sectors.find((sector) => sector.key === 'text');
+  const appearance = result.sectors.find((sector) => sector.key === 'appearance');
   const width = layout?.properties.find((property) => property.property === 'width');
+  const color = text?.properties.find((property) => property.property === 'color');
+  const backgroundColor = appearance?.properties.find((property) => property.property === 'backgroundColor');
 
   assert.equal(width?.value.mixed, true);
+  assert.deepEqual(width?.value.committed, { value: '', unit: '' });
+  assert.equal(color?.value.mixed, true);
+  assert.deepEqual(color?.value.committed, { value: '', unit: '' });
+  assert.equal(backgroundColor?.value.mixed, true);
+  assert.deepEqual(backgroundColor?.value.committed, { value: '', unit: '' });
   assert.equal(result.targetKind, 'rule');
 });
 

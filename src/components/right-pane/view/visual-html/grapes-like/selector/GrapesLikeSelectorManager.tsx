@@ -54,7 +54,7 @@ export default function GrapesLikeSelectorManager({
       className="w-full min-w-0 border-b p-2 text-card-foreground"
     >
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h2 className="text-[12px] font-medium text-foreground">{selection.isMultiSelection ? ` ${selection.selectedIds.length} elements` : `${selection.selectedLabel || 'None'}`}</h2>
+        <h2 className="text-[12px] font-medium text-foreground">{selection.isMultiSelection ? `已选 ${selection.selectedIds.length} 个元素` : `${selection.selectedLabel || '未选择'}`}</h2>
         <div className="relative min-w-0 shrink-0">
           <select
             aria-label="状态"

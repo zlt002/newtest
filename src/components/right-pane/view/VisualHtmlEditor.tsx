@@ -19,6 +19,7 @@ import {
 import type grapesjs from 'grapesjs';
 import { api } from '../../../utils/api';
 import { broadcastFileSyncEvent, subscribeToFileSyncEvents } from '../../../utils/fileSyncEvents';
+import { resolveHtmlPreviewTarget } from '../utils/htmlPreviewTarget';
 import { isHtmlEligibleForVisualEditing } from '../utils/htmlVisualEligibility';
 import type { RightPaneVisualHtmlTarget } from '../types';
 import { buildSavedHtml, buildSavedHtmlPreservingHead, createWorkspaceDocument } from './visual-html/htmlDocumentTransforms';
@@ -63,6 +64,32 @@ type ToolbarAction = {
 
 type CanvasDevice = 'desktop' | 'tablet' | 'mobile';
 type PreviewRuntimeElementStyles = Record<string, string>;
+type PreviewMode = 'srcdoc' | 'route';
+type HiddenLayerReason = 'display-none' | 'visibility-hidden' | 'opacity-zero' | 'zero-size' | 'offscreen' | 'ancestor-hidden';
+type HiddenLayerFilter = {
+  reasons: HiddenLayerReason[];
+  includeInternal: boolean;
+  includeDescendants: boolean;
+  textQuery: string;
+};
+
+const ALL_HIDDEN_LAYER_REASONS: HiddenLayerReason[] = [
+  'display-none',
+  'visibility-hidden',
+  'opacity-zero',
+  'zero-size',
+  'offscreen',
+  'ancestor-hidden',
+];
+
+const HIDDEN_LAYER_REASON_LABELS: Record<HiddenLayerReason, string> = {
+  'display-none': 'display:none',
+  'visibility-hidden': 'visibility:hidden',
+  'opacity-zero': 'opacity:0',
+  'zero-size': '零尺寸',
+  'offscreen': '屏幕外',
+  'ancestor-hidden': '祖先隐藏',
+};
 
 function stripStyleMarkupFromHtml(markup: string): string {
   return markup.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '').trim();
@@ -83,6 +110,14 @@ function extractLastBodyInnerHtml(markup: string): string {
   return bodyHtml;
 }
 
+function decodeTemporaryHiddenLayerStyle(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 function stripCanvasRuntimeArtifacts(markup: string): string {
   if (typeof DOMParser === 'undefined') {
     return stripStyleMarkupFromHtml(markup)
@@ -95,10 +130,22 @@ function stripCanvasRuntimeArtifacts(markup: string): string {
 
   const parsed = new DOMParser().parseFromString(`<body>${markup}</body>`, 'text/html');
   parsed.body
-    .querySelectorAll('plasmo-csui, script, style, meta, link, base, title, [data-ccui-raw-canvas-style], [data-ccui-canvas-head-node]')
+    .querySelectorAll('plasmo-csui, script, style, meta, link, base, title, [data-ccui-raw-canvas-style], [data-ccui-canvas-head-node], [data-ccui-hidden-layer-edit-style]')
     .forEach((node) => {
       node.remove();
     });
+  parsed.body.querySelectorAll('[data-ccui-hidden-layer-preview]').forEach((node) => {
+    node.removeAttribute('data-ccui-hidden-layer-preview');
+  });
+  parsed.body.querySelectorAll<HTMLElement>('[data-ccui-hidden-layer-original-style]').forEach((node) => {
+    const originalStyle = decodeTemporaryHiddenLayerStyle(node.getAttribute('data-ccui-hidden-layer-original-style') ?? '');
+    node.removeAttribute('data-ccui-hidden-layer-original-style');
+    if (originalStyle.trim()) {
+      node.setAttribute('style', originalStyle);
+    } else {
+      node.removeAttribute('style');
+    }
+  });
 
   return parsed.body.innerHTML.trim();
 }
@@ -469,7 +516,16 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
   const [eligibilityError, setEligibilityError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPreviewActive, setIsPreviewActive] = useState(false);
+  const [previewRouteUrl, setPreviewRouteUrl] = useState<string | null>(null);
+  const [previewRouteVersion, setPreviewRouteVersion] = useState(0);
   const [isOutlineVisible, setIsOutlineVisible] = useState(true);
+  const [isHiddenLayerEditing, setIsHiddenLayerEditing] = useState(false);
+  const [hiddenLayerFilter, setHiddenLayerFilter] = useState<HiddenLayerFilter>({
+    reasons: ALL_HIDDEN_LAYER_REASONS,
+    includeInternal: false,
+    includeDescendants: true,
+    textQuery: '',
+  });
   const [canvasDevice, setCanvasDevice] = useState<CanvasDevice>('desktop');
   const [canvasEditor, setCanvasEditor] = useState<ReturnType<typeof grapesjs.init> | null>(null);
   const canvasEditorRef = useRef<ReturnType<typeof grapesjs.init> | null>(null);
@@ -480,6 +536,7 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
   const pendingSourceCursorEntryRef = useRef<SourceLocationEntry | null>(null);
   const pendingDesignSyncFrameRef = useRef<number | null>(null);
   const pendingFileFlushTimeoutRef = useRef<number | null>(null);
+  const previewModeRef = useRef<PreviewMode>('route');
   const loadRequestSequenceRef = useRef(0);
   const canvasDocumentSourceRef = useRef(EMPTY_HTML_DOCUMENT);
   const syncSourceIdRef = useRef(`visual-html-editor-${Math.random().toString(36).slice(2)}`);
@@ -522,6 +579,10 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
   }, [controller.documentText]);
 
   const applyPreviewRuntimeStateToDesign = useCallback(() => {
+    if (previewModeRef.current !== 'srcdoc') {
+      return;
+    }
+
     const previewDocument = previewFrameRef.current?.contentDocument;
     if (!previewDocument?.body) {
       return;
@@ -840,7 +901,6 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
 
   const togglePreview = useCallback(() => {
     if (isPreviewActive) {
-      applyPreviewRuntimeStateToDesign();
       setIsPreviewActive(false);
       return;
     }
@@ -855,14 +915,15 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
     applyCurrentEditorDocument(nextHtml, 'design');
     syncCanvasDocumentFromHtml(nextHtml);
     editor.stopCommand('preview');
-    editor.select?.();
+    previewModeRef.current = previewRouteUrl ? 'route' : 'srcdoc';
+    setPreviewRouteVersion((value) => value + 1);
     setIsPreviewActive(true);
   }, [
     applyCurrentEditorDocument,
-    applyPreviewRuntimeStateToDesign,
     cancelPendingDesignDocumentSync,
     collectCanvasHtml,
     isPreviewActive,
+    previewRouteUrl,
     syncCanvasDocumentFromHtml,
   ]);
 
@@ -895,6 +956,38 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
       applyCanvasOutlineVisibility(editor, nextVisible);
       return nextVisible;
     });
+  }, []);
+
+  const toggleHiddenLayerEditing = useCallback(() => {
+    setIsHiddenLayerEditing((value) => !value);
+  }, []);
+
+  const toggleHiddenLayerReason = useCallback((reason: HiddenLayerReason) => {
+    setHiddenLayerFilter((current) => {
+      const hasReason = current.reasons.includes(reason);
+      const nextReasons = hasReason
+        ? current.reasons.filter((item) => item !== reason)
+        : [...current.reasons, reason];
+
+      return {
+        ...current,
+        reasons: nextReasons.length > 0 ? nextReasons : [reason],
+      };
+    });
+  }, []);
+
+  const toggleHiddenLayerFilterFlag = useCallback((flag: 'includeInternal' | 'includeDescendants') => {
+    setHiddenLayerFilter((current) => ({
+      ...current,
+      [flag]: !current[flag],
+    }));
+  }, []);
+
+  const updateHiddenLayerTextQuery = useCallback((textQuery: string) => {
+    setHiddenLayerFilter((current) => ({
+      ...current,
+      textQuery,
+    }));
   }, []);
 
   useEffect(() => {
@@ -1032,6 +1125,44 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
   }, [cancelPendingDesignDocumentSync, cancelPendingFileFlush, loadFileContent]);
 
   useEffect(() => {
+    if (!targetProjectName) {
+      setPreviewRouteUrl(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const resolvePreviewRoute = async () => {
+      try {
+        const response = await api.projects();
+        if (!response.ok) {
+          throw new Error(`Failed to load projects: ${response.status} ${response.statusText}`);
+        }
+
+        const projects = await response.json() as Array<{ name: string; fullPath?: string; path?: string }>;
+        if (cancelled) {
+          return;
+        }
+
+        const currentProject = projects.find((project) => project.name === targetProjectName);
+        const nextPreviewUrl = resolveHtmlPreviewTarget(target.filePath, {
+          projectRoot: currentProject?.fullPath ?? currentProject?.path ?? null,
+          projectName: targetProjectName,
+        });
+        setPreviewRouteUrl(nextPreviewUrl);
+      } catch {
+        if (!cancelled) {
+          setPreviewRouteUrl(null);
+        }
+      }
+    };
+
+    void resolvePreviewRoute();
+    return () => {
+      cancelled = true;
+    };
+  }, [target.filePath, targetProjectName]);
+
+  useEffect(() => {
     if (!isFullscreen) {
       return undefined;
     }
@@ -1150,7 +1281,7 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
       icon: Eye,
       onClick: togglePreview,
       active: isPreviewActive,
-      disabled: Boolean(eligibilityError),
+      disabled: Boolean(eligibilityError) || !previewRouteUrl,
     },
     {
       id: 'outline',
@@ -1158,7 +1289,15 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
       icon: OutlineIcon,
       onClick: toggleComponentOutline,
       active: isOutlineVisible,
-      disabled: Boolean(eligibilityError),
+      disabled: Boolean(eligibilityError) || isPreviewActive,
+    },
+    {
+      id: 'hidden-layers',
+      title: isHiddenLayerEditing ? '隐藏隐藏层' : '显示隐藏层',
+      icon: Eye,
+      onClick: toggleHiddenLayerEditing,
+      active: isHiddenLayerEditing,
+      disabled: Boolean(eligibilityError) || isPreviewActive,
     },
     {
       id: 'undo',
@@ -1236,12 +1375,10 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
     bodyHtml: canvasDocument.bodyHtml,
     css: canvasDocument.styles,
   });
-  const previewDocument = buildSavedHtml({
-    snapshot: canvasDocument.snapshot,
-    bodyHtml: canvasDocument.bodyHtml,
-    css: canvasDocument.styles,
-  });
   const previewViewportWidth = canvasDevice === 'desktop' ? '100%' : canvasDevice === 'tablet' ? '770px' : '320px';
+  const activePreviewUrl = previewRouteUrl
+    ? `${previewRouteUrl}${previewRouteUrl.includes('?') ? '&' : '?'}ccui-preview=${previewRouteVersion}`
+    : 'about:blank';
   const showSpacingOverlay = !isPreviewActive && !eligibilityError && activeMode === 'design' && canvasEditor && grapesLikeBridge;
   const showInspectorPane = !isPreviewActive && grapesLikeBridge;
 
@@ -1420,6 +1557,70 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
             </div>
           </div>
 
+          {activeMode === 'design' && isHiddenLayerEditing && !isPreviewActive ? (
+            <div
+              className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/70 bg-amber-50/70 px-3 py-2 text-xs dark:bg-amber-950/20"
+              data-visual-html-hidden-layer-filters="true"
+            >
+              <span className="font-medium text-amber-900 dark:text-amber-100">隐藏层过滤</span>
+              <input
+                className="h-8 w-52 rounded-md border border-amber-200 bg-white px-2 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-amber-400 dark:border-amber-800 dark:bg-background"
+                value={hiddenLayerFilter.textQuery}
+                onChange={(event) => {
+                  updateHiddenLayerTextQuery(event.target.value);
+                }}
+                placeholder="按文本过滤，如 123888"
+                type="text"
+                data-visual-html-hidden-layer-text-filter="true"
+              />
+              {ALL_HIDDEN_LAYER_REASONS.map((reason) => {
+                const active = hiddenLayerFilter.reasons.includes(reason);
+                return (
+                  <button
+                    key={reason}
+                    className={`rounded-full border px-2 py-1 transition-colors ${
+                      active
+                        ? 'border-amber-400 bg-amber-100 text-amber-900 dark:border-amber-600 dark:bg-amber-900/40 dark:text-amber-100'
+                        : 'border-border bg-background text-muted-foreground'
+                    }`}
+                    onClick={() => {
+                      toggleHiddenLayerReason(reason);
+                    }}
+                    type="button"
+                  >
+                    {HIDDEN_LAYER_REASON_LABELS[reason]}
+                  </button>
+                );
+              })}
+              <button
+                className={`rounded-full border px-2 py-1 transition-colors ${
+                  hiddenLayerFilter.includeDescendants
+                    ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-900/30 dark:text-blue-200'
+                    : 'border-border bg-background text-muted-foreground'
+                }`}
+                onClick={() => {
+                  toggleHiddenLayerFilterFlag('includeDescendants');
+                }}
+                type="button"
+              >
+                递归显示子隐藏层
+              </button>
+              <button
+                className={`rounded-full border px-2 py-1 transition-colors ${
+                  hiddenLayerFilter.includeInternal
+                    ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-900/30 dark:text-blue-200'
+                    : 'border-border bg-background text-muted-foreground'
+                }`}
+                onClick={() => {
+                  toggleHiddenLayerFilterFlag('includeInternal');
+                }}
+                type="button"
+              >
+                包含编辑器内部节点
+              </button>
+            </div>
+          ) : null}
+
           {!eligibilityError && activeMode === 'design' ? (
             <div className="flex min-h-0 flex-1" data-visual-html-design-workspace="true">
               <div className="min-h-0 flex-1">
@@ -1435,7 +1636,7 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
                       <iframe
                         ref={previewFrameRef}
                         title="HTML 预览"
-                        srcDoc={previewDocument}
+                        src={activePreviewUrl}
                         className="block h-full min-h-0 w-full border-0 bg-white"
                         data-visual-html-preview-frame="true"
                       />
@@ -1444,6 +1645,8 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
                 ) : (
                   <VisualCanvasPane
                     fullHtml={designCanvasDocument}
+                    showHiddenLayers={isHiddenLayerEditing}
+                    hiddenLayerFilter={hiddenLayerFilter}
                     onDirtyChange={(isDirty, editor) => {
                       canvasEditorRef.current = editor;
                       if (isDirty) {
@@ -1461,6 +1664,7 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
                       }
                       setIsPreviewActive(false);
                       setIsOutlineVisible(false);
+                      setIsHiddenLayerEditing(false);
                       setCanvasDevice('desktop');
                       editor.setDevice('Desktop');
                       applyCanvasOutlineVisibility(editor, false);

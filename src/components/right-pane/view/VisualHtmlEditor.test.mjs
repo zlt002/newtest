@@ -37,6 +37,11 @@ test('VisualHtmlEditor source declares a unified visual-html workspace with tool
   assert.match(source, /ensureCanvasOutlineOverrideStyle/);
   assert.match(source, /隐藏组件轮廓/);
   assert.match(source, /显示组件轮廓/);
+  assert.match(source, /isHiddenLayerEditing/);
+  assert.match(source, /toggleHiddenLayerEditing/);
+  assert.match(source, /显示隐藏层/);
+  assert.match(source, /隐藏隐藏层/);
+  assert.match(source, /showHiddenLayers=\{isHiddenLayerEditing\}/);
   assert.match(source, /toggleCanvasFullscreen/);
   assert.match(source, /isFullscreen/);
   assert.match(source, /title=\{isFullscreen \? '退出全屏' : '全屏'\}/);
@@ -49,6 +54,7 @@ test('VisualHtmlEditor source declares a unified visual-html workspace with tool
   assert.match(source, /onEditorReady=\{\(editor\) => \{/);
   assert.match(source, /setIsOutlineVisible\(false\)/);
   assert.match(source, /applyCanvasOutlineVisibility\(editor, false\)/);
+  assert.doesNotMatch(source, /editor\.select\?\.\(\)/);
   assert.match(source, /data-visual-html-design-workspace="true"/);
   assert.match(source, /<SpacingOverlay/);
   assert.match(source, /onUpdateStyle=\{grapesLikeBridge\.actions\.style\.updateStyle\}/);
@@ -180,26 +186,59 @@ test('VisualHtmlEditor hides the inspector pane while preview mode is active', a
   assert.match(source, /<GrapesLikeInspectorPane/);
 });
 
+test('VisualHtmlEditor exposes hidden-layer filters for design canvas editing', async () => {
+  const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /type HiddenLayerReason = 'display-none' \| 'visibility-hidden' \| 'opacity-zero' \| 'zero-size' \| 'offscreen' \| 'ancestor-hidden'/);
+  assert.match(source, /type HiddenLayerFilter = \{/);
+  assert.match(source, /const ALL_HIDDEN_LAYER_REASONS: HiddenLayerReason\[] = \[/);
+  assert.match(source, /const HIDDEN_LAYER_REASON_LABELS: Record<HiddenLayerReason, string> = \{/);
+  assert.match(source, /const \[hiddenLayerFilter, setHiddenLayerFilter\] = useState<HiddenLayerFilter>\(\{/);
+  assert.match(source, /reasons: ALL_HIDDEN_LAYER_REASONS/);
+  assert.match(source, /includeInternal: false/);
+  assert.match(source, /includeDescendants: true/);
+  assert.match(source, /textQuery: ''/);
+  assert.match(source, /const toggleHiddenLayerReason = useCallback\(\(reason: HiddenLayerReason\) => \{/);
+  assert.match(source, /const toggleHiddenLayerFilterFlag = useCallback\(\(flag: 'includeInternal' \| 'includeDescendants'\) => \{/);
+  assert.match(source, /const updateHiddenLayerTextQuery = useCallback\(\(textQuery: string\) => \{/);
+  assert.match(source, /data-visual-html-hidden-layer-filters="true"/);
+  assert.match(source, /data-visual-html-hidden-layer-text-filter="true"/);
+  assert.match(source, /value=\{hiddenLayerFilter\.textQuery\}/);
+  assert.match(source, /updateHiddenLayerTextQuery\(event\.target\.value\)/);
+  assert.match(source, /placeholder="按文本过滤，如 123888"/);
+  assert.match(source, /display:none/);
+  assert.match(source, /visibility:hidden/);
+  assert.match(source, /opacity:0/);
+  assert.match(source, /零尺寸/);
+  assert.match(source, /屏幕外/);
+  assert.match(source, /祖先隐藏/);
+  assert.match(source, /递归显示子隐藏层/);
+  assert.match(source, /包含编辑器内部节点/);
+  assert.match(source, /hiddenLayerFilter=\{hiddenLayerFilter\}/);
+});
+
 test('VisualHtmlEditor treats preview as a read-only browser-like canvas state', async () => {
   const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
 
-  assert.match(source, /function stripStyleMarkupFromHtml\(markup: string\)/);
-  assert.doesNotMatch(source, /const css = \[editorCss, canvasDocument\.styles\]/);
+  assert.match(source, /resolveHtmlPreviewTarget/);
+  assert.match(source, /api\.projects\(\)/);
+  assert.match(source, /const \[previewRouteUrl, setPreviewRouteUrl\] = useState<string \| null>\(null\)/);
+  assert.match(source, /const nextPreviewUrl = resolveHtmlPreviewTarget\(target\.filePath,/);
+  assert.match(source, /src=\{activePreviewUrl\}/);
+  assert.doesNotMatch(source, /srcDoc=\{previewDocument\}/);
   assert.match(source, /bodyHtml: extractCanvasBodyHtmlForSave\(canvasEditorRef\.current\.getHtml\(\)\)/);
   assert.match(source, /const showSpacingOverlay = !isPreviewActive && !eligibilityError && activeMode === 'design' && canvasEditor && grapesLikeBridge/);
-  assert.match(source, /const previewDocument = buildSavedHtml\(\{/);
   assert.match(source, /const previewViewportWidth = canvasDevice === 'desktop'\s*\?\s*'100%'\s*:\s*canvasDevice === 'tablet'\s*\?\s*'770px'\s*:\s*'320px';/);
   assert.match(source, /setCanvasDevice\(device\);/);
   assert.match(source, /if \(!editor\) \{\s*return;\s*\}/);
   assert.match(source, /syncCanvasDocumentFromHtml\(nextHtml\);/);
-  assert.match(source, /if \(isPreviewActive\) \{\s*applyPreviewRuntimeStateToDesign\(\);\s*setIsPreviewActive\(false\);\s*return;\s*\}/);
+  assert.match(source, /if \(isPreviewActive\) \{\s*setIsPreviewActive\(false\);\s*return;\s*\}/);
   assert.match(source, /if \(!editor\) \{\s*return;\s*\}/);
   assert.match(source, /editor\.stopCommand\('preview'\);/);
-  assert.match(source, /editor\.select\?\.\(\);/);
+  assert.doesNotMatch(source, /editor\.select\?\.\(\);/);
   assert.match(source, /isPreviewActive \? \(/);
   assert.match(source, /<iframe/);
   assert.match(source, /ref=\{previewFrameRef\}/);
-  assert.match(source, /srcDoc=\{previewDocument\}/);
   assert.match(source, /data-visual-html-preview="true"/);
   assert.match(source, /data-visual-html-preview-frame="true"/);
   assert.match(source, /className="flex h-full min-h-0 w-full items-start justify-center overflow-auto bg-\[#f5f5f5\]"/);
@@ -226,6 +265,7 @@ test('VisualHtmlEditor applies live preview DOM state back to the design canvas 
   assert.match(source, /CCUI_PREVIEW_RUNTIME_STYLE_ID/);
   assert.match(source, /style\.textContent = buildPreviewRuntimeStyleOverride\(elementStyles\)/);
   assert.match(source, /pendingPreviewRuntimeStylesRef\.current = null/);
+  assert.match(source, /if \(previewModeRef\.current !== 'srcdoc'\) \{\s*return;\s*\}/);
 });
 
 test('VisualHtmlEditor disables undo redo and save actions while preview is active', async () => {

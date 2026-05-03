@@ -34,6 +34,108 @@ function stripStyleNodes(markup: string): string {
   return markup.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '').trim();
 }
 
+function stripManagedCanvasStyleNodes(markup: string): string {
+  return markup
+    .replace(/<style\b[^>]*data-ccui-visual-html-canvas-style\s*=\s*(["']).*?\1[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<style\b[^>]*data-ccui-raw-canvas-style\s*=\s*(["']).*?\1[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<style\b[^>]*data-ccui-hidden-layer-edit-style\s*=\s*(["']).*?\1[^>]*>[\s\S]*?<\/style>/gi, '')
+    .trim();
+}
+
+function collectManagedCanvasStyleContents(markup: string): string[] {
+  return Array.from(
+    markup.matchAll(/<style\b[^>]*data-ccui-visual-html-canvas-style\s*=\s*(["']).*?\1[^>]*>([\s\S]*?)<\/style>/gi),
+  )
+    .map((match) => match[2] ?? '')
+    .map((text) => text.trim())
+    .filter(Boolean);
+}
+
+function splitCanvasCssDeclarations(cssText: string) {
+  return cssText
+    .split(';')
+    .map((declaration) => declaration.trim())
+    .filter(Boolean)
+    .map((declaration) => {
+      const separatorIndex = declaration.indexOf(':');
+      if (separatorIndex < 0) {
+        return null;
+      }
+
+      const property = declaration.slice(0, separatorIndex).trim().toLowerCase();
+      const value = declaration.slice(separatorIndex + 1).trim();
+      if (!property || !value) {
+        return null;
+      }
+
+      return { property, value };
+    })
+    .filter((declaration): declaration is { property: string; value: string } => Boolean(declaration));
+}
+
+function coalesceCanvasCss(css: string) {
+  const rulesBySelector = new Map<string, Map<string, string>>();
+  const selectorOrder: string[] = [];
+
+  for (const match of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const selector = String(match[1] ?? '').trim().replace(/\s+/g, ' ');
+    const body = String(match[2] ?? '').trim();
+    if (!selector || selector.startsWith('@')) {
+      continue;
+    }
+
+    const declarations = splitCanvasCssDeclarations(body);
+    if (declarations.length === 0) {
+      continue;
+    }
+
+    let declarationsByProperty = rulesBySelector.get(selector);
+    if (!declarationsByProperty) {
+      declarationsByProperty = new Map<string, string>();
+      rulesBySelector.set(selector, declarationsByProperty);
+      selectorOrder.push(selector);
+    }
+
+    declarations.forEach(({ property, value }) => {
+      declarationsByProperty.set(property, value);
+    });
+  }
+
+  return selectorOrder
+    .map((selector) => {
+      const declarationsByProperty = rulesBySelector.get(selector);
+      if (!declarationsByProperty || declarationsByProperty.size === 0) {
+        return '';
+      }
+
+      const declarations = Array.from(declarationsByProperty.entries())
+        .map(([property, value]) => `${property}:${value};`)
+        .join('');
+      return `${selector}{${declarations}}`;
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+function mergeCanvasCssBlocks(...blocks: string[]) {
+  const mergedBlocks: string[] = [];
+  const seenBlocks = new Set<string>();
+
+  blocks
+    .map((block) => stripHiddenLayerEditCss(block).trim())
+    .filter(Boolean)
+    .forEach((block) => {
+      if (seenBlocks.has(block)) {
+        return;
+      }
+
+      seenBlocks.add(block);
+      mergedBlocks.push(block);
+    });
+
+  return coalesceCanvasCss(mergedBlocks.join('\n'));
+}
+
 function collectStyleContents(markup: string): string {
   return Array.from(markup.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi))
     .map((match) => match[1] ?? '')
@@ -55,7 +157,7 @@ function stripScriptNodes(markup: string): string {
 
 function collectEventAttributesFromElement(element: Element): Record<string, Record<string, string>> {
   const eventAttributesById: Record<string, Record<string, string>> = {};
-  const elements = Array.from(element.querySelectorAll('[id]'));
+  const elements = Array.from(element.querySelectorAll('*'));
 
   for (const node of elements) {
     const eventAttributes = Array.from(node.attributes)
@@ -65,23 +167,60 @@ function collectEventAttributesFromElement(element: Element): Record<string, Rec
         return attributes;
       }, {});
 
-    if (Object.keys(eventAttributes).length > 0) {
-      eventAttributesById[node.id] = eventAttributes;
+    const attributeKey = buildEventAttributeKeyFromElement(node);
+    if (attributeKey && Object.keys(eventAttributes).length > 0) {
+      eventAttributesById[attributeKey] = eventAttributes;
     }
   }
 
   return eventAttributesById;
 }
 
+function normalizeClassAttribute(value: string) {
+  return value
+    .split(/\s+/)
+    .map((className) => className.trim())
+    .filter(Boolean)
+    .sort()
+    .join('.');
+}
+
+function buildEventAttributeKey(tagName: string, attributesSource: string) {
+  const idMatch = attributesSource.match(/\bid\s*=\s*(["'])(.*?)\1/i);
+  if (idMatch?.[2]) {
+    return idMatch[2];
+  }
+
+  const classMatch = attributesSource.match(/\bclass\s*=\s*(["'])(.*?)\1/i);
+  const classKey = normalizeClassAttribute(classMatch?.[2] ?? '');
+  if (!classKey) {
+    return '';
+  }
+
+  return `${tagName.toLowerCase()}.${classKey}`;
+}
+
+function buildEventAttributeKeyFromElement(element: Element) {
+  const id = element.getAttribute('id');
+  if (id) {
+    return id;
+  }
+
+  const classKey = normalizeClassAttribute(element.getAttribute('class') ?? '');
+  if (!classKey) {
+    return '';
+  }
+
+  return `${element.tagName.toLowerCase()}.${classKey}`;
+}
+
 function collectEventAttributesFromMarkup(markup: string): Record<string, Record<string, string>> {
   const eventAttributesById: Record<string, Record<string, string>> = {};
 
   for (const match of markup.matchAll(/<([a-z][\w:-]*)\b([^<>]*)>/gi)) {
+    const tagName = match[1] ?? '';
     const attributesSource = match[2] ?? '';
-    const idMatch = attributesSource.match(/\bid\s*=\s*(["'])(.*?)\1/i);
-    if (!idMatch?.[2]) {
-      continue;
-    }
+    const attributeKey = buildEventAttributeKey(tagName, attributesSource);
 
     const eventAttributes: Record<string, string> = {};
     for (const eventMatch of attributesSource.matchAll(/\s(on[a-z][\w:-]*)\s*=\s*(["'])(.*?)\2/gi)) {
@@ -90,8 +229,8 @@ function collectEventAttributesFromMarkup(markup: string): Record<string, Record
       }
     }
 
-    if (Object.keys(eventAttributes).length > 0) {
-      eventAttributesById[idMatch[2]] = eventAttributes;
+    if (attributeKey && Object.keys(eventAttributes).length > 0) {
+      eventAttributesById[attributeKey] = eventAttributes;
     }
   }
 
@@ -107,10 +246,18 @@ function restoreEventAttributesWithDomParser(
   eventAttributesById: Record<string, Record<string, string>>,
 ): string {
   const parsed = new DOMParser().parseFromString(`<body>${bodyHtml}</body>`, 'text/html');
-  const elementsWithIds = Array.from(parsed.body.querySelectorAll('[id]'));
+  const elements = Array.from(parsed.body.querySelectorAll('*'));
+  const elementsByEventAttributeKey = elements.reduce<Record<string, Element>>((byKey, element) => {
+    const attributeKey = buildEventAttributeKeyFromElement(element);
+    if (attributeKey && !byKey[attributeKey]) {
+      byKey[attributeKey] = element;
+    }
 
-  for (const [id, eventAttributes] of Object.entries(eventAttributesById)) {
-    const element = elementsWithIds.find((node) => node.id === id);
+    return byKey;
+  }, {});
+
+  for (const [attributeKey, eventAttributes] of Object.entries(eventAttributesById)) {
+    const element = elementsByEventAttributeKey[attributeKey];
     if (!element) {
       continue;
     }
@@ -130,12 +277,12 @@ function restoreEventAttributesWithRegex(
   eventAttributesById: Record<string, Record<string, string>>,
 ): string {
   return bodyHtml.replace(/<([a-z][\w:-]*)\b([^<>]*)>/gi, (fullMatch, tagName: string, attributesSource: string) => {
-    const idMatch = attributesSource.match(/\bid\s*=\s*(["'])(.*?)\1/i);
-    if (!idMatch?.[2]) {
+    const attributeKey = buildEventAttributeKey(tagName, attributesSource);
+    if (!attributeKey) {
       return fullMatch;
     }
 
-    const eventAttributes = eventAttributesById[idMatch[2]];
+    const eventAttributes = eventAttributesById[attributeKey];
     if (!eventAttributes) {
       return fullMatch;
     }
@@ -274,10 +421,83 @@ function readHeadMarkup(content: string): string {
 }
 
 function collectStyleMarkup(content: string): string {
-  return Array.from(content.matchAll(/<style\b[^>]*>[\s\S]*?<\/style>/gi))
+  return Array.from(stripManagedCanvasStyleNodes(content).matchAll(/<style\b[^>]*>[\s\S]*?<\/style>/gi))
     .map((match) => match[0]?.trim() ?? '')
     .filter(Boolean)
     .join('\n');
+}
+
+function stripHiddenLayerEditCss(css: string) {
+  return css
+    .replace(/[^{}]*data-ccui-hidden-layer-preview[^{}]*\{[^{}]*\}/gi, '')
+    .replace(/[^{}]*data-ccui-hidden-layer-edit-style[^{}]*\{[^{}]*\}/gi, '')
+    .trim();
+}
+
+function decodeTemporaryHiddenLayerStyle(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function escapeHtmlAttribute(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function stripTemporaryHiddenLayerAttributesWithDomParser(bodyHtml: string) {
+  const parsed = new DOMParser().parseFromString(`<body>${bodyHtml}</body>`, 'text/html');
+  parsed.body.querySelectorAll<HTMLElement>('[data-ccui-hidden-layer-preview], [data-ccui-hidden-layer-original-style]').forEach((node) => {
+    const encodedOriginalStyle = node.getAttribute('data-ccui-hidden-layer-original-style');
+    node.removeAttribute('data-ccui-hidden-layer-preview');
+    node.removeAttribute('data-ccui-hidden-layer-original-style');
+    if (encodedOriginalStyle == null) {
+      return;
+    }
+
+    const originalStyle = decodeTemporaryHiddenLayerStyle(encodedOriginalStyle);
+    if (originalStyle.trim()) {
+      node.setAttribute('style', originalStyle);
+    } else {
+      node.removeAttribute('style');
+    }
+  });
+  parsed.body.querySelectorAll('[data-ccui-hidden-layer-edit-style]').forEach((node) => {
+    node.remove();
+  });
+  return parsed.body.innerHTML;
+}
+
+function stripTemporaryHiddenLayerAttributes(bodyHtml: string) {
+  if (typeof DOMParser !== 'undefined') {
+    return stripTemporaryHiddenLayerAttributesWithDomParser(bodyHtml);
+  }
+
+  return bodyHtml
+    .replace(/<([a-z][\w:-]*)([^>]*?)\sdata-ccui-hidden-layer-original-style\s*=\s*(["'])(.*?)\3([^>]*)>/gi, (
+      match,
+      tagName,
+      beforeAttributes,
+      _quote,
+      encodedOriginalStyle,
+      afterAttributes,
+    ) => {
+      const attributes = `${beforeAttributes}${afterAttributes}`
+        .replace(/\sstyle\s*=\s*(["']).*?\1/gi, '')
+        .replace(/\sdata-ccui-hidden-layer-preview\s*=\s*(["']).*?\1/gi, '')
+        .replace(/\sdata-ccui-hidden-layer-edit-style\s*=\s*(["']).*?\1/gi, '');
+      const originalStyle = decodeTemporaryHiddenLayerStyle(encodedOriginalStyle);
+      const styleAttribute = originalStyle.trim() ? ` style="${escapeHtmlAttribute(originalStyle)}"` : '';
+      return `<${tagName}${attributes}${styleAttribute}>`;
+    })
+    .replace(/\sdata-ccui-hidden-layer-preview\s*=\s*(["']).*?\1/gi, '')
+    .replace(/\sdata-ccui-hidden-layer-original-style\s*=\s*(["']).*?\1/gi, '')
+    .replace(/\sdata-ccui-hidden-layer-edit-style\s*=\s*(["']).*?\1/gi, '');
 }
 
 function cleanCanvasClassName(value: string) {
@@ -647,11 +867,17 @@ export function buildSavedHtmlPreservingHead({
   const mergedBodyHtml = hasRuntimeSnapshotMarkers(sourceHtml)
     ? mergeCanvasBodyWithSourceNonEditableNodes(sourceHtml, bodyHtml)
     : null;
-  const cleanBodyHtml = restoreEventAttributes(stripScriptNodes(stripStyleNodes(mergedBodyHtml ?? bodyHtml)), snapshot.bodyEventAttributes);
+  const cleanBodyHtml = restoreEventAttributes(
+    stripTemporaryHiddenLayerAttributes(stripScriptNodes(stripStyleNodes(mergedBodyHtml ?? bodyHtml))),
+    snapshot.bodyEventAttributes,
+  );
   const headMarkup = stripStyleNodes(readHeadMarkup(sourceHtml));
   const sourceStyleMarkup = collectStyleMarkup(sourceHtml);
-  const canvasStyleMarkup = canvasCss.trim()
-    ? `<style data-ccui-visual-html-canvas-style="true">\n${canvasCss}\n</style>`
+  const previousCanvasCssBlocks = collectManagedCanvasStyleContents(sourceHtml);
+  const previousCanvasCss = previousCanvasCssBlocks[previousCanvasCssBlocks.length - 1] ?? '';
+  const cleanCanvasCss = mergeCanvasCssBlocks(previousCanvasCss, canvasCss);
+  const canvasStyleMarkup = cleanCanvasCss
+    ? `<style data-ccui-visual-html-canvas-style="true">\n${cleanCanvasCss}\n</style>`
     : '';
   const headParts = [headMarkup, sourceStyleMarkup, canvasStyleMarkup].filter(Boolean);
 

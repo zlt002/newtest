@@ -37,6 +37,7 @@ function createComponent({
       return undefined;
     },
     getStyle: () => ({ ...state.styles }),
+    getEl: () => state.element ?? null,
     getSelectorsString: () => '',
     getClasses: () => state.classes.map((entry) => ({ get: (key) => (key === 'name' ? entry : undefined) })),
     addStyle: (patch) => {
@@ -615,4 +616,79 @@ test('createGrapesLikeInspectorBridge keeps writing rule styles to the same sele
   assert.equal(snapshot.style.targetKind, 'rule');
   assert.equal(positionProperty.value.committed.value, 'absolute');
   assert.equal(ruleState.top, '12px');
+});
+
+test('createGrapesLikeInspectorBridge writes rule styles to every selected component target', () => {
+  const { editor, cta, badge } = createEditorFixture();
+  const ctaRuleState = {};
+  const badgeRuleState = {};
+  const ctaRuleTarget = {
+    getStyle: () => ({ ...ctaRuleState }),
+    addStyle: (patch) => {
+      Object.assign(ctaRuleState, patch);
+    },
+    removeStyle: (property) => {
+      delete ctaRuleState[property];
+    },
+  };
+  const badgeRuleTarget = {
+    getStyle: () => ({ ...badgeRuleState }),
+    addStyle: (patch) => {
+      Object.assign(badgeRuleState, patch);
+    },
+    removeStyle: (property) => {
+      delete badgeRuleState[property];
+    },
+  };
+
+  cta.getClasses = () => [{ get: (key) => (key === 'name' ? 'cta' : undefined) }];
+  badge.getClasses = () => [{ get: (key) => (key === 'name' ? 'badge' : undefined) }];
+  editor.getSelectedAll = () => [cta, badge];
+  editor.getSelected = () => badge;
+  editor.getSelectedToStyle = () => badgeRuleTarget;
+  editor.StyleManager = {
+    getModelToStyle: (component) => (component === cta ? ctaRuleTarget : badgeRuleTarget),
+  };
+
+  const bridge = createGrapesLikeInspectorBridge(editor);
+  bridge.actions.style.updateStyle({ property: 'backgroundColor', value: '#b04545', targetKind: 'rule' });
+
+  assert.equal(ctaRuleState['background-color'], '#b04545');
+  assert.equal(badgeRuleState['background-color'], '#b04545');
+});
+
+test('createGrapesLikeInspectorBridge falls back to computed styles for inspector value echo', () => {
+  const { editor, cta } = createEditorFixture();
+  const computedValues = {
+    color: 'rgb(255, 255, 255)',
+    'background-color': 'rgb(22, 238, 199)',
+    'font-size': '24px',
+    'font-weight': '700',
+    display: 'block',
+  };
+  const element = {
+    ownerDocument: {
+      defaultView: {
+        getComputedStyle: () => ({
+          getPropertyValue: (property) => computedValues[property] ?? '',
+        }),
+      },
+    },
+  };
+
+  cta.getStyle = () => ({});
+  cta.getEl = () => element;
+
+  const bridge = createGrapesLikeInspectorBridge(editor);
+  const snapshot = bridge.adapter.getSnapshot();
+  const text = snapshot.style.sectors.find((sector) => sector.key === 'text');
+  const appearance = snapshot.style.sectors.find((sector) => sector.key === 'appearance');
+  const color = text.properties.find((property) => property.property === 'color');
+  const fontSize = text.properties.find((property) => property.property === 'fontSize');
+  const backgroundColor = appearance.properties.find((property) => property.property === 'backgroundColor');
+
+  assert.equal(color.value.committed.value, '#ffffff');
+  assert.equal(fontSize.value.committed.value, '24');
+  assert.equal(fontSize.value.committed.unit, 'px');
+  assert.equal(backgroundColor.value.committed.value, '#16eec7');
 });

@@ -573,6 +573,10 @@ function readPropertyValue(state: StyleState, sectorKey: StyleSectorViewModel['k
   return sector[property];
 }
 
+function readEmptyPropertyValue(sectorKey: StyleSectorViewModel['key'], property: string): unknown {
+  return readPropertyValue(EMPTY_STYLE_STATE, sectorKey, property);
+}
+
 function isMixedValue(values: unknown[]): boolean {
   if (values.length <= 1) {
     return false;
@@ -615,7 +619,9 @@ export function readStyleSnapshot(source: {
       return {
         ...property,
         value: {
-          committed: readPropertyValue(baseState, sector.key, property.property),
+          committed: mixed
+            ? readEmptyPropertyValue(sector.key, property.property)
+            : readPropertyValue(baseState, sector.key, property.property),
           mixed,
           disabled: false,
         },

@@ -506,6 +506,7 @@ function stripSelectionHighlightAttribute(value: string) {
 function stripEditorRuntimeAttributes(value: string) {
   return value
     .replace(/\sdata-gjs-[a-z0-9-]+="[^"]*"/gi, '')
+    .replace(/\sdata-ccui-hidden-layer-[a-z0-9-]+="[^"]*"/gi, '')
     .replace(/\s(?:contenteditable|draggable|spellcheck|data-highlightable|data-gjs-highlightable)="[^"]*"/gi, '');
 }
 
@@ -526,7 +527,9 @@ function sanitizeElementOuterHtml(value: string) {
     stripEditorRuntimeAttributes(
       stripSelectionHighlightAttribute(value),
     ),
-  ).trim();
+  )
+    .replace(/\sstyle="[^"]*"/gi, '')
+    .trim();
 }
 
 function normalizeForSearch(value: string): { normalized: string; indexMap: number[] } {
