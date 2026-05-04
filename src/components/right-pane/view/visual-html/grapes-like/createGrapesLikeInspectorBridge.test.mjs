@@ -692,3 +692,43 @@ test('createGrapesLikeInspectorBridge falls back to computed styles for inspecto
   assert.equal(fontSize.value.committed.unit, 'px');
   assert.equal(backgroundColor.value.committed.value, '#16eec7');
 });
+
+test('createGrapesLikeInspectorBridge does not let blank style target values hide computed inline echo', () => {
+  const { editor, cta } = createEditorFixture();
+  const computedValues = {
+    'font-size': '21px',
+    'font-weight': '500',
+  };
+  const element = {
+    ownerDocument: {
+      defaultView: {
+        getComputedStyle: () => ({
+          getPropertyValue: (property) => computedValues[property] ?? '',
+        }),
+      },
+    },
+  };
+  const styleTarget = {
+    getStyle: () => ({
+      'font-size': '',
+      'font-weight': '500',
+    }),
+  };
+
+  cta.getStyle = () => ({});
+  cta.getEl = () => element;
+  editor.getSelectedToStyle = () => styleTarget;
+  editor.StyleManager = {
+    getModelToStyle: () => styleTarget,
+  };
+
+  const bridge = createGrapesLikeInspectorBridge(editor);
+  const snapshot = bridge.adapter.getSnapshot();
+  const text = snapshot.style.sectors.find((sector) => sector.key === 'text');
+  const fontSize = text.properties.find((property) => property.property === 'fontSize');
+  const fontWeight = text.properties.find((property) => property.property === 'fontWeight');
+
+  assert.equal(fontSize.value.committed.value, '21');
+  assert.equal(fontSize.value.committed.unit, 'px');
+  assert.equal(fontWeight.value.committed.value, '500');
+});

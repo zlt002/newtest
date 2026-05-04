@@ -500,7 +500,13 @@ function sanitizeStyleRecord(style: Record<string, unknown> | null | undefined):
   }
 
   return Object.fromEntries(
-    Object.entries(style).filter(([, value]) => typeof value === 'string' || typeof value === 'number' || value == null),
+    Object.entries(style).filter(([, value]) => {
+      if (typeof value === 'string') {
+        return value.trim().length > 0;
+      }
+
+      return typeof value === 'number' || value == null;
+    }),
   ) as Record<string, string | number | null | undefined>;
 }
 
