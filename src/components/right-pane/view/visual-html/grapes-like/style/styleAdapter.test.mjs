@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readStyleSnapshot, readStyleState } from '../styleAdapter.ts';
 
-test('readStyleSnapshot marks mixed values and rule target', () => {
+test('readStyleSnapshot marks mixed values and defaults class selections to inline target', () => {
   const result = readStyleSnapshot({
     selection: [
       { styles: { width: '100px', color: '#111111', 'background-color': '#eeeeee' }, classes: ['btn'] },
@@ -24,7 +24,24 @@ test('readStyleSnapshot marks mixed values and rule target', () => {
   assert.deepEqual(color?.value.committed, { value: '', unit: '' });
   assert.equal(backgroundColor?.value.mixed, true);
   assert.deepEqual(backgroundColor?.value.committed, { value: '', unit: '' });
-  assert.equal(result.targetKind, 'rule');
+  assert.equal(result.targetKind, 'inline');
+});
+
+test('readStyleSnapshot keeps Framer-like generated classes on inline target', () => {
+  const result = readStyleSnapshot({
+    selection: [
+      {
+        styles: {
+          display: 'flex',
+          width: '100%',
+        },
+        classes: ['framer-cgiad', 'framer-1t7cri2'],
+      },
+    ],
+    activeState: '',
+  });
+
+  assert.equal(result.targetKind, 'inline');
 });
 
 test('readStyleState expands margin/padding/appearance fields', () => {

@@ -555,7 +555,7 @@ test('createGrapesLikeInspectorBridge does not materialize selected container ch
   assert.equal(heroChildReads, 1);
 });
 
-test('createGrapesLikeInspectorBridge reads style values from editor.getSelectedToStyle when classes map to a rule target', () => {
+test('createGrapesLikeInspectorBridge reads selected style target values while defaulting snapshot writes to inline', () => {
   const { editor, cta } = createEditorFixture();
   const ruleTarget = {
     getStyle: () => ({
@@ -576,7 +576,7 @@ test('createGrapesLikeInspectorBridge reads style values from editor.getSelected
   const floatProperty = layout.properties.find((property) => property.property === 'float');
   const displayProperty = layout.properties.find((property) => property.property === 'display');
 
-  assert.equal(snapshot.style.targetKind, 'rule');
+  assert.equal(snapshot.style.targetKind, 'inline');
   assert.equal(floatProperty.value.committed.value, 'left');
   assert.equal(ruleTarget.getStyle().left, '40px');
   assert.equal(displayProperty.value.committed.value, 'flex');
@@ -613,7 +613,7 @@ test('createGrapesLikeInspectorBridge keeps writing rule styles to the same sele
   const layout = snapshot.style.sectors.find((sector) => sector.key === 'layout');
   const positionProperty = layout.properties.find((property) => property.property === 'position');
 
-  assert.equal(snapshot.style.targetKind, 'rule');
+  assert.equal(snapshot.style.targetKind, 'inline');
   assert.equal(positionProperty.value.committed.value, 'absolute');
   assert.equal(ruleState.top, '12px');
 });

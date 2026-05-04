@@ -590,7 +590,6 @@ export function readStyleSnapshot(source: {
   selection?: Array<{ styles?: StyleRecord | null; classes?: readonly string[] | string | null }> | null;
   activeState?: string | null;
 } | null | undefined): StyleSnapshot {
-  const selected = source?.selection ?? [];
   const states = getSelectionStyles(source);
   const baseState = states[0] ?? EMPTY_STYLE_STATE;
   let hasMixedValues = false;
@@ -629,16 +628,7 @@ export function readStyleSnapshot(source: {
     }),
   }));
 
-  const targetKind = selected.length > 0
-    && selected.every((entry) => {
-      const classes = Array.isArray(entry.classes)
-        ? entry.classes
-        : String(entry.classes ?? '').split(/\s+/).filter(Boolean);
-      return classes.length > 0;
-    })
-    && !source?.activeState
-    ? 'rule'
-    : 'inline';
+  const targetKind = 'inline';
 
   return {
     targetKind,
