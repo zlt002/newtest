@@ -368,3 +368,108 @@ test('readStyleSnapshot surfaces default display float and position when the tar
   assert.equal(float?.value.committed.value, 'none');
   assert.equal(position?.value.committed.value, 'static');
 });
+
+test('readStyleSnapshot resolves inline authored values over computed values', () => {
+  const result = readStyleSnapshot({
+    selection: [{
+      computedStyles: {
+        width: 'auto',
+        'font-size': '16px',
+        color: 'rgb(0, 0, 0)',
+      },
+      inlineStyles: {
+        width: '251.46px',
+        'font-size': '21px',
+        color: '#ffffff',
+      },
+      modelStyles: {},
+    }],
+    activeState: '',
+  });
+
+  const layout = result.sectors.find((sector) => sector.key === 'layout');
+  const text = result.sectors.find((sector) => sector.key === 'text');
+  const width = layout.properties.find((property) => property.property === 'width');
+  const fontSize = text.properties.find((property) => property.property === 'fontSize');
+  const color = text.properties.find((property) => property.property === 'color');
+
+  assert.equal(width.value.committed.value, '251.46');
+  assert.equal(width.value.resolved.source, 'inline');
+  assert.deepEqual(width.value.resolved.computed, { value: 'auto', unit: '' });
+  assert.deepEqual(width.value.resolved.authored, { value: '251.46', unit: 'px' });
+  assert.equal(fontSize.value.committed.value, '21');
+  assert.equal(fontSize.value.resolved.source, 'inline');
+  assert.equal(color.value.committed.value, '#ffffff');
+  assert.equal(color.value.resolved.source, 'inline');
+});
+
+test('readStyleSnapshot displays computed-only values without treating them as authored', () => {
+  const result = readStyleSnapshot({
+    selection: [{
+      computedStyles: {
+        width: '1200px',
+        'font-size': '16px',
+      },
+      inlineStyles: {},
+      modelStyles: {},
+    }],
+    activeState: '',
+  });
+
+  const layout = result.sectors.find((sector) => sector.key === 'layout');
+  const text = result.sectors.find((sector) => sector.key === 'text');
+  const width = layout.properties.find((property) => property.property === 'width');
+  const fontSize = text.properties.find((property) => property.property === 'fontSize');
+
+  assert.equal(width.value.committed.value, '1200');
+  assert.equal(width.value.resolved.source, 'computed');
+  assert.deepEqual(width.value.resolved.authored, { value: '', unit: '' });
+  assert.equal(fontSize.value.committed.value, '16');
+  assert.equal(fontSize.value.resolved.source, 'computed');
+});
+
+test('readStyleSnapshot treats empty authored values as absent', () => {
+  const result = readStyleSnapshot({
+    selection: [{
+      computedStyles: {
+        'font-size': '21px',
+      },
+      inlineStyles: {},
+      modelStyles: {
+        'font-size': '',
+      },
+    }],
+    activeState: '',
+  });
+
+  const text = result.sectors.find((sector) => sector.key === 'text');
+  const fontSize = text.properties.find((property) => property.property === 'fontSize');
+
+  assert.equal(fontSize.value.committed.value, '21');
+  assert.equal(fontSize.value.resolved.source, 'computed');
+});
+
+test('readStyleSnapshot marks mixed source values consistently', () => {
+  const result = readStyleSnapshot({
+    selection: [
+      {
+        computedStyles: { width: '100px' },
+        inlineStyles: { width: '100px' },
+        modelStyles: {},
+      },
+      {
+        computedStyles: { width: '120px' },
+        inlineStyles: { width: '120px' },
+        modelStyles: {},
+      },
+    ],
+    activeState: '',
+  });
+
+  const layout = result.sectors.find((sector) => sector.key === 'layout');
+  const width = layout.properties.find((property) => property.property === 'width');
+
+  assert.equal(width.value.mixed, true);
+  assert.equal(width.value.resolved.source, 'mixed');
+  assert.deepEqual(width.value.committed, { value: '', unit: '' });
+});
