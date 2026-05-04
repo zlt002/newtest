@@ -44,6 +44,35 @@ test('updateStyle routes rule and inline writes by targetKind', () => {
   ]);
 });
 
+test('updateStyle prefers structured patches when provided', () => {
+  const calls = [];
+  const patch = {
+    spacing: {
+      padding: {
+        right: '104',
+        unit: 'px',
+      },
+    },
+  };
+  const editor = {
+    updateInlineStyle() {
+      calls.push(['inline-fallback']);
+    },
+    updateInlineStylePatch(nextPatch, fallbackProperty, fallbackValue) {
+      calls.push(['inline-patch', nextPatch, fallbackProperty, fallbackValue]);
+    },
+  };
+
+  updateStyle(editor, {
+    property: 'padding',
+    value: '10px 104px 30px 40px',
+    targetKind: 'inline',
+    patch,
+  });
+
+  assert.deepEqual(calls, [['inline-patch', patch, 'padding', '10px 104px 30px 40px']]);
+});
+
 test('updateStyle normalizes inspector property names into CSS property names', () => {
   const calls = [];
   const editor = {

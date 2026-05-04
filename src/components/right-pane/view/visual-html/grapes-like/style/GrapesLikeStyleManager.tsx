@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { InspectorSelection, SelectorSnapshot, StylePropertyViewModel, StyleSectorKey, StyleSnapshot } from '../types';
+import type { InspectorSelection, SelectorSnapshot, StylePropertyViewModel, StyleSectorKey, StyleSnapshot, StyleStatePatch } from '../types';
 import GrapesLikeSelectorManager from '../selector/GrapesLikeSelectorManager';
 import GrapesLikeProperty from './GrapesLikeProperty';
 import GrapesLikeSector from './GrapesLikeSector';
@@ -14,9 +14,9 @@ type GrapesLikeStyleManagerProps = {
       removeClass: (className: string) => void;
       setState: (state: string) => void;
     };
-    updateStyle?: (input: { property: string; value: string; targetKind: 'rule' | 'inline' }) => void;
+    updateStyle?: (input: { property: string; value: string; targetKind: 'rule' | 'inline'; patch?: StyleStatePatch }) => void;
     style?: {
-      updateStyle: (input: { property: string; value: string; targetKind: 'rule' | 'inline' }) => void;
+      updateStyle: (input: { property: string; value: string; targetKind: 'rule' | 'inline'; patch?: StyleStatePatch }) => void;
     };
   };
 };
@@ -80,6 +80,23 @@ export function toggleStyleSector(current: SectorState, key: StyleSectorKey): Se
   };
 }
 
+export function createStyleUpdateInput(
+  sectorKey: StyleSectorKey,
+  property: string,
+  value: string,
+  targetKind: 'rule' | 'inline',
+  patchValue?: unknown,
+) {
+  return {
+    property,
+    value,
+    targetKind,
+    patch: patchValue === undefined
+      ? undefined
+      : { [sectorKey]: { [property]: patchValue } } as StyleStatePatch,
+  };
+}
+
 export default function GrapesLikeStyleManager({ selection, selector, style, actions }: GrapesLikeStyleManagerProps) {
   const [expandedSectors, setExpandedSectors] = useState<SectorState>(() => createSectorState(style));
   const shouldShowFlexSector = shouldAutoExpandFlex(style);
@@ -131,12 +148,14 @@ export default function GrapesLikeStyleManager({ selection, selector, style, act
                     key={property.property}
                     property={property}
                     targetKind={style.targetKind}
-                    onCommit={(value) => {
-                      updateStyle?.({
-                        property: property.property,
+                    onCommit={(value, patchValue) => {
+                      updateStyle?.(createStyleUpdateInput(
+                        sector.key,
+                        property.property,
                         value,
-                        targetKind: style.targetKind,
-                      });
+                        style.targetKind,
+                        patchValue,
+                      ));
                     }}
                   />
               ))}

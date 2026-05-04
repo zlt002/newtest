@@ -847,3 +847,40 @@ test('createGrapesLikeInspectorBridge ignores blank inline style writes by defau
 
   assert.equal(styleState.width, '120px');
 });
+
+test('createGrapesLikeInspectorBridge applies structured inline patches through style preservation', () => {
+  const { editor, cta } = createEditorFixture();
+  let styleState = {
+    padding: '10px 20px 30px 40px',
+    'padding-right': '96px',
+  };
+
+  cta.getStyle = () => ({ ...styleState });
+  cta.addStyle = (patch) => {
+    styleState = { ...styleState, ...patch };
+  };
+  cta.removeStyle = (property) => {
+    delete styleState[property];
+  };
+
+  const bridge = createGrapesLikeInspectorBridge(editor);
+  bridge.actions.style.updateStyle({
+    property: 'padding',
+    value: '10px 104px 30px 40px',
+    targetKind: 'inline',
+    patch: {
+      spacing: {
+        padding: {
+          right: '104',
+          unit: 'px',
+        },
+      },
+    },
+  });
+
+  assert.equal(styleState.padding, undefined);
+  assert.equal(styleState['padding-top'], '10px');
+  assert.equal(styleState['padding-right'], '104px');
+  assert.equal(styleState['padding-bottom'], '30px');
+  assert.equal(styleState['padding-left'], '40px');
+});

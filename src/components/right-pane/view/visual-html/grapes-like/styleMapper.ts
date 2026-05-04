@@ -595,17 +595,36 @@ export function updateStyle(
   editor: {
     updateRuleStyle?: (property: string, value: string) => unknown;
     updateInlineStyle?: (property: string, value: string) => unknown;
+    updateRuleStylePatch?: (patch: StyleStatePatch, fallbackProperty: string, fallbackValue: string) => unknown;
+    updateInlineStylePatch?: (patch: StyleStatePatch, fallbackProperty: string, fallbackValue: string) => unknown;
   } | null | undefined,
   input: {
     property: string;
     value: string;
     targetKind: 'rule' | 'inline';
+    patch?: StyleStatePatch;
   },
 ) {
   const property = input.property.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
 
   if (input.targetKind === 'rule') {
+    if (input.patch) {
+      if (editor?.updateRuleStylePatch) {
+        return editor.updateRuleStylePatch(input.patch, property, input.value);
+      }
+
+      return editor?.updateRuleStyle?.(property, input.value);
+    }
+
     return editor?.updateRuleStyle?.(property, input.value);
+  }
+
+  if (input.patch) {
+    if (editor?.updateInlineStylePatch) {
+      return editor.updateInlineStylePatch(input.patch, property, input.value);
+    }
+
+    return editor?.updateInlineStyle?.(property, input.value);
   }
 
   return editor?.updateInlineStyle?.(property, input.value);

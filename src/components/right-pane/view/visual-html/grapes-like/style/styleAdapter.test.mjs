@@ -171,6 +171,56 @@ test('readStyleState expands margin/padding/appearance fields', () => {
   assert.equal(result.advanced.perspective.value, '800');
 });
 
+test('readStyleState merges partial longhands with shorthand fallback', () => {
+  const result = readStyleState({
+    padding: '10px 20px 30px 40px',
+    'padding-right': '96px',
+    'border-radius': '4px 8px 12px 16px',
+    'border-top-left-radius': '6px',
+  });
+
+  assert.deepEqual(result.spacing.padding, {
+    top: '10',
+    right: '96',
+    bottom: '30',
+    left: '40',
+    unit: 'px',
+  });
+  assert.deepEqual(result.appearance.borderRadius, {
+    topLeft: '6',
+    topRight: '8',
+    bottomRight: '12',
+    bottomLeft: '16',
+    unit: 'px',
+  });
+});
+
+test('readStyleSnapshot resolves partial longhands with shorthand fallback', () => {
+  const result = readStyleSnapshot({
+    selection: [
+      {
+        inlineStyles: {
+          padding: '10px 20px 30px 40px',
+          'padding-right': '96px',
+        },
+      },
+    ],
+    activeState: '',
+  });
+
+  const spacing = result.sectors.find((sector) => sector.key === 'spacing');
+  const padding = spacing.properties.find((property) => property.property === 'padding');
+
+  assert.deepEqual(padding.value.committed, {
+    top: '10',
+    right: '96',
+    bottom: '30',
+    left: '40',
+    unit: 'px',
+  });
+  assert.equal(padding.value.resolved.source, 'inline');
+});
+
 test('readStyleState parses multiple box-shadow layers', () => {
   const result = readStyleState({
     'box-shadow': '0 2px 6px rgba(15, 23, 42, 0.16), inset 0 0 0 1px rgba(255, 255, 255, 0.7)',

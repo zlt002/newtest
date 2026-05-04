@@ -79,6 +79,11 @@ function readNumberFieldState(value: UnitValue, units: readonly string[]) {
   };
 }
 
+function readNumberFieldSignature(value: UnitValue, units: readonly string[]) {
+  const state = readNumberFieldState(value, units);
+  return `${state.draft}\u0000${state.unit}`;
+}
+
 export default function NumberField({
   label,
   value,
@@ -91,6 +96,7 @@ export default function NumberField({
   const [draft, setDraft] = useState(() => readNumberFieldState(value, units).draft);
   const [unit, setUnit] = useState(() => readNumberFieldState(value, units).unit);
   const previousValueRef = useRef<UnitValue>(value);
+  const previousValueSignatureRef = useRef(readNumberFieldSignature(value, units));
   const dragStateRef = useRef<{
     pointerId: number;
     startX: number;
@@ -98,11 +104,22 @@ export default function NumberField({
   } | null>(null);
 
   useEffect(() => {
+    const nextSignature = readNumberFieldSignature(value, units);
+    if (previousValueSignatureRef.current !== nextSignature) {
+      const next = readNumberFieldState(value, units);
+      setDraft(next.draft);
+      setUnit(next.unit);
+      previousValueSignatureRef.current = nextSignature;
+      previousValueRef.current = value;
+      return;
+    }
+
     const next = syncNumberFieldState({ draft, unit }, previousValueRef.current, value, units);
     setDraft(next.draft);
     setUnit(next.unit);
+    previousValueSignatureRef.current = nextSignature;
     previousValueRef.current = value;
-  }, [units, value]);
+  }, [draft, unit, units, value, value.unit, value.value]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {

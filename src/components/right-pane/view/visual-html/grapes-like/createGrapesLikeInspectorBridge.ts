@@ -12,9 +12,9 @@ import { createSelectionFeedbackController } from './selectionFeedbackController
 // @ts-ignore - Node's strip-types runtime resolves the .ts specifier; tsc flags it without allowImportingTsExtensions.
 import { readStyleSnapshot } from './styleAdapter.ts';
 // @ts-ignore - Node's strip-types runtime resolves the .ts specifier; tsc flags it without allowImportingTsExtensions.
-import { updateStyle } from './styleMapper.ts';
+import { applyStylePatch, updateStyle } from './styleMapper.ts';
 // @ts-ignore - Node's strip-types runtime resolves the .ts specifier; tsc flags it without allowImportingTsExtensions.
-import type { LayerNodeViewModel } from './types.ts';
+import type { LayerNodeViewModel, StyleStatePatch } from './types.ts';
 
 type GrapesEditor = ReturnType<typeof grapesjs.init>;
 type LayerSelectionEvent = {
@@ -493,6 +493,33 @@ function updateInlineStyle(editor: GrapesEditor, property: string, value: string
   });
 }
 
+function replaceStyleOnTarget(
+  target: GrapesStyleTarget | GrapesComponent | null | undefined,
+  currentStyle: Record<string, unknown> | null | undefined,
+  nextStyle: Record<string, string>,
+) {
+  const currentKeys = Object.keys(sanitizeStyleRecord(currentStyle));
+  currentKeys.forEach((key) => {
+    if (!Object.prototype.hasOwnProperty.call(nextStyle, key)) {
+      target?.removeStyle?.(key);
+    }
+  });
+
+  target?.addStyle?.(nextStyle);
+}
+
+function updateInlineStylePatch(editor: GrapesEditor, patch: StyleStatePatch, fallbackProperty: string, fallbackValue: string) {
+  if (!String(fallbackValue ?? '').trim()) {
+    return;
+  }
+
+  getSelectedComponents(editor).forEach((component) => {
+    const currentStyle = component?.getStyle?.();
+    const nextStyle = applyStylePatch(sanitizeStyleRecord(currentStyle) as Record<string, string>, patch);
+    replaceStyleOnTarget(component, currentStyle, nextStyle);
+  });
+}
+
 function sanitizeStyleRecord(style: Record<string, unknown> | null | undefined): Record<string, string | number | null | undefined> {
   if (!style) {
     return {};
@@ -619,6 +646,21 @@ function updateRuleStyle(editor: GrapesEditor, property: string, value: string) 
   }
 
   updateInlineStyle(editor, property, value);
+}
+
+function updateRuleStylePatch(editor: GrapesEditor, patch: StyleStatePatch, fallbackProperty: string, fallbackValue: string) {
+  const targets = getStyleTargetsForSelection(editor);
+
+  if (targets.length > 0) {
+    targets.forEach((target) => {
+      const currentStyle = target.getStyle?.();
+      const nextStyle = applyStylePatch(sanitizeStyleRecord(currentStyle) as Record<string, string>, patch);
+      replaceStyleOnTarget(target, currentStyle, nextStyle);
+    });
+    return;
+  }
+
+  updateInlineStylePatch(editor, patch, fallbackProperty, fallbackValue);
 }
 
 export function createGrapesLikeInspectorBridge(editor: GrapesEditor | null) {
@@ -786,10 +828,12 @@ export function createGrapesLikeInspectorBridge(editor: GrapesEditor | null) {
         },
       },
       style: {
-        updateStyle: (input: { property: string; value: string; targetKind: 'rule' | 'inline' }) => {
+        updateStyle: (input: { property: string; value: string; targetKind: 'rule' | 'inline'; patch?: StyleStatePatch }) => {
           updateStyle({
             updateRuleStyle: (property, value) => updateRuleStyle(editor, property, value),
             updateInlineStyle: (property, value) => updateInlineStyle(editor, property, value),
+            updateRuleStylePatch: (patch, property, value) => updateRuleStylePatch(editor, patch, property, value),
+            updateInlineStylePatch: (patch, property, value) => updateInlineStylePatch(editor, patch, property, value),
           }, input);
           adapter.notify();
         },

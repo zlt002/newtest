@@ -453,7 +453,10 @@ function readBox(style: Record<string, string>, key: string): BoxValue {
   ];
   const sideValues = sideKeys.map((sideKey) => style[sideKey] ?? '');
   const shorthand = style[key] ?? '';
-  const resolved = sideValues.some(Boolean) ? sideValues : expandCssBox(shorthand);
+  const shorthandValues = expandCssBox(shorthand);
+  const resolved = sideValues.some(Boolean)
+    ? sideValues.map((sideValue, index) => sideValue || shorthandValues[index] || '')
+    : shorthandValues;
   const unit = resolved.map(splitCssValue).find((entry) => entry.unit)?.unit ?? splitCssValue(shorthand).unit;
 
   return {
@@ -494,7 +497,10 @@ function readRadius(style: Record<string, string>): RadiusValue {
   ];
   const sideValues = sideKeys.map((sideKey) => style[sideKey] ?? '');
   const shorthand = style['border-radius'] ?? style.borderRadius ?? '';
-  const resolved = sideValues.some(Boolean) ? sideValues : expandCssBox(shorthand);
+  const shorthandValues = expandCssBox(shorthand);
+  const resolved = sideValues.some(Boolean)
+    ? sideValues.map((sideValue, index) => sideValue || shorthandValues[index] || '')
+    : shorthandValues;
   const unit = resolved.map(splitCssValue).find((entry) => entry.unit)?.unit ?? splitCssValue(shorthand).unit;
 
   return {
