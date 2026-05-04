@@ -831,3 +831,19 @@ test('createGrapesLikeInspectorBridge keeps rule values contextual while default
   assert.equal(color.value.committed.value, '#ffffff');
   assert.equal(color.value.resolved.source, 'rule');
 });
+
+test('createGrapesLikeInspectorBridge ignores blank inline style writes by default', () => {
+  const { editor, cta } = createEditorFixture();
+  const styleState = { width: '120px' };
+
+  cta.getStyle = () => ({ ...styleState });
+  cta.addStyle = (patch) => Object.assign(styleState, patch);
+  cta.removeStyle = (property) => {
+    delete styleState[property];
+  };
+
+  const bridge = createGrapesLikeInspectorBridge(editor);
+  bridge.actions.style.updateStyle({ property: 'width', value: '', targetKind: 'inline' });
+
+  assert.equal(styleState.width, '120px');
+});

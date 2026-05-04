@@ -486,7 +486,6 @@ function updateInlineStyle(editor: GrapesEditor, property: string, value: string
   getSelectedComponents(editor).forEach((component) => {
     const nextValue = String(value ?? '').trim();
     if (!nextValue) {
-      component?.removeStyle?.(property);
       return;
     }
 

@@ -185,8 +185,14 @@ export default function NumberField({
             setDraft(event.target.value);
           }}
           onBlur={() => {
+            if (!draft.trim()) {
+              setDraft(String(value.value ?? ''));
+              setUnit(getDefaultUnit(units, String(value.unit ?? unit)));
+              return;
+            }
+
             onCommit({
-              value: draft,
+              value: draft.trim(),
               unit: getDefaultUnit(units, unit),
             });
           }}
