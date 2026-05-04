@@ -732,3 +732,61 @@ test('createGrapesLikeInspectorBridge does not let blank style target values hid
   assert.equal(fontSize.value.committed.unit, 'px');
   assert.equal(fontWeight.value.committed.value, '500');
 });
+
+test('createGrapesLikeInspectorBridge prefers DOM inline styles for editable style echo', () => {
+  const { editor, cta } = createEditorFixture();
+  const computedValues = {
+    width: 'auto',
+    height: 'auto',
+    'font-size': '',
+    'background-color': 'rgb(176, 33, 33)',
+    color: 'rgb(255, 255, 255)',
+  };
+  const inlineValues = {
+    width: '251.46px',
+    height: '131.33px',
+    'font-size': '21px',
+    'padding-right': '96px',
+    'background-color': '#b02121',
+    color: '#ffffff',
+  };
+  const element = {
+    style: {
+      getPropertyValue: (property) => inlineValues[property] ?? '',
+    },
+    ownerDocument: {
+      defaultView: {
+        getComputedStyle: () => ({
+          getPropertyValue: (property) => computedValues[property] ?? '',
+        }),
+      },
+    },
+  };
+
+  cta.getStyle = () => ({});
+  cta.getEl = () => element;
+
+  const bridge = createGrapesLikeInspectorBridge(editor);
+  const snapshot = bridge.adapter.getSnapshot();
+  const layout = snapshot.style.sectors.find((sector) => sector.key === 'layout');
+  const spacing = snapshot.style.sectors.find((sector) => sector.key === 'spacing');
+  const text = snapshot.style.sectors.find((sector) => sector.key === 'text');
+  const appearance = snapshot.style.sectors.find((sector) => sector.key === 'appearance');
+  const width = layout.properties.find((property) => property.property === 'width');
+  const height = layout.properties.find((property) => property.property === 'height');
+  const padding = spacing.properties.find((property) => property.property === 'padding');
+  const fontSize = text.properties.find((property) => property.property === 'fontSize');
+  const color = text.properties.find((property) => property.property === 'color');
+  const backgroundColor = appearance.properties.find((property) => property.property === 'backgroundColor');
+
+  assert.equal(width.value.committed.value, '251.46');
+  assert.equal(width.value.committed.unit, 'px');
+  assert.equal(height.value.committed.value, '131.33');
+  assert.equal(height.value.committed.unit, 'px');
+  assert.equal(fontSize.value.committed.value, '21');
+  assert.equal(fontSize.value.committed.unit, 'px');
+  assert.equal(padding.value.committed.right, '96');
+  assert.equal(padding.value.committed.unit, 'px');
+  assert.equal(color.value.committed.value, '#ffffff');
+  assert.equal(backgroundColor.value.committed.value, '#b02121');
+});

@@ -548,6 +548,28 @@ function readComputedStyleRecord(component: GrapesComponent): Record<string, str
   }, {});
 }
 
+function readInlineStyleRecord(component: GrapesComponent): Record<string, string> {
+  const element = component.getEl?.() as (Element & {
+    style?: {
+      getPropertyValue?: (property: string) => string;
+    };
+  }) | null | undefined;
+  const style = element?.style;
+  if (!style?.getPropertyValue) {
+    return {};
+  }
+
+  return COMPUTED_STYLE_PROPERTIES.reduce<Record<string, string>>((record, property) => {
+    const rawValue = style.getPropertyValue?.(property).trim();
+    if (!rawValue) {
+      return record;
+    }
+
+    record[property] = property.includes('color') ? normalizeComputedColor(rawValue) : rawValue;
+    return record;
+  }, {});
+}
+
 function getStyleSourceForComponent(editor: GrapesEditor, component: GrapesComponent, index: number) {
   const primaryTarget = index === 0
     ? (editor.getSelectedToStyle?.() as GrapesStyleTarget | undefined)
@@ -555,6 +577,7 @@ function getStyleSourceForComponent(editor: GrapesEditor, component: GrapesCompo
   const styleTarget = primaryTarget ?? getStyleManager(editor)?.getModelToStyle?.(component);
   return {
     ...readComputedStyleRecord(component),
+    ...readInlineStyleRecord(component),
     ...sanitizeStyleRecord(styleTarget?.getStyle?.() ?? component?.getStyle?.()),
   };
 }
