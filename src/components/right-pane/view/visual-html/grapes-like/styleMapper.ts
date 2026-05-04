@@ -348,6 +348,72 @@ function deleteStyleKeys(style: StyleRecord, keys: string[]) {
   });
 }
 
+function hasAnyStyleKey(style: StyleRecord, keys: string[]) {
+  return keys.some((key) => Object.prototype.hasOwnProperty.call(style, key));
+}
+
+function formatBoxSideValue(value: string, unit: string) {
+  const trimmed = String(value ?? '').trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  if (/^(auto|inherit|initial|unset|revert)$/i.test(trimmed)) {
+    return trimmed;
+  }
+
+  return unit && /^-?\d*\.?\d+$/.test(trimmed) ? `${trimmed}${unit}` : trimmed;
+}
+
+function setLonghandBoxValue(style: StyleRecord, key: 'margin' | 'padding', value: Partial<BoxValue>, fallback: BoxValue) {
+  const sideKeys = [`${key}-top`, `${key}-right`, `${key}-bottom`, `${key}-left`];
+  const merged: BoxValue = {
+    top: value.top ?? fallback.top ?? '',
+    right: value.right ?? fallback.right ?? '',
+    bottom: value.bottom ?? fallback.bottom ?? '',
+    left: value.left ?? fallback.left ?? '',
+    unit: value.unit ?? fallback.unit ?? '',
+  };
+  const sideValues = [merged.top, merged.right, merged.bottom, merged.left];
+
+  sideKeys.forEach((sideKey, index) => {
+    const nextValue = formatBoxSideValue(sideValues[index], merged.unit);
+    if (nextValue) {
+      style[sideKey] = nextValue;
+    } else {
+      delete style[sideKey];
+    }
+  });
+  delete style[key];
+}
+
+function setLonghandRadiusValue(style: StyleRecord, value: Partial<RadiusValue>, fallback: RadiusValue) {
+  const sideKeys = [
+    'border-top-left-radius',
+    'border-top-right-radius',
+    'border-bottom-right-radius',
+    'border-bottom-left-radius',
+  ];
+  const merged: RadiusValue = {
+    topLeft: value.topLeft ?? fallback.topLeft ?? '',
+    topRight: value.topRight ?? fallback.topRight ?? '',
+    bottomRight: value.bottomRight ?? fallback.bottomRight ?? '',
+    bottomLeft: value.bottomLeft ?? fallback.bottomLeft ?? '',
+    unit: value.unit ?? fallback.unit ?? '',
+  };
+  const values = [merged.topLeft, merged.topRight, merged.bottomRight, merged.bottomLeft];
+
+  sideKeys.forEach((sideKey, index) => {
+    const nextValue = formatBoxSideValue(values[index], merged.unit);
+    if (nextValue) {
+      style[sideKey] = nextValue;
+    } else {
+      delete style[sideKey];
+    }
+  });
+  delete style['border-radius'];
+}
+
 export function applyStylePatch(currentStyle: StyleRecord | null | undefined, patch: StyleStatePatch): StyleRecord {
   const nextStyle = cloneStyle(currentStyle);
   const currentState = readStyleState(currentStyle);
@@ -416,12 +482,20 @@ export function applyStylePatch(currentStyle: StyleRecord | null | undefined, pa
 
   const spacing = patch.spacing ?? {};
   if ('margin' in spacing) {
-    deleteStyleKeys(nextStyle, ['margin-top', 'margin-right', 'margin-bottom', 'margin-left']);
-    setStyleValue(nextStyle, 'margin', buildBoxValue(spacing.margin, currentState.spacing.margin));
+    const marginKeys = ['margin-top', 'margin-right', 'margin-bottom', 'margin-left'];
+    if (hasAnyStyleKey(nextStyle, marginKeys)) {
+      setLonghandBoxValue(nextStyle, 'margin', spacing.margin ?? {}, currentState.spacing.margin);
+    } else {
+      setStyleValue(nextStyle, 'margin', buildBoxValue(spacing.margin, currentState.spacing.margin));
+    }
   }
   if ('padding' in spacing) {
-    deleteStyleKeys(nextStyle, ['padding-top', 'padding-right', 'padding-bottom', 'padding-left']);
-    setStyleValue(nextStyle, 'padding', buildBoxValue(spacing.padding, currentState.spacing.padding));
+    const paddingKeys = ['padding-top', 'padding-right', 'padding-bottom', 'padding-left'];
+    if (hasAnyStyleKey(nextStyle, paddingKeys)) {
+      setLonghandBoxValue(nextStyle, 'padding', spacing.padding ?? {}, currentState.spacing.padding);
+    } else {
+      setStyleValue(nextStyle, 'padding', buildBoxValue(spacing.padding, currentState.spacing.padding));
+    }
   }
 
   const text = patch.text ?? {};
@@ -458,13 +532,17 @@ export function applyStylePatch(currentStyle: StyleRecord | null | undefined, pa
     setStyleValue(nextStyle, 'border', buildBorderValue(appearance.border, currentState.appearance.border));
   }
   if ('borderRadius' in appearance) {
-    deleteStyleKeys(nextStyle, [
+    const radiusKeys = [
       'border-top-left-radius',
       'border-top-right-radius',
       'border-bottom-right-radius',
       'border-bottom-left-radius',
-    ]);
-    setStyleValue(nextStyle, 'border-radius', buildRadiusValue(appearance.borderRadius, currentState.appearance.borderRadius));
+    ];
+    if (hasAnyStyleKey(nextStyle, radiusKeys)) {
+      setLonghandRadiusValue(nextStyle, appearance.borderRadius ?? {}, currentState.appearance.borderRadius);
+    } else {
+      setStyleValue(nextStyle, 'border-radius', buildRadiusValue(appearance.borderRadius, currentState.appearance.borderRadius));
+    }
   }
   if ('boxShadow' in appearance) {
     setStyleValue(nextStyle, 'box-shadow', buildShadowValue(appearance.boxShadow, currentState.appearance.boxShadow));
