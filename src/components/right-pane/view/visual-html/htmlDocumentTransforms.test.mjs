@@ -286,6 +286,35 @@ test('buildSavedHtmlPreservingHead keeps previous canvas css when reopening and 
   assert.equal((html.match(/data-ccui-visual-html-canvas-style="true"/g) ?? []).length, 1);
 });
 
+test('buildSavedHtmlPreservingHead preserves inline visual edits after save and reopen', () => {
+  const source = `<!doctype html>
+<html>
+<head>
+  <style>.menu-item{padding-right:96px;color:#ffffff}</style>
+</head>
+<body>
+  <div id="menu-item" class="menu-item">订单中心</div>
+</body>
+</html>`;
+
+  const firstSave = buildSavedHtmlPreservingHead({
+    sourceHtml: source,
+    bodyHtml: '<div id="menu-item" class="menu-item">订单中心</div>',
+    canvasCss: '#menu-item{padding-right:104px;background-color:#232f3d;}',
+  });
+  const reopened = createWorkspaceDocument(firstSave);
+  const secondSave = buildSavedHtmlPreservingHead({
+    sourceHtml: firstSave,
+    bodyHtml: reopened.bodyHtml,
+    canvasCss: '',
+  });
+
+  assert.match(firstSave, /id="menu-item"[^>]+style="padding-right: 104px; background-color: #232f3d;"/);
+  assert.match(secondSave, /id="menu-item"[^>]+style="padding-right: 104px; background-color: #232f3d;"/);
+  assert.match(secondSave, /\.menu-item\{padding-right:96px;color:#ffffff\}/);
+  assert.doesNotMatch(secondSave, /#menu-item\{/);
+});
+
 test('buildSavedHtmlPreservingHead coalesces repeated canvas selector declarations to the latest value', () => {
   const source = `<!doctype html>
 <html>
