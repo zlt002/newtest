@@ -574,11 +574,16 @@ function getStyleSourceForComponent(editor: GrapesEditor, component: GrapesCompo
   const primaryTarget = index === 0
     ? (editor.getSelectedToStyle?.() as GrapesStyleTarget | undefined)
     : undefined;
-  const styleTarget = primaryTarget ?? getStyleManager(editor)?.getModelToStyle?.(component);
+  const modelTarget = getStyleManager(editor)?.getModelToStyle?.(component);
+  const componentStyle = sanitizeStyleRecord(component?.getStyle?.());
+  const modelStyle = sanitizeStyleRecord(modelTarget?.getStyle?.());
+  const ruleStyle = sanitizeStyleRecord(primaryTarget?.getStyle?.());
+
   return {
-    ...readComputedStyleRecord(component),
-    ...readInlineStyleRecord(component),
-    ...sanitizeStyleRecord(styleTarget?.getStyle?.() ?? component?.getStyle?.()),
+    computedStyles: readComputedStyleRecord(component),
+    inlineStyles: readInlineStyleRecord(component),
+    modelStyles: Object.keys(modelStyle).length > 0 ? modelStyle : componentStyle,
+    ruleStyles: ruleStyle,
   };
 }
 
@@ -645,7 +650,7 @@ export function createGrapesLikeInspectorBridge(editor: GrapesEditor | null) {
     }),
     style: () => readStyleSnapshot({
       selection: getSelectedComponents(editor).map((component, index) => ({
-        styles: getStyleSourceForComponent(editor, component, index),
+        ...getStyleSourceForComponent(editor, component, index),
         classes: readComponentClasses(component),
       })),
       activeState: editor.SelectorManager?.getState?.() ?? '',
@@ -681,7 +686,7 @@ export function createGrapesLikeInspectorBridge(editor: GrapesEditor | null) {
         }),
         style: readStyleSnapshot({
           selection: getSelectedComponents(editor).map((component, index) => ({
-            styles: getStyleSourceForComponent(editor, component, index),
+            ...getStyleSourceForComponent(editor, component, index),
             classes: readComponentClasses(component),
           })),
           activeState: editor.SelectorManager?.getState?.() ?? '',

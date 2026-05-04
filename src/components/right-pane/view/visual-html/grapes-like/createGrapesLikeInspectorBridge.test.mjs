@@ -781,12 +781,53 @@ test('createGrapesLikeInspectorBridge prefers DOM inline styles for editable sty
 
   assert.equal(width.value.committed.value, '251.46');
   assert.equal(width.value.committed.unit, 'px');
+  assert.equal(width.value.resolved.source, 'inline');
+  assert.deepEqual(width.value.resolved.computed, { value: 'auto', unit: '' });
+  assert.deepEqual(width.value.resolved.authored, { value: '251.46', unit: 'px' });
   assert.equal(height.value.committed.value, '131.33');
   assert.equal(height.value.committed.unit, 'px');
+  assert.equal(height.value.resolved.source, 'inline');
   assert.equal(fontSize.value.committed.value, '21');
   assert.equal(fontSize.value.committed.unit, 'px');
+  assert.equal(fontSize.value.resolved.source, 'inline');
   assert.equal(padding.value.committed.right, '96');
   assert.equal(padding.value.committed.unit, 'px');
+  assert.equal(padding.value.resolved.source, 'inline');
   assert.equal(color.value.committed.value, '#ffffff');
   assert.equal(backgroundColor.value.committed.value, '#b02121');
+  assert.equal(backgroundColor.value.resolved.source, 'inline');
+});
+
+test('createGrapesLikeInspectorBridge keeps rule values contextual while defaulting writes inline', () => {
+  const { editor, cta } = createEditorFixture();
+  const computedValues = { color: 'rgb(0, 0, 0)' };
+  const element = {
+    style: {
+      getPropertyValue: () => '',
+    },
+    ownerDocument: {
+      defaultView: {
+        getComputedStyle: () => ({
+          getPropertyValue: (property) => computedValues[property] ?? '',
+        }),
+      },
+    },
+  };
+  const ruleTarget = {
+    getStyle: () => ({ color: '#ffffff' }),
+  };
+
+  cta.getStyle = () => ({});
+  cta.getEl = () => element;
+  cta.getClasses = () => [{ get: (key) => (key === 'name' ? 'form-label' : undefined) }];
+  editor.getSelectedToStyle = () => ruleTarget;
+
+  const bridge = createGrapesLikeInspectorBridge(editor);
+  const snapshot = bridge.adapter.getSnapshot();
+  const text = snapshot.style.sectors.find((sector) => sector.key === 'text');
+  const color = text.properties.find((property) => property.property === 'color');
+
+  assert.equal(snapshot.style.targetKind, 'inline');
+  assert.equal(color.value.committed.value, '#ffffff');
+  assert.equal(color.value.resolved.source, 'rule');
 });
