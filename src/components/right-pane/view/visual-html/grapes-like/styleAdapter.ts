@@ -606,7 +606,9 @@ function getSelectionStyles(source: {
   return (source?.selection ?? []).map((entry) => {
     const computedRecord = toStyleRecord(entry.computedStyles);
     const inlineRecord = toStyleRecord(entry.inlineStyles);
-    const modelRecord = toStyleRecord(entry.modelStyles ?? entry.styles);
+    const modelStylesRecord = toStyleRecord(entry.modelStyles);
+    const legacyStylesRecord = toStyleRecord(entry.styles);
+    const modelRecord = Object.keys(modelStylesRecord).length > 0 ? modelStylesRecord : legacyStylesRecord;
     const ruleRecord = toStyleRecord(entry.ruleStyles);
 
     return {
@@ -838,9 +840,7 @@ function resolveSelectionPropertyValue<TValue>(
 
 function getResolvedSignature(value: ResolvedStylePropertyValue<unknown>): string {
   return JSON.stringify({
-    source: value.source,
     display: value.display,
-    authored: value.authored,
   });
 }
 
@@ -861,12 +861,12 @@ export function readStyleSnapshot(source: {
   };
   let hasMixedValues = false;
   const hasPositionOffset = states.some((state) => {
-    const position = [
-      state.inline.layout.position.value,
-      state.model.layout.position.value,
-      state.rule.layout.position.value,
-      state.computed.layout.position.value,
-    ].find(Boolean);
+    const position = resolveSelectionPropertyValue<UnitValue>(
+      state,
+      'layout',
+      'position',
+      false,
+    ).legacyCommitted.value;
     return position === 'absolute' || position === 'fixed';
   });
   const shouldShowLayoutPositionProps = hasPositionOffset;

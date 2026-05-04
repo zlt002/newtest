@@ -473,3 +473,63 @@ test('readStyleSnapshot marks mixed source values consistently', () => {
   assert.equal(width.value.resolved.source, 'mixed');
   assert.deepEqual(width.value.committed, { value: '', unit: '' });
 });
+
+test('readStyleSnapshot keeps position offsets visible for legacy styles input', () => {
+  const result = readStyleSnapshot({
+    selection: [
+      {
+        styles: {
+          position: 'absolute',
+          top: '10px',
+        },
+      },
+    ],
+    activeState: '',
+  });
+
+  const layout = result.sectors.find((sector) => sector.key === 'layout');
+  const position = layout.properties.find((property) => property.property === 'position');
+
+  assert.equal(position.value.committed.value, 'absolute');
+  assert.equal(layout.properties.some((property) => property.property === 'inset'), true);
+  assert.equal(layout.properties.some((property) => property.property === 'zIndex'), true);
+});
+
+test('readStyleSnapshot falls back to legacy styles when modelStyles is empty', () => {
+  const result = readStyleSnapshot({
+    selection: [
+      {
+        styles: { width: '100px' },
+        modelStyles: {},
+      },
+    ],
+    activeState: '',
+  });
+
+  const layout = result.sectors.find((sector) => sector.key === 'layout');
+  const width = layout.properties.find((property) => property.property === 'width');
+
+  assert.equal(width.value.committed.value, '100');
+  assert.equal(width.value.resolved.source, 'model');
+});
+
+test('readStyleSnapshot does not mark same displayed values mixed only because sources differ', () => {
+  const result = readStyleSnapshot({
+    selection: [
+      {
+        inlineStyles: { width: '100px' },
+      },
+      {
+        modelStyles: { width: '100px' },
+      },
+    ],
+    activeState: '',
+  });
+
+  const layout = result.sectors.find((sector) => sector.key === 'layout');
+  const width = layout.properties.find((property) => property.property === 'width');
+
+  assert.equal(width.value.mixed, false);
+  assert.equal(width.value.committed.value, '100');
+  assert.equal(width.value.resolved.source, 'inline');
+});

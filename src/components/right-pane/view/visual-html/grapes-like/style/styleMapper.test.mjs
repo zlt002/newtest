@@ -284,6 +284,68 @@ test('applyStylePatch preserves border radius longhands when present', () => {
   assert.equal(result['border-radius'], undefined);
 });
 
+test('applyStylePatch expands shorthand when preserving partial padding longhands', () => {
+  const result = applyStylePatch({
+    padding: '10px 20px 30px 40px',
+    'padding-right': '96px',
+  }, {
+    spacing: {
+      padding: {
+        right: '104',
+        unit: 'px',
+      },
+    },
+  });
+
+  assert.equal(result['padding-top'], '10px');
+  assert.equal(result['padding-right'], '104px');
+  assert.equal(result['padding-bottom'], '30px');
+  assert.equal(result['padding-left'], '40px');
+  assert.equal(result.padding, undefined);
+});
+
+test('applyStylePatch preserves mixed longhand units on unedited sides', () => {
+  const result = applyStylePatch({
+    'margin-top': '1rem',
+    'margin-right': '2em',
+    'margin-bottom': '3%',
+    'margin-left': '4px',
+  }, {
+    spacing: {
+      margin: {
+        top: '2',
+        unit: 'rem',
+      },
+    },
+  });
+
+  assert.equal(result['margin-top'], '2rem');
+  assert.equal(result['margin-right'], '2em');
+  assert.equal(result['margin-bottom'], '3%');
+  assert.equal(result['margin-left'], '4px');
+  assert.equal(result.margin, undefined);
+});
+
+test('applyStylePatch expands shorthand when preserving partial border radius longhands', () => {
+  const result = applyStylePatch({
+    'border-radius': '4px 8px 12px 16px',
+    'border-top-left-radius': '6px',
+  }, {
+    appearance: {
+      borderRadius: {
+        topLeft: '10',
+        unit: 'px',
+      },
+    },
+  });
+
+  assert.equal(result['border-top-left-radius'], '10px');
+  assert.equal(result['border-top-right-radius'], '8px');
+  assert.equal(result['border-bottom-right-radius'], '12px');
+  assert.equal(result['border-bottom-left-radius'], '16px');
+  assert.equal(result['border-radius'], undefined);
+});
+
 test('createStyleWritebackHandler maps property patches through applyStylePatch before invoking onPatch', () => {
   const patches = [];
   const writeback = createStyleWritebackHandler(

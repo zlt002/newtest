@@ -365,19 +365,37 @@ function formatBoxSideValue(value: string, unit: string) {
   return unit && /^-?\d*\.?\d+$/.test(trimmed) ? `${trimmed}${unit}` : trimmed;
 }
 
+function expandCssBoxTokens(value: string): [string, string, string, string] {
+  const tokens = value.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) {
+    return ['', '', '', ''];
+  }
+
+  if (tokens.length === 1) {
+    return [tokens[0], tokens[0], tokens[0], tokens[0]];
+  }
+
+  if (tokens.length === 2) {
+    return [tokens[0], tokens[1], tokens[0], tokens[1]];
+  }
+
+  if (tokens.length === 3) {
+    return [tokens[0], tokens[1], tokens[2], tokens[1]];
+  }
+
+  return [tokens[0], tokens[1], tokens[2], tokens[3]];
+}
+
 function setLonghandBoxValue(style: StyleRecord, key: 'margin' | 'padding', value: Partial<BoxValue>, fallback: BoxValue) {
   const sideKeys = [`${key}-top`, `${key}-right`, `${key}-bottom`, `${key}-left`];
-  const merged: BoxValue = {
-    top: value.top ?? fallback.top ?? '',
-    right: value.right ?? fallback.right ?? '',
-    bottom: value.bottom ?? fallback.bottom ?? '',
-    left: value.left ?? fallback.left ?? '',
-    unit: value.unit ?? fallback.unit ?? '',
-  };
-  const sideValues = [merged.top, merged.right, merged.bottom, merged.left];
+  const fallbackTokens = expandCssBoxTokens(style[key] ?? '');
+  const patchValues = [value.top, value.right, value.bottom, value.left];
 
   sideKeys.forEach((sideKey, index) => {
-    const nextValue = formatBoxSideValue(sideValues[index], merged.unit);
+    const patchValue = patchValues[index];
+    const nextValue = patchValue !== undefined
+      ? formatBoxSideValue(patchValue, value.unit ?? fallback.unit ?? '')
+      : (style[sideKey] ?? fallbackTokens[index] ?? '');
     if (nextValue) {
       style[sideKey] = nextValue;
     } else {
@@ -394,17 +412,14 @@ function setLonghandRadiusValue(style: StyleRecord, value: Partial<RadiusValue>,
     'border-bottom-right-radius',
     'border-bottom-left-radius',
   ];
-  const merged: RadiusValue = {
-    topLeft: value.topLeft ?? fallback.topLeft ?? '',
-    topRight: value.topRight ?? fallback.topRight ?? '',
-    bottomRight: value.bottomRight ?? fallback.bottomRight ?? '',
-    bottomLeft: value.bottomLeft ?? fallback.bottomLeft ?? '',
-    unit: value.unit ?? fallback.unit ?? '',
-  };
-  const values = [merged.topLeft, merged.topRight, merged.bottomRight, merged.bottomLeft];
+  const fallbackTokens = expandCssBoxTokens(style['border-radius'] ?? '');
+  const patchValues = [value.topLeft, value.topRight, value.bottomRight, value.bottomLeft];
 
   sideKeys.forEach((sideKey, index) => {
-    const nextValue = formatBoxSideValue(values[index], merged.unit);
+    const patchValue = patchValues[index];
+    const nextValue = patchValue !== undefined
+      ? formatBoxSideValue(patchValue, value.unit ?? fallback.unit ?? '')
+      : (style[sideKey] ?? fallbackTokens[index] ?? '');
     if (nextValue) {
       style[sideKey] = nextValue;
     } else {
