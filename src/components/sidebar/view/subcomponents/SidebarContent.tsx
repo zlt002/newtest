@@ -267,7 +267,7 @@ export default function SidebarContent({
                             session.matches[0]?.timestamp,
                             session.matches[0]?.snippet
                           )}
-                          >
+                        >
                           <div className="mb-1 flex items-center gap-1.5">
                             <MessageSquare className="h-3 w-3 flex-shrink-0 text-primary" />
                             <span className="truncate text-xs font-medium text-foreground">
@@ -329,9 +329,9 @@ export default function SidebarContent({
                   variant="outline"
                   size="sm"
                   onClick={() => onWorkspaceViewChange('projects')}
-                  >
-                    {t('workspace.backToProjects')}
-                  </Button>
+                >
+                  {t('workspace.backToProjects')}
+                </Button>
               </div>
             </div>
           </div>

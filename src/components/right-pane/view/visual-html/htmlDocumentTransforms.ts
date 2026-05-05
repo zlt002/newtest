@@ -1111,7 +1111,7 @@ export function buildSavedHtmlPreservingHead({
     ? mergeCanvasBodyWithSourceNonEditableNodes(sourceHtml, bodyHtml)
     : null;
   const cleanBodyHtml = restoreEventAttributes(
-    stripTemporaryHiddenLayerAttributes(stripScriptNodes(stripStyleNodes(mergedBodyHtml ?? bodyHtml))),
+    stripTemporaryHiddenLayerAttributes(stripScriptNodes(stripManagedCanvasStyleNodes(mergedBodyHtml ?? bodyHtml))),
     snapshot.bodyEventAttributes,
   );
   const headMarkup = stripStyleNodes(readHeadMarkup(sourceHtml));

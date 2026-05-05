@@ -3,6 +3,9 @@ import { api } from '../../../utils/api';
 import type { Project } from '../../../types/app';
 import type { FileTreeNode } from '../types/types';
 
+// Module-level cache: persists across component mount/unmount cycles
+const fileTreeCache = new Map<string, FileTreeNode[]>();
+
 type UseFileTreeDataResult = {
   files: FileTreeNode[];
   loading: boolean;
@@ -10,7 +13,12 @@ type UseFileTreeDataResult = {
 };
 
 export function useFileTreeData(selectedProject: Project | null): UseFileTreeDataResult {
-  const [files, setFiles] = useState<FileTreeNode[]>([]);
+  const [files, setFiles] = useState<FileTreeNode[]>(() => {
+    if (selectedProject?.name) {
+      return fileTreeCache.get(selectedProject.name) ?? [];
+    }
+    return [];
+  });
   const [loading, setLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -34,26 +42,34 @@ export function useFileTreeData(selectedProject: Project | null): UseFileTreeDat
     }
     abortControllerRef.current = new AbortController();
 
-    // Track mount state so aborted or late responses do not enqueue stale state updates.
     let isActive = true;
 
     const fetchFiles = async () => {
-      if (isActive) {
+      const cached = fileTreeCache.get(projectName);
+
+      if (cached && cached.length > 0) {
+        // Show cached data immediately, skip loading spinner
+        if (isActive) {
+          setFiles(cached);
+        }
+      } else if (isActive) {
         setLoading(true);
       }
+
       try {
         const response = await api.getFiles(projectName, { signal: abortControllerRef.current!.signal });
 
         if (!response.ok) {
           const errorText = await response.text();
           console.error('File fetch failed:', response.status, errorText);
-          if (isActive) {
+          if (isActive && !cached) {
             setFiles([]);
           }
           return;
         }
 
         const data = (await response.json()) as FileTreeNode[];
+        fileTreeCache.set(projectName, data);
         if (isActive) {
           setFiles(data);
         }
@@ -63,7 +79,7 @@ export function useFileTreeData(selectedProject: Project | null): UseFileTreeDat
         }
 
         console.error('Error fetching files:', error);
-        if (isActive) {
+        if (isActive && !cached) {
           setFiles([]);
         }
       } finally {

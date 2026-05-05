@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from 'react';
+
 type ColorFieldProps = {
   label: string;
   value: string;
@@ -31,6 +33,24 @@ export default function ColorField({
   disabled = false,
   onCommit,
 }: ColorFieldProps) {
+  const [localColor, setLocalColor] = useState(() => normalizeColorValue(value));
+  const onCommitRef = useRef(onCommit);
+  onCommitRef.current = onCommit;
+  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const pendingRef = useRef<string>();
+
+  useEffect(() => {
+    if (!timerRef.current) {
+      setLocalColor(normalizeColorValue(value));
+    }
+  }, [value]);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
   return (
     <label className="gl-field flex w-full min-w-0 flex-1 flex-col gap-0.5 rounded-md text-foreground">
       <span className="text-[10px] font-medium leading-4 text-muted-foreground">{label}</span>
@@ -39,10 +59,32 @@ export default function ColorField({
           aria-label={`${label} 颜色块`}
           type="color"
           className="h-4 w-4 shrink-0 rounded-sm border border-border bg-transparent p-0"
-          value={normalizeColorValue(value)}
+          value={localColor}
           disabled={disabled}
           onChange={(event) => {
-            onCommit(event.target.value);
+            const next = event.target.value;
+            setLocalColor(next);
+            pendingRef.current = next;
+            if (!timerRef.current) {
+              onCommitRef.current(next);
+              timerRef.current = setTimeout(() => {
+                timerRef.current = undefined;
+                if (pendingRef.current) {
+                  onCommitRef.current(pendingRef.current);
+                  pendingRef.current = undefined;
+                }
+              }, 120);
+            }
+          }}
+          onBlur={() => {
+            if (timerRef.current) {
+              clearTimeout(timerRef.current);
+              timerRef.current = undefined;
+            }
+            if (pendingRef.current) {
+              onCommitRef.current(pendingRef.current);
+              pendingRef.current = undefined;
+            }
           }}
         />
         <input

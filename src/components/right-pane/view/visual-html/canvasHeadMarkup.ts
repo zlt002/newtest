@@ -173,6 +173,19 @@ export function injectCanvasHeadMarkup(editor: ReturnType<typeof grapesjs.init>,
     const template = canvasDocument.createElement('template');
     template.innerHTML = staticMarkup;
     Array.from(template.content.childNodes).forEach((node) => {
+      // <link> elements must be created directly via createElement to trigger
+      // stylesheet loading — cloneNode does not fetch linked resources
+      if (node.nodeType === Node.ELEMENT_NODE && (node as Element).tagName.toLowerCase() === 'link') {
+        const linkElement = canvasDocument.createElement('link');
+        const source = node as Element;
+        for (const attr of Array.from(source.attributes)) {
+          linkElement.setAttribute(attr.name, attr.value);
+        }
+        markManagedNode(linkElement);
+        canvasDocument.head.appendChild(linkElement);
+        return;
+      }
+
       const clone = node.cloneNode(true);
       markManagedNode(clone);
       canvasDocument.head.appendChild(clone);

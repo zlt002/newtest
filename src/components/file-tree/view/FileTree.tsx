@@ -179,7 +179,7 @@ export default function FileTree({
         <div className="absolute inset-0 z-50 flex items-center justify-center border-2 border-dashed border-blue-500 bg-blue-500/10">
           <div className="flex items-center gap-3 rounded-lg bg-background/95 px-6 py-4 shadow-lg">
             <Upload className="h-6 w-6 text-blue-500" />
-            <span className="text-sm font-medium">{t('fileTree.dropToUpload', 'Drop files to upload')}</span>
+            <span className="text-sm font-medium">{t('fileTree.dropToUpload', '拖放文件以上传')}</span>
           </div>
         </div>
       )}
@@ -281,8 +281,8 @@ export default function FileTree({
               </div>
               <div>
                 <h3 className="font-medium text-foreground">
-                  {t('fileTree.delete.title', 'Delete {{type}}', {
-                    type: operations.deleteConfirmation.item.type === 'directory' ? 'Folder' : 'File'
+                  {t('fileTree.delete.title', '删除{{type}}', {
+                    type: operations.deleteConfirmation.item.type === 'directory' ? '文件夹' : '文件'
                   })}
                 </h3>
                 <p className="text-sm text-muted-foreground">
@@ -292,8 +292,8 @@ export default function FileTree({
             </div>
             <p className="mb-4 text-sm text-muted-foreground">
               {operations.deleteConfirmation.item.type === 'directory'
-                ? t('fileTree.delete.folderWarning', 'This folder and all its contents will be permanently deleted.')
-                : t('fileTree.delete.fileWarning', 'This file will be permanently deleted.')}
+                ? t('fileTree.delete.folderWarning', '此文件夹及其所有内容将被永久删除。')
+                : t('fileTree.delete.fileWarning', '此文件将被永久删除。')}
             </p>
             <div className="flex justify-end gap-2">
               <button
@@ -301,7 +301,7 @@ export default function FileTree({
                 disabled={operations.operationLoading}
                 className="rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-accent"
               >
-                {t('common.cancel', 'Cancel')}
+                {t('common.cancel', '取消')}
               </button>
               <button
                 onClick={operations.handleConfirmDelete}
@@ -309,7 +309,7 @@ export default function FileTree({
                 className="flex items-center gap-2 rounded-md bg-red-600 px-3 py-1.5 text-sm text-white transition-colors hover:bg-red-700 disabled:opacity-50"
               >
                 {operations.operationLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-                {t('fileTree.delete.confirm', 'Delete')}
+                {t('fileTree.delete.confirm', '删除')}
               </button>
             </div>
           </div>

@@ -186,21 +186,10 @@ function stripCanvasSecurityPolicyMeta(fullHtml: string): string {
 }
 
 function normalizeDesignCanvasHtml(fullHtml: string): string {
-  const htmlWithoutCanvasCsp = stripCanvasSecurityPolicyMeta(fullHtml);
-  const rootCustomProperties = extractRootCustomProperties(htmlWithoutCanvasCsp);
-  const rootDeclarations = serializeCustomProperties(rootCustomProperties);
-  const htmlWithInlinedVariables = inlineCustomPropertyReferences(htmlWithoutCanvasCsp, rootCustomProperties);
-  if (!rootDeclarations) {
-    return htmlWithInlinedVariables;
-  }
-
-  let nextHtml = htmlWithInlinedVariables.replace(/<html\b[^>]*>/i, (match) => appendInlineStyleAttribute(match, rootDeclarations));
-
-  if (/<body\b[^>]*>/i.test(nextHtml)) {
-    nextHtml = nextHtml.replace(/<body\b[^>]*>/i, (match) => appendInlineStyleAttribute(match, rootDeclarations));
-  }
-
-  return nextHtml;
+  // 仅移除 CSP meta 标签，保留原始 CSS 变量定义
+  // 完整 head 样式（含 CSS 变量）由 createCanvasStructureHtml 传入 GrapesJS，
+  // 浏览器原生支持 var() 解析，无需手动内联
+  return stripCanvasSecurityPolicyMeta(fullHtml);
 }
 
 function collectStyleMarkup(fullHtml: string): string {
@@ -212,7 +201,6 @@ function collectStyleMarkup(fullHtml: string): string {
 
 function stripHeadRuntimeMarkup(markup: string): string {
   return markup
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
     .trim();
 }
@@ -249,14 +237,21 @@ function collectCanvasHeadMarkup(fullHtml: string): string {
   return stripHeadRuntimeMarkup(headMarkup);
 }
 
+function readRawHeadContent(fullHtml: string): string {
+  return fullHtml.match(/<head\b[^>]*>([\s\S]*?)<\/head>/i)?.[1]?.trim() ?? '';
+}
+
 function createCanvasStructureHtml(fullHtml: string): string {
   const htmlAttributes = readTagAttributes(fullHtml, 'html');
   const bodyAttributes = readTagAttributes(fullHtml, 'body');
   const bodyMarkup = stripCanvasStructureRuntimeMarkup(readBodyMarkup(fullHtml));
+  const headMarkup = readRawHeadContent(fullHtml);
 
   return `<!doctype html>
 <html${htmlAttributes}>
-<head></head>
+<head>
+${headMarkup}
+</head>
 <body${bodyAttributes}>
 ${bodyMarkup}
 </body>
@@ -1345,6 +1340,21 @@ export default function VisualCanvasPane({
       }
 
       const headSyncStartedAt = getPerfNow();
+      // 清除初始结构 HTML 带入的 head 元素，避免与受管注入重复
+      // 这些元素没有 data-ccui-canvas-head-node 属性，是 createCanvasStructureHtml 中包含的原始 head 内容
+      const canvasWindow = canvasDocument.defaultView;
+      if (canvasWindow) {
+        Array.from(canvasDocument.head.children).forEach((child) => {
+          if (!(child instanceof canvasWindow.HTMLElement)) return;
+          if (child.hasAttribute('data-ccui-canvas-head-node')) return;
+          if (child.hasAttribute(RAW_CANVAS_STYLE_ATTRIBUTE)) return;
+          if (child.hasAttribute(HIDDEN_LAYER_EDIT_STYLE_ATTRIBUTE)) return;
+          const tag = child.tagName.toLowerCase();
+          if (['link', 'style', 'meta', 'base'].includes(tag)) {
+            child.remove();
+          }
+        });
+      }
       injectCanvasHeadMarkup(editor, canvasHeadMarkup);
       injectRawCanvasStyles(editor, rawStyleMarkup);
       lastHeadSyncRef.current = {

@@ -741,9 +741,11 @@ export function createGrapesLikeInspectorBridge(editor: GrapesEditor | null) {
     'component:selected',
     'component:deselected',
   ];
-  const immediateRefreshEvents = [
+  const styleRefreshEvents = [
     'component:update',
     'component:styleUpdate',
+  ];
+  const otherRefreshEvents = [
     'selector:add',
     'selector:remove',
     'layer:component',
@@ -753,6 +755,21 @@ export function createGrapesLikeInspectorBridge(editor: GrapesEditor | null) {
   };
   const handleEditorChange = () => {
     adapter.notify();
+  };
+  let styleNotifyTimer: ReturnType<typeof setTimeout> | undefined;
+  const handleStyleChange = () => {
+    if (styleNotifyTimer) return;
+    styleNotifyTimer = setTimeout(() => {
+      styleNotifyTimer = undefined;
+      adapter.notify();
+    }, 60);
+  };
+  const flushStyleNotify = () => {
+    if (styleNotifyTimer) {
+      clearTimeout(styleNotifyTimer);
+      styleNotifyTimer = undefined;
+      adapter.notify();
+    }
   };
   let activeSubscriberCount = 0;
   let editorListenersAttached = false;
@@ -766,7 +783,10 @@ export function createGrapesLikeInspectorBridge(editor: GrapesEditor | null) {
     selectionEvents.forEach((eventName) => {
       editor.on?.(eventName, handleSelectionChange);
     });
-    immediateRefreshEvents.forEach((eventName) => {
+    styleRefreshEvents.forEach((eventName) => {
+      editor.on?.(eventName, handleStyleChange);
+    });
+    otherRefreshEvents.forEach((eventName) => {
       editor.on?.(eventName, handleEditorChange);
     });
     editorListenersAttached = true;
@@ -777,10 +797,18 @@ export function createGrapesLikeInspectorBridge(editor: GrapesEditor | null) {
       return;
     }
 
+    if (styleNotifyTimer) {
+      clearTimeout(styleNotifyTimer);
+      styleNotifyTimer = undefined;
+    }
+
     selectionEvents.forEach((eventName) => {
       editor.off?.(eventName, handleSelectionChange);
     });
-    immediateRefreshEvents.forEach((eventName) => {
+    styleRefreshEvents.forEach((eventName) => {
+      editor.off?.(eventName, handleStyleChange);
+    });
+    otherRefreshEvents.forEach((eventName) => {
       editor.off?.(eventName, handleEditorChange);
     });
     editorListenersAttached = false;
@@ -835,7 +863,7 @@ export function createGrapesLikeInspectorBridge(editor: GrapesEditor | null) {
             updateRuleStylePatch: (patch, property, value) => updateRuleStylePatch(editor, patch, property, value),
             updateInlineStylePatch: (patch, property, value) => updateInlineStylePatch(editor, patch, property, value),
           }, input);
-          adapter.notify();
+          flushStyleNotify();
         },
       },
       layers: {

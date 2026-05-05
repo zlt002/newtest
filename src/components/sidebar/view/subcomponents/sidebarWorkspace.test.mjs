@@ -246,7 +246,7 @@ test('AppContent.tsx keeps the floating sidebar open when opening a file from th
   const sourcePath = path.join(process.cwd(), 'src/components/app/AppContent.tsx');
   const source = await fs.readFile(sourcePath, 'utf8');
 
-  assert.match(source, /onFileOpen: \(filePath: string, diffInfo\?: Parameters<NonNullable<typeof handleFileOpen>>\[1\]\) => \{\s*handleFileOpen\(filePath, diffInfo\);/);
+  assert.match(source, /onFileOpen: \(filePath: string, diffInfo\?: Parameters<NonNullable<typeof handleFileOpen>>\[1\]\) => \{\s*handleChatFileOpen\(filePath, diffInfo\);/);
   assert.doesNotMatch(source, /onFileOpen: \(filePath: string, diffInfo\?: Parameters<NonNullable<typeof handleFileOpen>>\[1\]\) => \{\s*closeDesktopSidebarPeek\(\);/);
 });
 
