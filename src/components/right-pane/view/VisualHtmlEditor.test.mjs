@@ -96,6 +96,10 @@ test('VisualHtmlEditor source passes preview-based asset url context to the desi
 
   assert.match(source, /function resolveCanvasAssetBaseUrl/);
   assert.match(source, /const canvasAssetBaseUrl = useMemo\(\(\) => resolveCanvasAssetBaseUrl\(previewRouteUrl\), \[previewRouteUrl\]\);/);
+  assert.match(source, /logVisualHtmlPerf\('preview-route-resolved'/);
+  assert.match(source, /logVisualHtmlPerf\('design-canvas-context'/);
+  assert.match(source, /previewRouteUrlLength: nextPreviewUrl\?\.length \?\? 0/);
+  assert.match(source, /assetBaseUrlLength: canvasAssetBaseUrl\?\.length \?\? 0/);
   assert.match(source, /<VisualCanvasPane[\s\S]*assetBaseUrl=\{canvasAssetBaseUrl\}/);
 });
 
@@ -160,6 +164,9 @@ test('VisualHtmlEditor initializes and refreshes mapping on load and before savi
   assert.match(source, /nextHtml = collectCanvasHtml\(\)/);
   assert.match(source, /flushedFromDesign = true/);
   assert.match(source, /applyCurrentEditorDocument\(nextHtml, 'design'\)/);
+  assert.match(source, /const canFlushDesignDocument = activeMode === 'design' && Boolean\(canvasEditorRef\.current\)/);
+  assert.match(source, /let discoveredDesignChange = false/);
+  assert.match(source, /discoveredDesignChange = true/);
   assert.match(source, /const flushDocumentToFile = useCallback\(async \(\{/);
   assert.match(source, /reason: 'manual-save'/);
   assert.match(source, /if \(!flushedFromDesign \|\| activeMode !== 'design'\) \{\s*syncCanvasDocumentFromHtml\(nextHtml\);\s*\}/);
@@ -175,7 +182,7 @@ test('VisualHtmlEditor exposes live source-location mapping and a freshness help
   assert.match(source, /const sourceText = controllerRef\.current\.documentText;/);
   assert.match(source, /const mapping = sourceLocationMapRef\.current;/);
   assert.doesNotMatch(source, /reason: 'send-to-ai'/);
-  assert.match(source, /if \(pendingDesignSyncFrameRef\.current !== null\) \{\s*window\.cancelAnimationFrame\(pendingDesignSyncFrameRef\.current\);\s*flushDesignDocumentSync\(\);\s*return sourceLocationMapRef\.current;\s*\}/);
+  assert.match(source, /if \(pendingDesignSyncTimeoutRef\.current !== null\) \{\s*window\.clearTimeout\(pendingDesignSyncTimeoutRef\.current\);\s*flushDesignDocumentSync\(\);\s*return sourceLocationMapRef\.current;\s*\}/);
   assert.match(source, /controllerRef\.current\.sourceLocationState\.isStale/);
   assert.match(source, /sourceLocationMapRef\.current/);
   assert.match(source, /const nextHtml = activeMode === 'design' && canvasEditorRef\.current/);
@@ -268,7 +275,7 @@ test('VisualHtmlEditor applies live preview DOM state back to the design canvas 
   assert.match(source, /syncCanvasDocumentFromHtml\(nextHtml\)/);
   assert.match(source, /buildSavedHtmlPreservingHead\(\{\s*sourceHtml: controllerRef\.current\.documentText,\s*bodyHtml: previewBodyHtml,\s*\}\)/);
   assert.match(source, /schedulePreviewRuntimeElementStyleRestore\(editor, pendingPreviewRuntimeStyles\)/);
-  assert.match(source, /editor\.Canvas\.getDocument\?\.\(\)\?\.getElementById\(elementId\)/);
+  assert.match(source, /resolveCanvasDocument\(editor\)\?\.getElementById\(elementId\)/);
   assert.match(source, /component\?\.addAttributes\?\.\(\{ style: styleText \}/);
   assert.match(source, /CCUI_PREVIEW_RUNTIME_STYLE_ID/);
   assert.match(source, /style\.textContent = buildPreviewRuntimeStyleOverride\(elementStyles\)/);
@@ -325,24 +332,27 @@ test('VisualHtmlEditor clears pending source cursor entries when loading or inva
   assert.match(source, /if \(!selectCanvasComponentForSourceEntry\(canvasEditor, pendingSourceCursorEntryRef\.current\)\) \{\s*clearPendingSourceCursorEntry\(\);\s*\}/);
 });
 
-test('VisualHtmlEditor schedules merged design sync to refresh current document and mapping', async () => {
+test('VisualHtmlEditor debounces heavy design sync to keep inspector edits responsive', async () => {
   const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
 
-  assert.match(source, /const pendingDesignSyncFrameRef = useRef<number \| null>\(null\)/);
+  assert.match(source, /const DESIGN_SYNC_DEBOUNCE_MS = 1000/);
+  assert.match(source, /const AUTO_FLUSH_DELAY_MS = 2000/);
+  assert.match(source, /const pendingDesignSyncTimeoutRef = useRef<number \| null>\(null\)/);
   assert.match(source, /const flushDesignDocumentSync = useCallback\(/);
   assert.match(source, /const nextHtml = collectCanvasHtml\(\)/);
   assert.match(source, /applyCurrentEditorDocument\(nextHtml, 'design'\)/);
   assert.match(source, /const requestDesignDocumentSync = useCallback\(/);
-  assert.match(source, /if \(pendingDesignSyncFrameRef\.current !== null\) \{\s*return;\s*\}/);
-  assert.match(source, /pendingDesignSyncFrameRef\.current = window\.requestAnimationFrame\(/);
-  assert.match(source, /pendingDesignSyncFrameRef\.current = null/);
+  assert.match(source, /if \(pendingDesignSyncTimeoutRef\.current !== null\) \{\s*window\.clearTimeout\(pendingDesignSyncTimeoutRef\.current\);\s*\}/);
+  assert.match(source, /pendingDesignSyncTimeoutRef\.current = window\.setTimeout\(\(\) => \{\s*flushDesignDocumentSync\(\);\s*\}, DESIGN_SYNC_DEBOUNCE_MS\)/);
+  assert.match(source, /pendingDesignSyncTimeoutRef\.current = null/);
   assert.match(source, /onDirtyChange=\{\(isDirty, editor\) => \{/);
   assert.match(source, /if \(isDirty\) \{\s*requestDesignDocumentSync\(\);\s*scheduleDocumentFlush\(\);\s*\}/);
   assert.match(source, /const scheduleDocumentFlush = useCallback\(\(\) => \{/);
   assert.match(source, /AUTO_FLUSH_DELAY_MS/);
   assert.match(source, /requestDesignDocumentSync\(\)/);
   assert.doesNotMatch(source, /if \(isDirty && !controllerRef\.current\.dirtyDesign\) \{/);
-  assert.match(source, /window\.cancelAnimationFrame\(pendingDesignSyncFrameRef\.current\)/);
+  assert.match(source, /window\.clearTimeout\(pendingDesignSyncTimeoutRef\.current\)/);
+  assert.doesNotMatch(source, /pendingDesignSyncFrameRef/);
 });
 
 test('VisualHtmlEditor ignores out-of-order load responses and only applies the latest load', async () => {

@@ -113,11 +113,29 @@ export type StyleSector = {
   title: string;
 };
 
+export type StyleValueSource = 'inline' | 'model' | 'rule' | 'computed' | 'default' | 'mixed';
+
+export type StyleValueOrigin<TValue> = {
+  value: TValue;
+  present: boolean;
+};
+
+export type ResolvedStylePropertyValue<TValue> = {
+  display: TValue;
+  authored: TValue;
+  computed: TValue;
+  source: StyleValueSource;
+  writable: boolean;
+  legacyCommitted: TValue;
+  mixed?: boolean;
+};
+
 export type StyleValueState<TValue> = {
   committed: TValue;
   draft?: TValue;
   mixed?: boolean;
   disabled?: boolean;
+  resolved?: ResolvedStylePropertyValue<TValue>;
 };
 
 export type StylePropertyKind = 'number' | 'select' | 'radio' | 'composite' | 'color' | 'text' | 'shadow' | 'stack';

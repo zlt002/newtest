@@ -173,10 +173,12 @@ type SelectedComponentTarget = {
 
 type MarqueeSelectableComponent = {
   get?: (key: string) => unknown;
+  getEl?: () => HTMLElement | null | undefined;
   parents?: () => MarqueeSelectableComponent[];
+  components?: () => { models?: MarqueeSelectableComponent[] } | MarqueeSelectableComponent[];
 };
 
-type MarqueeSelectionEditor = Pick<GrapesEditor, 'Canvas' | 'getSelectedAll' | 'select'>;
+type MarqueeSelectionEditor = Pick<GrapesEditor, 'Canvas' | 'getSelectedAll' | 'getWrapper' | 'select'>;
 
 type MarqueeDragSession = {
   pointerId: number;
@@ -186,7 +188,6 @@ type MarqueeDragSession = {
   boxElement: HTMLDivElement | null;
   active: boolean;
   appendToExistingSelection: boolean;
-  candidates: Array<MarqueeSelectionCandidate<MarqueeSelectableComponent>> | null;
 };
 
 const SPACING_ASSIST_STYLE_ID = 'ccui-spacing-assist-style';
@@ -198,6 +199,9 @@ const DUPLICATE_SEND_WINDOW_MS = 400;
 const MARQUEE_SELECTION_BOX_ATTR = 'data-ccui-marquee-selection';
 const MARQUEE_SELECTING_DATASET_KEY = 'ccuiMarqueeSelecting';
 const MULTI_SELECTING_DATASET_KEY = 'ccuiMultiSelecting';
+const MARQUEE_SELECTION_HIT_TEST_STEP_PX = 24;
+const MARQUEE_SELECTION_MAX_HIT_TEST_POINTS = 900;
+const MARQUEE_FALLBACK_SCAN_BATCH_SIZE = 250;
 const SELECTED_OVERLAY_BORDER_COLOR = 'rgba(37, 99, 235, 0.95)';
 const MULTI_SELECTION_TOOLBAR_OFFSET_PX = 8;
 const SPACING_HANDLE_HOVER_ZONE_PX = 10;
@@ -784,7 +788,47 @@ function readMarqueeSelectionComponent(element: HTMLElement): MarqueeSelectableC
     return fromCash;
   }
 
+  const fromGrapesData = (element as HTMLElement & {
+    '_gjs-data'?: { model?: MarqueeSelectableComponent | null };
+  })['_gjs-data']?.model;
+  if (fromGrapesData) {
+    return fromGrapesData;
+  }
+
   return null;
+}
+
+function readMarqueeComponentChildren(component: MarqueeSelectableComponent): MarqueeSelectableComponent[] {
+  const children = component.components?.();
+  if (Array.isArray(children)) {
+    return children;
+  }
+
+  return Array.isArray(children?.models) ? children.models : [];
+}
+
+function collectMarqueeComponentByElement(
+  component: MarqueeSelectableComponent | null | undefined,
+  result: Map<HTMLElement, MarqueeSelectableComponent>,
+) {
+  if (!component) {
+    return;
+  }
+
+  const element = component.getEl?.();
+  if (element) {
+    result.set(element, component);
+  }
+
+  readMarqueeComponentChildren(component).forEach((child) => {
+    collectMarqueeComponentByElement(child, result);
+  });
+}
+
+function buildMarqueeComponentByElementMap(editor: MarqueeSelectionEditor) {
+  const result = new Map<HTMLElement, MarqueeSelectableComponent>();
+  collectMarqueeComponentByElement(editor.getWrapper?.() as MarqueeSelectableComponent | null | undefined, result);
+  return result;
 }
 
 function readMarqueeSelectionCandidates(
@@ -806,6 +850,189 @@ function readMarqueeSelectionCandidates(
   });
 
   return candidates;
+}
+
+function isMarqueeSelectionHTMLElement(body: HTMLElement, value: unknown): value is HTMLElement {
+  const win = body.ownerDocument.defaultView;
+  return Boolean(win && value instanceof win.HTMLElement && body.contains(value) && value !== body);
+}
+
+function findMarqueeSelectionComponentElementFromHit(
+  body: HTMLElement,
+  element: HTMLElement,
+  componentByElement: Map<HTMLElement, MarqueeSelectableComponent>,
+): { element: HTMLElement; component: MarqueeSelectableComponent } | null {
+  let current: HTMLElement | null = element;
+  while (current && current !== body) {
+    if (isCanvasChromeElement(current)) {
+      return null;
+    }
+
+    const component = readMarqueeSelectionComponent(current) ?? componentByElement.get(current);
+    if (component) {
+      return { element: current, component };
+    }
+
+    current = current.parentElement;
+  }
+
+  return null;
+}
+
+function readMarqueeCaretElementFromPoint(
+  body: HTMLElement,
+  x: number,
+  y: number,
+): HTMLElement | null {
+  const doc = body.ownerDocument as Document & {
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode?: Node | null } | null;
+  };
+  const caretNode = doc.caretRangeFromPoint?.(x, y)?.startContainer
+    ?? doc.caretPositionFromPoint?.(x, y)?.offsetNode
+    ?? null;
+  if (!caretNode) {
+    return null;
+  }
+
+  const elementNodeType = body.ownerDocument.defaultView?.Node?.ELEMENT_NODE ?? 1;
+  const element = caretNode.nodeType === elementNodeType
+    ? caretNode as HTMLElement
+    : caretNode.parentElement;
+  return element && isMarqueeSelectionHTMLElement(body, element) ? element : null;
+}
+
+function buildMarqueeHitTestPoints(box: MarqueeSelectionBox) {
+  const right = box.left + box.width;
+  const bottom = box.top + box.height;
+  const area = Math.max(1, box.width * box.height);
+  const adaptiveStep = Math.ceil(Math.sqrt(area / MARQUEE_SELECTION_MAX_HIT_TEST_POINTS));
+  const step = Math.max(MARQUEE_SELECTION_HIT_TEST_STEP_PX, adaptiveStep);
+  const points: Array<{ x: number; y: number }> = [];
+  const seen = new Set<string>();
+  const addPoint = (x: number, y: number) => {
+    const nextX = Math.min(right, Math.max(box.left, x));
+    const nextY = Math.min(bottom, Math.max(box.top, y));
+    const key = `${Math.round(nextX)}:${Math.round(nextY)}`;
+    if (seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    points.push({ x: nextX, y: nextY });
+  };
+
+  for (let y = box.top; y <= bottom; y += step) {
+    for (let x = box.left; x <= right; x += step) {
+      addPoint(x, y);
+    }
+    addPoint(right, y);
+  }
+  for (let x = box.left; x <= right; x += step) {
+    addPoint(x, bottom);
+  }
+  addPoint(right, bottom);
+  addPoint(box.left + box.width / 2, box.top + box.height / 2);
+
+  return points;
+}
+
+function readMarqueeSelectionCandidatesFromHitTest(
+  editor: MarqueeSelectionEditor,
+  body: HTMLElement,
+  box: MarqueeSelectionBox,
+): Array<MarqueeSelectionCandidate<MarqueeSelectableComponent>> {
+  const elementsFromPoint = body.ownerDocument.elementsFromPoint?.bind(body.ownerDocument);
+  if (!elementsFromPoint) {
+    return [];
+  }
+
+  const candidates: Array<MarqueeSelectionCandidate<MarqueeSelectableComponent>> = [];
+  const seenElements = new Set<HTMLElement>();
+  const componentByElement = buildMarqueeComponentByElementMap(editor);
+  const addResolvedElement = (element: HTMLElement, x: number, y: number) => {
+    const resolved = findMarqueeSelectionComponentElementFromHit(body, element, componentByElement);
+    if (!resolved || seenElements.has(resolved.element)) {
+      return;
+    }
+
+    seenElements.add(resolved.element);
+    candidates.push({
+      component: resolved.component,
+      element: resolved.element,
+      rect: {
+        left: x,
+        top: y,
+        right: x + 1,
+        bottom: y + 1,
+        width: 1,
+        height: 1,
+      },
+    });
+  };
+
+  buildMarqueeHitTestPoints(box).forEach(({ x, y }) => {
+    const caretElement = readMarqueeCaretElementFromPoint(body, x, y);
+    if (caretElement) {
+      addResolvedElement(caretElement, x, y);
+    }
+
+    elementsFromPoint(x, y).forEach((rawElement) => {
+      if (!isMarqueeSelectionHTMLElement(body, rawElement)) {
+        return;
+      }
+
+      addResolvedElement(rawElement, x, y);
+    });
+  });
+
+  return candidates;
+}
+
+function scheduleMarqueeFallbackSelectionScan({
+  editor,
+  body,
+  box,
+  baseSelection,
+  appendSelection,
+}: {
+  editor: MarqueeSelectionEditor;
+  body: HTMLElement;
+  box: MarqueeSelectionBox;
+  baseSelection: MarqueeSelectableComponent[];
+  appendSelection: boolean;
+}) {
+  const win = body.ownerDocument.defaultView ?? window;
+  const elements = body.querySelectorAll<HTMLElement>('*');
+  const candidates: Array<MarqueeSelectionCandidate<MarqueeSelectableComponent>> = [];
+  let index = 0;
+
+  const scanBatch = () => {
+    const end = Math.min(elements.length, index + MARQUEE_FALLBACK_SCAN_BATCH_SIZE);
+    for (; index < end; index += 1) {
+      const element = elements[index];
+      if (!element || element === body || isCanvasChromeElement(element)) {
+        continue;
+      }
+
+      const component = readMarqueeSelectionComponent(element);
+      if (!component) {
+        continue;
+      }
+
+      candidates.push({ component, element, rect: element.getBoundingClientRect() });
+    }
+
+    if (index < elements.length) {
+      win.requestAnimationFrame(scanBatch);
+      return;
+    }
+
+    const components = collectMarqueeSelectionComponents(candidates, box, MARQUEE_SELECTION_MAX_COMPONENTS);
+    applyMarqueeSelection(editor, components, baseSelection, appendSelection);
+  };
+
+  win.requestAnimationFrame(scanBatch);
 }
 
 function applyMarqueeSelection(
@@ -968,7 +1195,6 @@ export function attachCanvasMarqueeSelection(editor: MarqueeSelectionEditor) {
     );
     const box = buildMarqueeSelectionBox({ x: session.startX, y: session.startY }, endPoint);
     const appendSessionSelection = session.appendToExistingSelection;
-    const sessionCandidates = session.candidates;
 
     event.preventDefault?.();
     event.stopPropagation?.();
@@ -982,12 +1208,23 @@ export function attachCanvasMarqueeSelection(editor: MarqueeSelectionEditor) {
       return;
     }
 
-    const candidates = sessionCandidates ?? readMarqueeSelectionCandidates(body);
+    const candidates = readMarqueeSelectionCandidatesFromHitTest(editor, body, box);
     const components = collectMarqueeSelectionComponents(candidates, box, MARQUEE_SELECTION_MAX_COMPONENTS);
-    didApplyMarqueeSelection = components.length > 0;
     const baseSelection = appendSessionSelection ? selectionBeforeCtrl ?? [] : [];
     selectionBeforeCtrl = null;
-    applyMarqueeSelection(editor, components, baseSelection, appendSessionSelection);
+    if (components.length > 0) {
+      didApplyMarqueeSelection = true;
+      applyMarqueeSelection(editor, components, baseSelection, appendSessionSelection);
+    } else {
+      didApplyMarqueeSelection = true;
+      scheduleMarqueeFallbackSelectionScan({
+        editor,
+        body,
+        box,
+        baseSelection,
+        appendSelection: appendSessionSelection,
+      });
+    }
     endCtrlSelectionMode();
   };
 
@@ -1016,7 +1253,6 @@ export function attachCanvasMarqueeSelection(editor: MarqueeSelectionEditor) {
       boxElement: null,
       active: false,
       appendToExistingSelection: event.shiftKey,
-      candidates: readMarqueeSelectionCandidates(body),
     };
 
     try {

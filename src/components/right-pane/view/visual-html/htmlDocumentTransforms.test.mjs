@@ -217,7 +217,7 @@ test('buildSavedHtmlPreservingHead keeps source styles that were stored in body'
   assert.doesNotMatch(html, /old/);
 });
 
-test('buildSavedHtmlPreservingHead appends canvas css without replacing source styles', () => {
+test('buildSavedHtmlPreservingHead inlines editable element canvas css without replacing source styles', () => {
   const source = `<!doctype html>
 <html>
 <head><style>.el-menu{color:white}</style></head>
@@ -233,8 +233,9 @@ test('buildSavedHtmlPreservingHead appends canvas css without replacing source s
   });
 
   assert.match(html, /\.el-menu\{color:white\}/);
-  assert.match(html, /data-ccui-visual-html-canvas-style="true"/);
-  assert.match(html, /#menu-item\{padding-left:40px;color:#ffffff;background-color:#232f3d;\}/);
+  assert.match(html, /id="menu-item"[^>]+style="padding-left: 40px; color: #ffffff; background-color: #232f3d;"/);
+  assert.doesNotMatch(html, /data-ccui-visual-html-canvas-style="true"/);
+  assert.doesNotMatch(html, /#menu-item\{/);
 });
 
 test('buildSavedHtmlPreservingHead removes stale orphan canvas css instead of accumulating style tags', () => {
@@ -257,8 +258,8 @@ test('buildSavedHtmlPreservingHead removes stale orphan canvas css instead of ac
   assert.match(html, /\.business\{color:red\}/);
   assert.doesNotMatch(html, /#old\{left:1px\}/);
   assert.doesNotMatch(html, /#older\{left:2px;\}/);
-  assert.match(html, /#app\{left:3px;\}/);
-  assert.equal((html.match(/data-ccui-visual-html-canvas-style="true"/g) ?? []).length, 1);
+  assert.match(html, /id="app"[^>]+style="left: 3px;"/);
+  assert.doesNotMatch(html, /data-ccui-visual-html-canvas-style="true"/);
 });
 
 test('buildSavedHtmlPreservingHead keeps previous canvas css when reopening and saving without new Grapes css', () => {
@@ -278,10 +279,40 @@ test('buildSavedHtmlPreservingHead keeps previous canvas css when reopening and 
   });
 
   assert.match(html, /\.business\{color:red\}/);
-  assert.match(html, /#irki\{background-color:#b46464;\}/);
+  assert.match(html, /id="irki"[^>]+style="background-color: #b46464;"/);
+  assert.doesNotMatch(html, /#irki\{/);
   assert.match(html, /\*\{box-sizing:border-box;\}/);
   assert.match(html, /body\{margin:0;\}/);
   assert.equal((html.match(/data-ccui-visual-html-canvas-style="true"/g) ?? []).length, 1);
+});
+
+test('buildSavedHtmlPreservingHead preserves inline visual edits after save and reopen', () => {
+  const source = `<!doctype html>
+<html>
+<head>
+  <style>.menu-item{padding-right:96px;color:#ffffff}</style>
+</head>
+<body>
+  <div id="menu-item" class="menu-item">订单中心</div>
+</body>
+</html>`;
+
+  const firstSave = buildSavedHtmlPreservingHead({
+    sourceHtml: source,
+    bodyHtml: '<div id="menu-item" class="menu-item">订单中心</div>',
+    canvasCss: '#menu-item{padding-right:104px;background-color:#232f3d;}',
+  });
+  const reopened = createWorkspaceDocument(firstSave);
+  const secondSave = buildSavedHtmlPreservingHead({
+    sourceHtml: firstSave,
+    bodyHtml: reopened.bodyHtml,
+    canvasCss: '',
+  });
+
+  assert.match(firstSave, /id="menu-item"[^>]+style="padding-right: 104px; background-color: #232f3d;"/);
+  assert.match(secondSave, /id="menu-item"[^>]+style="padding-right: 104px; background-color: #232f3d;"/);
+  assert.match(secondSave, /\.menu-item\{padding-right:96px;color:#ffffff\}/);
+  assert.doesNotMatch(secondSave, /#menu-item\{/);
 });
 
 test('buildSavedHtmlPreservingHead coalesces repeated canvas selector declarations to the latest value', () => {
@@ -303,8 +334,8 @@ test('buildSavedHtmlPreservingHead coalesces repeated canvas selector declaratio
     canvasCss: '* { box-sizing: border-box; } body { margin: 0; } #irki { padding-bottom: 24px; padding-top: 8px; }',
   });
 
-  assert.match(html, /#irki\{background-color:#b46464;padding-bottom:24px;padding-top:8px;\}/);
-  assert.equal((html.match(/#irki\{/g) ?? []).length, 1);
+  assert.match(html, /id="irki"[^>]+style="background-color: #b46464; padding-bottom: 24px; padding-top: 8px;"/);
+  assert.doesNotMatch(html, /#irki\{/);
   assert.equal((html.match(/padding-bottom:/g) ?? []).length, 1);
   assert.equal((html.match(/\*\{box-sizing:border-box;\}/g) ?? []).length, 1);
   assert.equal((html.match(/body\{margin:0;\}/g) ?? []).length, 1);
@@ -349,7 +380,8 @@ test('buildSavedHtmlPreservingHead drops runtime and orphan canvas selectors dur
     `,
   });
 
-  assert.match(html, /#menu-item\{padding-left:20px;\}/);
+  assert.match(html, /id="menu-item"[^>]+style="padding-left: 20px;"/);
+  assert.doesNotMatch(html, /#menu-item\{/);
   assert.doesNotMatch(html, /#el-popover-1\{/);
   assert.doesNotMatch(html, /#dropdown-menu-3\{/);
   assert.doesNotMatch(html, /#ghost-node\{/);
@@ -392,8 +424,8 @@ test('buildSavedHtmlPreservingHead keeps rules for body nodes even when ids do n
     canvasCss: '#custom-layer-1{display:none;width:240px;left:-9999px;top:0;}#ghost-node{left:12px;}',
   });
 
-  assert.match(html, /id="custom-layer-1"[^>]+display:none/);
-  assert.match(html, /#custom-layer-1\{display:none;width:240px;left:-9999px;top:0;\}/);
+  assert.match(html, /id="custom-layer-1"[^>]+style="display: none; position: absolute; left: -9999px; top: 0; width: 240px;"/);
+  assert.doesNotMatch(html, /#custom-layer-1\{/);
   assert.doesNotMatch(html, /#ghost-node\{/);
 });
 
@@ -420,10 +452,11 @@ test('buildSavedHtmlPreservingHead removes managed canvas css when the related e
 
   assert.doesNotMatch(html, /#deleted-panel\{/);
   assert.doesNotMatch(html, /#deleted-child\{/);
-  assert.match(html, /#survivor\{margin-left:-8px;\}/);
+  assert.match(html, /id="survivor"[^>]+style="margin-left: -8px;"/);
+  assert.doesNotMatch(html, /#survivor\{/);
 });
 
-test('buildSavedHtmlPreservingHead serializes managed canvas css in a single line', () => {
+test('buildSavedHtmlPreservingHead inlines multiple editable canvas id rules', () => {
   const source = `<!doctype html>
 <html>
 <head></head>
@@ -436,10 +469,11 @@ test('buildSavedHtmlPreservingHead serializes managed canvas css in a single lin
     canvasCss: '#menu-item{padding-left:20px;color:#fff;}#menu-child{padding-left:40px;color:#fff;}',
   });
 
-  assert.match(
-    html,
-    /<style data-ccui-visual-html-canvas-style="true">\s*#menu-item\{padding-left:20px;color:#fff;\}#menu-child\{padding-left:40px;color:#fff;\}\s*<\/style>/,
-  );
+  assert.match(html, /id="menu-item"[^>]+style="padding-left: 20px; color: #fff;"/);
+  assert.match(html, /id="menu-child"[^>]+style="padding-left: 40px; color: #fff;"/);
+  assert.doesNotMatch(html, /data-ccui-visual-html-canvas-style="true"/);
+  assert.doesNotMatch(html, /#menu-item\{/);
+  assert.doesNotMatch(html, /#menu-child\{/);
 });
 
 test('buildSavedHtmlPreservingHead strips temporary hidden layer edit markup', () => {

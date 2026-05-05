@@ -79,6 +79,11 @@ function readNumberFieldState(value: UnitValue, units: readonly string[]) {
   };
 }
 
+function readNumberFieldSignature(value: UnitValue, units: readonly string[]) {
+  const state = readNumberFieldState(value, units);
+  return `${state.draft}\u0000${state.unit}`;
+}
+
 export default function NumberField({
   label,
   value,
@@ -90,7 +95,9 @@ export default function NumberField({
 }: NumberFieldProps) {
   const [draft, setDraft] = useState(() => readNumberFieldState(value, units).draft);
   const [unit, setUnit] = useState(() => readNumberFieldState(value, units).unit);
+  const [isEditing, setIsEditing] = useState(false);
   const previousValueRef = useRef<UnitValue>(value);
+  const previousValueSignatureRef = useRef(readNumberFieldSignature(value, units));
   const dragStateRef = useRef<{
     pointerId: number;
     startX: number;
@@ -98,11 +105,26 @@ export default function NumberField({
   } | null>(null);
 
   useEffect(() => {
+    if (isEditing) {
+      return;
+    }
+
+    const nextSignature = readNumberFieldSignature(value, units);
+    if (previousValueSignatureRef.current !== nextSignature) {
+      const next = readNumberFieldState(value, units);
+      setDraft(next.draft);
+      setUnit(next.unit);
+      previousValueSignatureRef.current = nextSignature;
+      previousValueRef.current = value;
+      return;
+    }
+
     const next = syncNumberFieldState({ draft, unit }, previousValueRef.current, value, units);
     setDraft(next.draft);
     setUnit(next.unit);
+    previousValueSignatureRef.current = nextSignature;
     previousValueRef.current = value;
-  }, [units, value]);
+  }, [draft, isEditing, unit, units, value, value.unit, value.value]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -152,6 +174,9 @@ export default function NumberField({
     backgroundImage: 'none',
     WebkitAppearance: 'none',
   };
+  const syncedState = readNumberFieldState(value, units);
+  const displayDraft = isEditing ? draft : syncedState.draft;
+  const displayUnit = isEditing ? unit : syncedState.unit;
 
   return (
     <label className="gl-field flex w-full min-w-0 flex-1 flex-col gap-0.5 rounded-md text-foreground">
@@ -166,8 +191,8 @@ export default function NumberField({
               pointerId: event.pointerId,
               startX: event.clientX,
               startValue: {
-                value: draft,
-                unit: getDefaultUnit(units, unit),
+                value: displayDraft,
+                unit: getDefaultUnit(units, displayUnit),
               },
             };
           }}
@@ -178,17 +203,31 @@ export default function NumberField({
           aria-label={label}
           className="gl-input min-w-0 flex-1 bg-transparent px-0.5 py-0 text-xs leading-4 outline-none"
           placeholder={mixed ? '混合' : placeholder}
-          value={draft}
+          value={displayDraft}
           disabled={disabled}
           inputMode="decimal"
+          onFocus={() => {
+            setIsEditing(true);
+            setDraft(displayDraft);
+            setUnit(displayUnit);
+          }}
           onChange={(event) => {
+            setIsEditing(true);
             setDraft(event.target.value);
           }}
           onBlur={() => {
+            if (!draft.trim()) {
+              setDraft(String(value.value ?? ''));
+              setUnit(getDefaultUnit(units, String(value.unit ?? unit)));
+              setIsEditing(false);
+              return;
+            }
+
             onCommit({
-              value: draft,
+              value: draft.trim(),
               unit: getDefaultUnit(units, unit),
             });
+            setIsEditing(false);
           }}
         />
         {units.length > 0 ? (
@@ -197,13 +236,14 @@ export default function NumberField({
               aria-label={`${label} 单位`}
               className="gl-input w-full appearance-none border-l border-border bg-transparent py-0 pl-2 pr-1 text-xs leading-4 text-foreground outline-none"
               style={unitSelectStyle}
-              value={unit}
+              value={displayUnit}
               disabled={disabled}
               onChange={(event) => {
                 const nextUnit = event.target.value;
+                setIsEditing(true);
                 setUnit(nextUnit);
                 onCommit({
-                  value: draft,
+                  value: displayDraft,
                   unit: getDefaultUnit(units, nextUnit),
                 });
               }}

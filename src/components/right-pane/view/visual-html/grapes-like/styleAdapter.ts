@@ -1,6 +1,44 @@
-import { EMPTY_STYLE_STATE, type BoxValue, type BorderValue, type RadiusValue, type ShadowLayerValue, type ShadowValue, type StylePropertyViewModel, type StyleSectorViewModel, type StyleSnapshot, type StyleState, type TransitionLayerValue, type TransitionValue, type TransformValue, type UnitValue } from './types.ts';
+import {
+  EMPTY_STYLE_STATE,
+  type BoxValue,
+  type BorderValue,
+  type RadiusValue,
+  type ResolvedStylePropertyValue,
+  type ShadowLayerValue,
+  type ShadowValue,
+  type StylePropertyViewModel,
+  type StyleSectorViewModel,
+  type StyleSnapshot,
+  type StyleState,
+  type StyleValueOrigin,
+  type StyleValueSource,
+  type TransitionLayerValue,
+  type TransitionValue,
+  type TransformValue,
+  type UnitValue,
+} from './types.ts';
 
-type StyleRecord = Record<string, string | number | null | undefined>;
+type StyleSourceRecord = Record<string, string | number | null | undefined>;
+
+type StyleSelectionSource = {
+  styles?: StyleSourceRecord | null;
+  computedStyles?: StyleSourceRecord | null;
+  inlineStyles?: StyleSourceRecord | null;
+  modelStyles?: StyleSourceRecord | null;
+  ruleStyles?: StyleSourceRecord | null;
+  classes?: readonly string[] | string | null;
+};
+
+type StyleSelectionStates = {
+  computed: StyleState;
+  inline: StyleState;
+  model: StyleState;
+  rule: StyleState;
+  computedRecord: Record<string, string>;
+  inlineRecord: Record<string, string>;
+  modelRecord: Record<string, string>;
+  ruleRecord: Record<string, string>;
+};
 
 const DEFAULT_GENERAL_VALUES = {
   display: 'block',
@@ -164,7 +202,7 @@ const STYLE_SCHEMA: Array<{
   },
 ];
 
-function toStyleRecord(style: StyleRecord | null | undefined): Record<string, string> {
+function toStyleRecord(style: StyleSourceRecord | null | undefined): Record<string, string> {
   if (!style) {
     return {};
   }
@@ -415,7 +453,10 @@ function readBox(style: Record<string, string>, key: string): BoxValue {
   ];
   const sideValues = sideKeys.map((sideKey) => style[sideKey] ?? '');
   const shorthand = style[key] ?? '';
-  const resolved = sideValues.some(Boolean) ? sideValues : expandCssBox(shorthand);
+  const shorthandValues = expandCssBox(shorthand);
+  const resolved = sideValues.some(Boolean)
+    ? sideValues.map((sideValue, index) => sideValue || shorthandValues[index] || '')
+    : shorthandValues;
   const unit = resolved.map(splitCssValue).find((entry) => entry.unit)?.unit ?? splitCssValue(shorthand).unit;
 
   return {
@@ -456,7 +497,10 @@ function readRadius(style: Record<string, string>): RadiusValue {
   ];
   const sideValues = sideKeys.map((sideKey) => style[sideKey] ?? '');
   const shorthand = style['border-radius'] ?? style.borderRadius ?? '';
-  const resolved = sideValues.some(Boolean) ? sideValues : expandCssBox(shorthand);
+  const shorthandValues = expandCssBox(shorthand);
+  const resolved = sideValues.some(Boolean)
+    ? sideValues.map((sideValue, index) => sideValue || shorthandValues[index] || '')
+    : shorthandValues;
   const unit = resolved.map(splitCssValue).find((entry) => entry.unit)?.unit ?? splitCssValue(shorthand).unit;
 
   return {
@@ -506,7 +550,7 @@ function readBorder(style: Record<string, string>): BorderValue {
   };
 }
 
-export function readStyleState(style: StyleRecord | null | undefined): StyleState {
+export function readStyleState(style: StyleSourceRecord | null | undefined): StyleState {
   const record = toStyleRecord(style);
 
   return {
@@ -563,9 +607,27 @@ export function readStyleState(style: StyleRecord | null | undefined): StyleStat
 }
 
 function getSelectionStyles(source: {
-  selection?: Array<{ styles?: StyleRecord | null; classes?: readonly string[] | string | null }> | null;
-} | null | undefined): StyleState[] {
-  return (source?.selection ?? []).map((entry) => readStyleState(entry.styles));
+  selection?: StyleSelectionSource[] | null;
+} | null | undefined): StyleSelectionStates[] {
+  return (source?.selection ?? []).map((entry) => {
+    const computedRecord = toStyleRecord(entry.computedStyles);
+    const inlineRecord = toStyleRecord(entry.inlineStyles);
+    const modelStylesRecord = toStyleRecord(entry.modelStyles);
+    const legacyStylesRecord = toStyleRecord(entry.styles);
+    const modelRecord = Object.keys(modelStylesRecord).length > 0 ? modelStylesRecord : legacyStylesRecord;
+    const ruleRecord = toStyleRecord(entry.ruleStyles);
+
+    return {
+      computed: readStyleState(computedRecord),
+      inline: readStyleState(inlineRecord),
+      model: readStyleState(modelRecord),
+      rule: readStyleState(ruleRecord),
+      computedRecord,
+      inlineRecord,
+      modelRecord,
+      ruleRecord,
+    };
+  });
 }
 
 function readPropertyValue(state: StyleState, sectorKey: StyleSectorViewModel['key'], property: string): unknown {
@@ -577,6 +639,183 @@ function readEmptyPropertyValue(sectorKey: StyleSectorViewModel['key'], property
   return readPropertyValue(EMPTY_STYLE_STATE, sectorKey, property);
 }
 
+function readDefaultPropertyValue(sectorKey: StyleSectorViewModel['key'], property: string): unknown {
+  return readPropertyValue(readStyleState({}), sectorKey, property);
+}
+
+function isEmptyStyleValue(value: unknown): boolean {
+  if (value === null || value === undefined) {
+    return true;
+  }
+
+  if (typeof value === 'string') {
+    return value.trim().length === 0;
+  }
+
+  if (typeof value === 'object') {
+    return JSON.stringify(value) === JSON.stringify({ value: '', unit: '' })
+      || JSON.stringify(value) === JSON.stringify({ top: '', right: '', bottom: '', left: '', unit: '' })
+      || JSON.stringify(value) === JSON.stringify({ topLeft: '', topRight: '', bottomRight: '', bottomLeft: '', unit: '' })
+      || JSON.stringify(value) === JSON.stringify({ top: '', right: '', bottom: '', left: '', unit: '', style: '', color: '' })
+      || JSON.stringify(value) === JSON.stringify({ layers: [] });
+  }
+
+  return false;
+}
+
+function hasStyleRecordValue(record: Record<string, string>, keys: string[]): boolean {
+  return keys.some((key) => {
+    if (!Object.prototype.hasOwnProperty.call(record, key)) {
+      return false;
+    }
+
+    return record[key].trim().length > 0;
+  });
+}
+
+function getPropertyStyleKeys(sectorKey: StyleSectorViewModel['key'], property: string): string[] {
+  const map: Partial<Record<StyleSectorViewModel['key'], Record<string, string[]>>> = {
+    layout: {
+      display: ['display'],
+      float: ['float'],
+      position: ['position'],
+      inset: ['inset', 'top', 'right', 'bottom', 'left'],
+      zIndex: ['z-index', 'zIndex'],
+      width: ['width'],
+      height: ['height'],
+      maxWidth: ['max-width', 'maxWidth'],
+      minHeight: ['min-height', 'minHeight'],
+    },
+    flex: {
+      flexDirection: ['flex-direction', 'flexDirection'],
+      flexWrap: ['flex-wrap', 'flexWrap'],
+      justifyContent: ['justify-content', 'justifyContent'],
+      alignItems: ['align-items', 'alignItems'],
+      alignContent: ['align-content', 'alignContent'],
+      order: ['order'],
+      flexBasis: ['flex-basis', 'flexBasis'],
+      flexGrow: ['flex-grow', 'flexGrow'],
+      flexShrink: ['flex-shrink', 'flexShrink'],
+      alignSelf: ['align-self', 'alignSelf'],
+    },
+    spacing: {
+      margin: ['margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left'],
+      padding: ['padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left'],
+    },
+    text: {
+      color: ['color'],
+      fontFamily: ['font-family', 'fontFamily'],
+      fontSize: ['font-size', 'fontSize'],
+      fontWeight: ['font-weight', 'fontWeight'],
+      letterSpacing: ['letter-spacing', 'letterSpacing'],
+      lineHeight: ['line-height', 'lineHeight'],
+      textAlign: ['text-align', 'textAlign'],
+    },
+    appearance: {
+      backgroundColor: ['background-color', 'backgroundColor'],
+      border: ['border', 'border-width', 'border-style', 'border-color'],
+      borderRadius: [
+        'border-radius',
+        'borderRadius',
+        'border-top-left-radius',
+        'border-top-right-radius',
+        'border-bottom-right-radius',
+        'border-bottom-left-radius',
+      ],
+      boxShadow: ['box-shadow', 'boxShadow'],
+      opacity: ['opacity'],
+    },
+    advanced: {
+      transition: ['transition'],
+      transform: ['transform'],
+      perspective: ['perspective'],
+    },
+  };
+
+  return map[sectorKey]?.[property] ?? [property];
+}
+
+function createStyleOrigin<TValue>(
+  state: StyleState,
+  record: Record<string, string>,
+  sectorKey: StyleSectorViewModel['key'],
+  property: string,
+  emptyValue: TValue,
+): StyleValueOrigin<TValue> {
+  const present = hasStyleRecordValue(record, getPropertyStyleKeys(sectorKey, property));
+
+  return {
+    present,
+    value: present ? readPropertyValue(state, sectorKey, property) as TValue : emptyValue,
+  };
+}
+
+function resolveStylePropertyValue<TValue>({
+  defaultValue,
+  computedValue,
+  inlineValue,
+  modelValue,
+  ruleValue,
+  mixed,
+}: {
+  defaultValue: TValue;
+  computedValue: StyleValueOrigin<TValue>;
+  inlineValue: StyleValueOrigin<TValue>;
+  modelValue: StyleValueOrigin<TValue>;
+  ruleValue: StyleValueOrigin<TValue>;
+  mixed: boolean;
+}): ResolvedStylePropertyValue<TValue> {
+  if (mixed) {
+    return {
+      display: defaultValue,
+      authored: defaultValue,
+      computed: computedValue.value,
+      source: 'mixed',
+      writable: true,
+      legacyCommitted: defaultValue,
+      mixed: true,
+    };
+  }
+
+  const authoredSources: Array<{ source: StyleValueSource; origin: StyleValueOrigin<TValue> }> = [
+    { source: 'inline', origin: inlineValue },
+    { source: 'model', origin: modelValue },
+    { source: 'rule', origin: ruleValue },
+  ];
+  const authored = authoredSources.find(({ origin }) => origin.present && !isEmptyStyleValue(origin.value));
+
+  if (authored) {
+    return {
+      display: authored.origin.value,
+      authored: authored.origin.value,
+      computed: computedValue.value,
+      source: authored.source,
+      writable: true,
+      legacyCommitted: authored.origin.value,
+    };
+  }
+
+  if (computedValue.present && !isEmptyStyleValue(computedValue.value)) {
+    return {
+      display: computedValue.value,
+      authored: defaultValue,
+      computed: computedValue.value,
+      source: 'computed',
+      writable: true,
+      legacyCommitted: computedValue.value,
+    };
+  }
+
+  return {
+    display: defaultValue,
+    authored: defaultValue,
+    computed: defaultValue,
+    source: 'default',
+    writable: true,
+    legacyCommitted: defaultValue,
+  };
+}
+
 function isMixedValue(values: unknown[]): boolean {
   if (values.length <= 1) {
     return false;
@@ -586,16 +825,54 @@ function isMixedValue(values: unknown[]): boolean {
   return values.slice(1).some((value) => JSON.stringify(value ?? null) !== baseline);
 }
 
+function resolveSelectionPropertyValue<TValue>(
+  state: StyleSelectionStates,
+  sectorKey: StyleSectorViewModel['key'],
+  property: string,
+  mixed: boolean,
+): ResolvedStylePropertyValue<TValue> {
+  const emptyValue = readEmptyPropertyValue(sectorKey, property) as TValue;
+  const defaultValue = readDefaultPropertyValue(sectorKey, property) as TValue;
+
+  return resolveStylePropertyValue({
+    defaultValue,
+    computedValue: createStyleOrigin(state.computed, state.computedRecord, sectorKey, property, emptyValue),
+    inlineValue: createStyleOrigin(state.inline, state.inlineRecord, sectorKey, property, emptyValue),
+    modelValue: createStyleOrigin(state.model, state.modelRecord, sectorKey, property, emptyValue),
+    ruleValue: createStyleOrigin(state.rule, state.ruleRecord, sectorKey, property, emptyValue),
+    mixed,
+  });
+}
+
+function getResolvedSignature(value: ResolvedStylePropertyValue<unknown>): string {
+  return JSON.stringify({
+    display: value.display,
+  });
+}
+
 export function readStyleSnapshot(source: {
-  selection?: Array<{ styles?: StyleRecord | null; classes?: readonly string[] | string | null }> | null;
+  selection?: StyleSelectionSource[] | null;
   activeState?: string | null;
 } | null | undefined): StyleSnapshot {
-  const selected = source?.selection ?? [];
   const states = getSelectionStyles(source);
-  const baseState = states[0] ?? EMPTY_STYLE_STATE;
+  const baseState = states[0] ?? {
+    computed: EMPTY_STYLE_STATE,
+    inline: EMPTY_STYLE_STATE,
+    model: EMPTY_STYLE_STATE,
+    rule: EMPTY_STYLE_STATE,
+    computedRecord: {},
+    inlineRecord: {},
+    modelRecord: {},
+    ruleRecord: {},
+  };
   let hasMixedValues = false;
   const hasPositionOffset = states.some((state) => {
-    const position = state.layout.position.value;
+    const position = resolveSelectionPropertyValue<UnitValue>(
+      state,
+      'layout',
+      'position',
+      false,
+    ).legacyCommitted.value;
     return position === 'absolute' || position === 'fixed';
   });
   const shouldShowLayoutPositionProps = hasPositionOffset;
@@ -610,18 +887,28 @@ export function readStyleSnapshot(source: {
 
       return true;
     }).map((property) => {
-      const values = states.map((state) => readPropertyValue(state, sector.key, property.property));
+      const values = states.map((state) => getResolvedSignature(resolveSelectionPropertyValue(
+        state,
+        sector.key,
+        property.property,
+        false,
+      )));
       const mixed = isMixedValue(values);
       if (mixed) {
         hasMixedValues = true;
       }
+      const resolved = resolveSelectionPropertyValue(
+        baseState,
+        sector.key,
+        property.property,
+        mixed,
+      );
 
       return {
         ...property,
         value: {
-          committed: mixed
-            ? readEmptyPropertyValue(sector.key, property.property)
-            : readPropertyValue(baseState, sector.key, property.property),
+          committed: resolved.legacyCommitted,
+          resolved,
           mixed,
           disabled: false,
         },
@@ -629,16 +916,7 @@ export function readStyleSnapshot(source: {
     }),
   }));
 
-  const targetKind = selected.length > 0
-    && selected.every((entry) => {
-      const classes = Array.isArray(entry.classes)
-        ? entry.classes
-        : String(entry.classes ?? '').split(/\s+/).filter(Boolean);
-      return classes.length > 0;
-    })
-    && !source?.activeState
-    ? 'rule'
-    : 'inline';
+  const targetKind = 'inline';
 
   return {
     targetKind,

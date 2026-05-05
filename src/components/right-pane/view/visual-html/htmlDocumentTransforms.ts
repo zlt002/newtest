@@ -141,10 +141,6 @@ function isRuntimeCanvasSelector(selector: string) {
   return NON_PERSISTENT_CANVAS_SELECTOR_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
-function isGeneratedCanvasComponentId(id: string) {
-  return /^i[a-z0-9]{3,}$/i.test(id);
-}
-
 function mergeStyleDeclarationText(existingStyle: string, declarations: CanvasCssDeclaration[]) {
   const declarationMap = new Map<string, string>();
   const declarationOrder: string[] = [];
@@ -225,7 +221,6 @@ function normalizePersistentCanvasEdits({
   bodyHtml: string;
   canvasCss: string;
 }) {
-  const sourceIds = collectMarkupElementIds(readBodyInnerMarkup(sourceHtml));
   const sourceNonEditableIds = collectSourceNonEditableElementIds(sourceHtml);
   const bodyIds = collectMarkupElementIds(bodyHtml);
   const rules = collectCanvasCssRules(canvasCss);
@@ -244,7 +239,7 @@ function normalizePersistentCanvasEdits({
       return;
     }
 
-    if (id && bodyIds.has(id) && !sourceIds.has(id) && isGeneratedCanvasComponentId(id)) {
+    if (id && bodyIds.has(id) && !keepForSourceNonEditableElement) {
       rulesToInline.push(rule);
       return;
     }

@@ -44,6 +44,35 @@ test('updateStyle routes rule and inline writes by targetKind', () => {
   ]);
 });
 
+test('updateStyle prefers structured patches when provided', () => {
+  const calls = [];
+  const patch = {
+    spacing: {
+      padding: {
+        right: '104',
+        unit: 'px',
+      },
+    },
+  };
+  const editor = {
+    updateInlineStyle() {
+      calls.push(['inline-fallback']);
+    },
+    updateInlineStylePatch(nextPatch, fallbackProperty, fallbackValue) {
+      calls.push(['inline-patch', nextPatch, fallbackProperty, fallbackValue]);
+    },
+  };
+
+  updateStyle(editor, {
+    property: 'padding',
+    value: '10px 104px 30px 40px',
+    targetKind: 'inline',
+    patch,
+  });
+
+  assert.deepEqual(calls, [['inline-patch', patch, 'padding', '10px 104px 30px 40px']]);
+});
+
 test('updateStyle normalizes inspector property names into CSS property names', () => {
   const calls = [];
   const editor = {
@@ -185,8 +214,14 @@ test('applyStylePatch writes primitive and composite style values back', () => {
     'flex-basis': '240px',
     inset: '10px 20px 30px 40px',
     'z-index': '5',
-    margin: '8px 2px 3px 4px',
-    padding: '5px 10px 7px 8px',
+    'margin-top': '8px',
+    'margin-right': '2px',
+    'margin-bottom': '3px',
+    'margin-left': '4px',
+    'padding-top': '5px',
+    'padding-right': '10px',
+    'padding-bottom': '7px',
+    'padding-left': '8px',
     'background-color': '#ffffff',
     color: '#222222',
     'font-family': 'Arial',
@@ -194,7 +229,10 @@ test('applyStylePatch writes primitive and composite style values back', () => {
     'font-weight': '700',
     'line-height': '1.5',
     'text-align': 'center',
-    'border-radius': '9px 2px 3px 4px',
+    'border-top-left-radius': '9px',
+    'border-top-right-radius': '2px',
+    'border-bottom-right-radius': '3px',
+    'border-bottom-left-radius': '4px',
     border: '2px solid #000000',
     'box-shadow': '0 4px 12px rgba(15, 23, 42, 0.16), inset 0 0 0 1px rgba(255, 255, 255, 0.7)',
     opacity: '0.8',
@@ -203,12 +241,138 @@ test('applyStylePatch writes primitive and composite style values back', () => {
     perspective: '800px',
   });
   assert.equal(Object.hasOwn(next, 'backgroundColor'), false);
-  assert.equal(Object.hasOwn(next, 'margin-top'), false);
-  assert.equal(Object.hasOwn(next, 'margin-right'), false);
-  assert.equal(Object.hasOwn(next, 'padding-left'), false);
-  assert.equal(Object.hasOwn(next, 'border-top-left-radius'), false);
-  assert.equal(Object.hasOwn(next, 'border-bottom-left-radius'), false);
+  assert.equal(Object.hasOwn(next, 'margin'), false);
+  assert.equal(Object.hasOwn(next, 'padding'), false);
+  assert.equal(Object.hasOwn(next, 'border-radius'), false);
   assert.equal(Object.hasOwn(next, 'decorations'), false);
+});
+
+test('applyStylePatch preserves padding longhands when editing one side', () => {
+  const result = applyStylePatch({
+    'padding-top': '30px',
+    'padding-right': '96px',
+    'padding-bottom': '28px',
+    'padding-left': '0px',
+  }, {
+    spacing: {
+      padding: {
+        right: '104',
+        unit: 'px',
+      },
+    },
+  });
+
+  assert.equal(result['padding-top'], '30px');
+  assert.equal(result['padding-right'], '104px');
+  assert.equal(result['padding-bottom'], '28px');
+  assert.equal(result['padding-left'], '0px');
+  assert.equal(result.padding, undefined);
+});
+
+test('applyStylePatch preserves margin longhands when editing one side', () => {
+  const result = applyStylePatch({
+    'margin-top': '1rem',
+    'margin-right': 'auto',
+    'margin-bottom': '2rem',
+    'margin-left': 'auto',
+  }, {
+    spacing: {
+      margin: {
+        top: '3',
+        unit: 'rem',
+      },
+    },
+  });
+
+  assert.equal(result['margin-top'], '3rem');
+  assert.equal(result['margin-right'], 'auto');
+  assert.equal(result['margin-bottom'], '2rem');
+  assert.equal(result['margin-left'], 'auto');
+  assert.equal(result.margin, undefined);
+});
+
+test('applyStylePatch preserves border radius longhands when present', () => {
+  const result = applyStylePatch({
+    'border-top-left-radius': '4px',
+    'border-top-right-radius': '8px',
+    'border-bottom-right-radius': '12px',
+    'border-bottom-left-radius': '16px',
+  }, {
+    appearance: {
+      borderRadius: {
+        topLeft: '6',
+        unit: 'px',
+      },
+    },
+  });
+
+  assert.equal(result['border-top-left-radius'], '6px');
+  assert.equal(result['border-top-right-radius'], '8px');
+  assert.equal(result['border-bottom-right-radius'], '12px');
+  assert.equal(result['border-bottom-left-radius'], '16px');
+  assert.equal(result['border-radius'], undefined);
+});
+
+test('applyStylePatch expands shorthand when preserving partial padding longhands', () => {
+  const result = applyStylePatch({
+    padding: '10px 20px 30px 40px',
+    'padding-right': '96px',
+  }, {
+    spacing: {
+      padding: {
+        right: '104',
+        unit: 'px',
+      },
+    },
+  });
+
+  assert.equal(result['padding-top'], '10px');
+  assert.equal(result['padding-right'], '104px');
+  assert.equal(result['padding-bottom'], '30px');
+  assert.equal(result['padding-left'], '40px');
+  assert.equal(result.padding, undefined);
+});
+
+test('applyStylePatch preserves mixed longhand units on unedited sides', () => {
+  const result = applyStylePatch({
+    'margin-top': '1rem',
+    'margin-right': '2em',
+    'margin-bottom': '3%',
+    'margin-left': '4px',
+  }, {
+    spacing: {
+      margin: {
+        top: '2',
+        unit: 'rem',
+      },
+    },
+  });
+
+  assert.equal(result['margin-top'], '2rem');
+  assert.equal(result['margin-right'], '2em');
+  assert.equal(result['margin-bottom'], '3%');
+  assert.equal(result['margin-left'], '4px');
+  assert.equal(result.margin, undefined);
+});
+
+test('applyStylePatch expands shorthand when preserving partial border radius longhands', () => {
+  const result = applyStylePatch({
+    'border-radius': '4px 8px 12px 16px',
+    'border-top-left-radius': '6px',
+  }, {
+    appearance: {
+      borderRadius: {
+        topLeft: '10',
+        unit: 'px',
+      },
+    },
+  });
+
+  assert.equal(result['border-top-left-radius'], '10px');
+  assert.equal(result['border-top-right-radius'], '8px');
+  assert.equal(result['border-bottom-right-radius'], '12px');
+  assert.equal(result['border-bottom-left-radius'], '16px');
+  assert.equal(result['border-radius'], undefined);
 });
 
 test('createStyleWritebackHandler maps property patches through applyStylePatch before invoking onPatch', () => {

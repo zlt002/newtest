@@ -21,7 +21,10 @@ export type GrapesLikePropertyDefinition = {
 type GrapesLikePropertyProps = {
   property: StylePropertyViewModel;
   targetKind: 'rule' | 'inline';
-  onCommit: (value: string) => void;
+  onCommit: (
+    value: string,
+    patchValue?: UnitValue | BoxValue | BorderValue | RadiusValue | ShadowValue | TransitionValue | TransformValue | string,
+  ) => void;
 };
 
 function getPropertyLayoutClass(property: StylePropertyViewModel): string {
@@ -554,7 +557,7 @@ function TransformStackField({
   );
 }
 
-function renderCompositeField(property: StylePropertyViewModel, onCommit: (value: string) => void) {
+function renderCompositeField(property: StylePropertyViewModel, onCommit: GrapesLikePropertyProps['onCommit']) {
   if (property.property === 'inset') {
     const currentValue = asBoxValue(property.value.committed);
     return (
@@ -564,7 +567,7 @@ function renderCompositeField(property: StylePropertyViewModel, onCommit: (value
         mixed={property.value.mixed}
         disabled={property.value.disabled}
         onCommit={(nextValue) => {
-          onCommit(stringifyBoxValue(nextValue));
+          onCommit(stringifyBoxValue(nextValue), nextValue);
         }}
       />
     );
@@ -579,7 +582,7 @@ function renderCompositeField(property: StylePropertyViewModel, onCommit: (value
         mixed={property.value.mixed}
         disabled={property.value.disabled}
         onCommit={(nextValue) => {
-          onCommit(stringifyBoxValue(nextValue));
+          onCommit(stringifyBoxValue(nextValue), nextValue);
         }}
       />
     );
@@ -594,7 +597,7 @@ function renderCompositeField(property: StylePropertyViewModel, onCommit: (value
         mixed={property.value.mixed}
         disabled={property.value.disabled}
         onCommit={(nextValue) => {
-          onCommit(stringifyRadiusValue(nextValue));
+          onCommit(stringifyRadiusValue(nextValue), nextValue);
         }}
       />
     );
@@ -609,7 +612,8 @@ function renderCompositeField(property: StylePropertyViewModel, onCommit: (value
           value={{ value: currentValue.top, unit: currentValue.unit }}
           units={['px', '%', 'em', 'rem']}
           onCommit={(nextValue) => {
-            onCommit(stringifyBorderValue({ ...currentValue, top: nextValue.value, right: nextValue.value, bottom: nextValue.value, left: nextValue.value, unit: nextValue.unit }));
+            const nextBorderValue = { ...currentValue, top: nextValue.value, right: nextValue.value, bottom: nextValue.value, left: nextValue.value, unit: nextValue.unit };
+            onCommit(stringifyBorderValue(nextBorderValue), nextBorderValue);
           }}
         />
         <SelectField
@@ -623,7 +627,8 @@ function renderCompositeField(property: StylePropertyViewModel, onCommit: (value
             { value: 'double', label: '双线' },
           ]}
           onCommit={(nextValue) => {
-            onCommit(stringifyBorderValue({ ...currentValue, style: nextValue }));
+            const nextBorderValue = { ...currentValue, style: nextValue };
+            onCommit(stringifyBorderValue(nextBorderValue), nextBorderValue);
           }}
         />
         <ColorField
@@ -631,7 +636,8 @@ function renderCompositeField(property: StylePropertyViewModel, onCommit: (value
           value={currentValue.color}
           placeholder="#000000"
           onCommit={(nextValue) => {
-            onCommit(stringifyBorderValue({ ...currentValue, color: nextValue }));
+            const nextBorderValue = { ...currentValue, color: nextValue };
+            onCommit(stringifyBorderValue(nextBorderValue), nextBorderValue);
           }}
         />
       </div>
@@ -650,7 +656,9 @@ export default function GrapesLikeProperty({ property, onCommit }: GrapesLikePro
           placeholder={property.placeholder}
           mixed={property.value.mixed}
           disabled={property.value.disabled}
-          onCommit={onCommit}
+          onCommit={(nextValue) => {
+            onCommit(nextValue, nextValue);
+          }}
         />
       </div>
     );
@@ -668,7 +676,7 @@ export default function GrapesLikeProperty({ property, onCommit }: GrapesLikePro
           mixed={property.value.mixed}
           disabled={property.value.disabled}
           onCommit={(nextValue) => {
-            onCommit(stringifyUnitValue(nextValue));
+            onCommit(stringifyUnitValue(nextValue), nextValue);
           }}
         />
       </div>
@@ -684,7 +692,9 @@ export default function GrapesLikeProperty({ property, onCommit }: GrapesLikePro
           options={property.options ?? []}
           mixed={property.value.mixed}
           disabled={property.value.disabled}
-          onCommit={onCommit}
+          onCommit={(nextValue) => {
+            onCommit(nextValue, nextValue);
+          }}
         />
       </div>
     );
@@ -699,7 +709,9 @@ export default function GrapesLikeProperty({ property, onCommit }: GrapesLikePro
           options={property.options ?? []}
           mixed={property.value.mixed}
           disabled={property.value.disabled}
-          onCommit={onCommit}
+          onCommit={(nextValue) => {
+            onCommit(nextValue, nextValue);
+          }}
         />
       </div>
     );
@@ -714,7 +726,9 @@ export default function GrapesLikeProperty({ property, onCommit }: GrapesLikePro
           placeholder={property.placeholder}
           mixed={property.value.mixed}
           disabled={property.value.disabled}
-          onCommit={onCommit}
+          onCommit={(nextValue) => {
+            onCommit(nextValue, nextValue);
+          }}
         />
       </div>
     );
@@ -730,7 +744,7 @@ export default function GrapesLikeProperty({ property, onCommit }: GrapesLikePro
           mixed={property.value.mixed}
           disabled={property.value.disabled}
           onCommit={(nextValue) => {
-            onCommit(stringifyTransitionValue(nextValue));
+            onCommit(stringifyTransitionValue(nextValue), nextValue);
           }}
         />
       </div>
@@ -747,7 +761,7 @@ export default function GrapesLikeProperty({ property, onCommit }: GrapesLikePro
           mixed={property.value.mixed}
           disabled={property.value.disabled}
           onCommit={(nextValue) => {
-            onCommit(stringifyTransformValue(nextValue));
+            onCommit(stringifyTransformValue(nextValue), nextValue);
           }}
         />
       </div>
@@ -764,7 +778,7 @@ export default function GrapesLikeProperty({ property, onCommit }: GrapesLikePro
           mixed={property.value.mixed}
           disabled={property.value.disabled}
           onCommit={(nextValue) => {
-            onCommit(stringifyShadowValue(nextValue));
+            onCommit(stringifyShadowValue(nextValue), nextValue);
           }}
         />
       </div>

@@ -12,9 +12,9 @@ import { createSelectionFeedbackController } from './selectionFeedbackController
 // @ts-ignore - Node's strip-types runtime resolves the .ts specifier; tsc flags it without allowImportingTsExtensions.
 import { readStyleSnapshot } from './styleAdapter.ts';
 // @ts-ignore - Node's strip-types runtime resolves the .ts specifier; tsc flags it without allowImportingTsExtensions.
-import { updateStyle } from './styleMapper.ts';
+import { applyStylePatch, updateStyle } from './styleMapper.ts';
 // @ts-ignore - Node's strip-types runtime resolves the .ts specifier; tsc flags it without allowImportingTsExtensions.
-import type { LayerNodeViewModel } from './types.ts';
+import type { LayerNodeViewModel, StyleStatePatch } from './types.ts';
 
 type GrapesEditor = ReturnType<typeof grapesjs.init>;
 type LayerSelectionEvent = {
@@ -486,11 +486,37 @@ function updateInlineStyle(editor: GrapesEditor, property: string, value: string
   getSelectedComponents(editor).forEach((component) => {
     const nextValue = String(value ?? '').trim();
     if (!nextValue) {
-      component?.removeStyle?.(property);
       return;
     }
 
     component?.addStyle?.({ [property]: nextValue });
+  });
+}
+
+function replaceStyleOnTarget(
+  target: GrapesStyleTarget | GrapesComponent | null | undefined,
+  currentStyle: Record<string, unknown> | null | undefined,
+  nextStyle: Record<string, string>,
+) {
+  const currentKeys = Object.keys(sanitizeStyleRecord(currentStyle));
+  currentKeys.forEach((key) => {
+    if (!Object.prototype.hasOwnProperty.call(nextStyle, key)) {
+      target?.removeStyle?.(key);
+    }
+  });
+
+  target?.addStyle?.(nextStyle);
+}
+
+function updateInlineStylePatch(editor: GrapesEditor, patch: StyleStatePatch, fallbackProperty: string, fallbackValue: string) {
+  if (!String(fallbackValue ?? '').trim()) {
+    return;
+  }
+
+  getSelectedComponents(editor).forEach((component) => {
+    const currentStyle = component?.getStyle?.();
+    const nextStyle = applyStylePatch(sanitizeStyleRecord(currentStyle) as Record<string, string>, patch);
+    replaceStyleOnTarget(component, currentStyle, nextStyle);
   });
 }
 
@@ -500,7 +526,13 @@ function sanitizeStyleRecord(style: Record<string, unknown> | null | undefined):
   }
 
   return Object.fromEntries(
-    Object.entries(style).filter(([, value]) => typeof value === 'string' || typeof value === 'number' || value == null),
+    Object.entries(style).filter(([, value]) => {
+      if (typeof value === 'string') {
+        return value.trim().length > 0;
+      }
+
+      return typeof value === 'number' || value == null;
+    }),
   ) as Record<string, string | number | null | undefined>;
 }
 
@@ -542,14 +574,42 @@ function readComputedStyleRecord(component: GrapesComponent): Record<string, str
   }, {});
 }
 
+function readInlineStyleRecord(component: GrapesComponent): Record<string, string> {
+  const element = component.getEl?.() as (Element & {
+    style?: {
+      getPropertyValue?: (property: string) => string;
+    };
+  }) | null | undefined;
+  const style = element?.style;
+  if (!style?.getPropertyValue) {
+    return {};
+  }
+
+  return COMPUTED_STYLE_PROPERTIES.reduce<Record<string, string>>((record, property) => {
+    const rawValue = style.getPropertyValue?.(property).trim();
+    if (!rawValue) {
+      return record;
+    }
+
+    record[property] = property.includes('color') ? normalizeComputedColor(rawValue) : rawValue;
+    return record;
+  }, {});
+}
+
 function getStyleSourceForComponent(editor: GrapesEditor, component: GrapesComponent, index: number) {
   const primaryTarget = index === 0
     ? (editor.getSelectedToStyle?.() as GrapesStyleTarget | undefined)
     : undefined;
-  const styleTarget = primaryTarget ?? getStyleManager(editor)?.getModelToStyle?.(component);
+  const modelTarget = getStyleManager(editor)?.getModelToStyle?.(component);
+  const componentStyle = sanitizeStyleRecord(component?.getStyle?.());
+  const modelStyle = sanitizeStyleRecord(modelTarget?.getStyle?.());
+  const ruleStyle = sanitizeStyleRecord(primaryTarget?.getStyle?.());
+
   return {
-    ...readComputedStyleRecord(component),
-    ...sanitizeStyleRecord(styleTarget?.getStyle?.() ?? component?.getStyle?.()),
+    computedStyles: readComputedStyleRecord(component),
+    inlineStyles: readInlineStyleRecord(component),
+    modelStyles: Object.keys(modelStyle).length > 0 ? modelStyle : componentStyle,
+    ruleStyles: ruleStyle,
   };
 }
 
@@ -588,6 +648,21 @@ function updateRuleStyle(editor: GrapesEditor, property: string, value: string) 
   updateInlineStyle(editor, property, value);
 }
 
+function updateRuleStylePatch(editor: GrapesEditor, patch: StyleStatePatch, fallbackProperty: string, fallbackValue: string) {
+  const targets = getStyleTargetsForSelection(editor);
+
+  if (targets.length > 0) {
+    targets.forEach((target) => {
+      const currentStyle = target.getStyle?.();
+      const nextStyle = applyStylePatch(sanitizeStyleRecord(currentStyle) as Record<string, string>, patch);
+      replaceStyleOnTarget(target, currentStyle, nextStyle);
+    });
+    return;
+  }
+
+  updateInlineStylePatch(editor, patch, fallbackProperty, fallbackValue);
+}
+
 export function createGrapesLikeInspectorBridge(editor: GrapesEditor | null) {
   if (!editor) {
     return null;
@@ -616,7 +691,7 @@ export function createGrapesLikeInspectorBridge(editor: GrapesEditor | null) {
     }),
     style: () => readStyleSnapshot({
       selection: getSelectedComponents(editor).map((component, index) => ({
-        styles: getStyleSourceForComponent(editor, component, index),
+        ...getStyleSourceForComponent(editor, component, index),
         classes: readComponentClasses(component),
       })),
       activeState: editor.SelectorManager?.getState?.() ?? '',
@@ -652,7 +727,7 @@ export function createGrapesLikeInspectorBridge(editor: GrapesEditor | null) {
         }),
         style: readStyleSnapshot({
           selection: getSelectedComponents(editor).map((component, index) => ({
-            styles: getStyleSourceForComponent(editor, component, index),
+            ...getStyleSourceForComponent(editor, component, index),
             classes: readComponentClasses(component),
           })),
           activeState: editor.SelectorManager?.getState?.() ?? '',
@@ -753,10 +828,12 @@ export function createGrapesLikeInspectorBridge(editor: GrapesEditor | null) {
         },
       },
       style: {
-        updateStyle: (input: { property: string; value: string; targetKind: 'rule' | 'inline' }) => {
+        updateStyle: (input: { property: string; value: string; targetKind: 'rule' | 'inline'; patch?: StyleStatePatch }) => {
           updateStyle({
             updateRuleStyle: (property, value) => updateRuleStyle(editor, property, value),
             updateInlineStyle: (property, value) => updateInlineStyle(editor, property, value),
+            updateRuleStylePatch: (patch, property, value) => updateRuleStylePatch(editor, patch, property, value),
+            updateInlineStylePatch: (patch, property, value) => updateInlineStylePatch(editor, patch, property, value),
           }, input);
           adapter.notify();
         },

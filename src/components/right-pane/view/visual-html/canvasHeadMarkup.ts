@@ -38,6 +38,58 @@ function markManagedNode(node: Node) {
   }
 }
 
+function isIframeElement(value: unknown): value is HTMLIFrameElement {
+  return typeof HTMLIFrameElement !== 'undefined' && value instanceof HTMLIFrameElement;
+}
+
+function resolveCanvasFrameElement(editor: ReturnType<typeof grapesjs.init>): HTMLIFrameElement | null {
+  const directFrameElement = editor.Canvas.getFrameEl?.();
+  if (isIframeElement(directFrameElement)) {
+    return directFrameElement;
+  }
+
+  const frameWindow = editor.Canvas.getWindow?.();
+  if (isIframeElement(frameWindow?.frameElement)) {
+    return frameWindow.frameElement;
+  }
+
+  const container = editor.getContainer?.();
+  const queriedFrame = container?.querySelector?.('iframe');
+  if (isIframeElement(queriedFrame)) {
+    return queriedFrame;
+  }
+
+  return null;
+}
+
+export function resolveCanvasDocument(editor: ReturnType<typeof grapesjs.init>): Document | null {
+  const directDocument = editor.Canvas.getDocument?.();
+  if (directDocument) {
+    return directDocument;
+  }
+
+  const frameElement = resolveCanvasFrameElement(editor);
+  if (frameElement?.contentDocument) {
+    return frameElement.contentDocument;
+  }
+
+  const frameWindow = editor.Canvas.getWindow?.();
+  if (frameWindow?.document) {
+    return frameWindow.document;
+  }
+
+  return null;
+}
+
+export function resolveCanvasBody(editor: ReturnType<typeof grapesjs.init>): HTMLBodyElement | null {
+  const directBody = editor.Canvas.getBody?.();
+  if (directBody) {
+    return directBody;
+  }
+
+  return resolveCanvasDocument(editor)?.body ?? null;
+}
+
 export function splitCanvasHeadMarkup(headMarkup: string): {
   staticMarkup: string;
   scripts: CanvasHeadScript[];
@@ -106,7 +158,7 @@ export function rewriteCanvasHeadAssetUrls(headMarkup: string, assetBaseUrl: str
 }
 
 export function injectCanvasHeadMarkup(editor: ReturnType<typeof grapesjs.init>, headMarkup: string) {
-  const canvasDocument = editor.Canvas.getDocument?.();
+  const canvasDocument = resolveCanvasDocument(editor);
   if (!canvasDocument?.head) {
     return;
   }

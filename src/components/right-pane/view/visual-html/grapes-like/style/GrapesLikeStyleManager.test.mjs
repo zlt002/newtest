@@ -21,7 +21,7 @@ export async function load(url, context, nextLoad) {
 register(`data:text/javascript,${encodeURIComponent(loaderSource)}`, import.meta.url);
 
 const { EMPTY_STYLE_SNAPSHOT } = await import('../types.ts');
-const { default: GrapesLikeStyleManager, toggleStyleSector } = await import('./GrapesLikeStyleManager.tsx');
+const { default: GrapesLikeStyleManager, createStyleUpdateInput, resolveStyleWriteTargetKind, toggleStyleSector } = await import('./GrapesLikeStyleManager.tsx');
 const { default: GrapesLikeSector } = await import('./GrapesLikeSector.tsx');
 const { default: GrapesLikeProperty, createStylePropertyPatch } = await import('./GrapesLikeProperty.tsx');
 const { default: NumberField, syncNumberFieldState, applyDragDeltaToNumberField } = await import('./fields/NumberField.tsx');
@@ -81,7 +81,7 @@ test('GrapesLikeStyleManager uses a compact full-width grid for style properties
   );
 
   assert.match(markup, /data-style-manager="true" class="[^"]*w-full/);
-  assert.match(markup, /class="flex flex-col px-2 pb-2 w-full gl-sector-body"/);
+  assert.match(markup, /class="gl-sector-body flex w-full flex-col px-2 pb-2"/);
   assert.match(markup, /class="gl-sector-grid grid grid-cols-2 grid-cols-\[repeat\(auto-fit,minmax\(96px,1fr\)\)\] gap-1"/);
   assert.match(markup, /class="gl-property gl-property-compact col-span-1 w-full"/);
   assert.match(markup, /class="gl-property gl-property-compact col-span-full w-full"/);
@@ -803,6 +803,82 @@ test('GrapesLikeProperty reads the current scalar value from unit-style snapshot
   assert.match(markup, /aria-pressed="true"[^>]*aria-label="左浮动"/);
 });
 
+test('GrapesLikeProperty renders number field values from unit-style snapshots', () => {
+  const markup = renderToStaticMarkup(
+    React.createElement(GrapesLikeProperty, {
+      property: {
+        label: '宽度',
+        property: 'width',
+        kind: 'number',
+        value: { committed: { value: '251.46', unit: 'px' } },
+        units: ['px', '%'],
+      },
+      targetKind: 'inline',
+      onCommit: () => {},
+    }),
+  );
+
+  assert.match(markup, /aria-label="宽度"/);
+  assert.match(markup, /value="251.46"/);
+  assert.match(markup, /<option value="px" selected="">px<\/option>/);
+});
+
+test('createStyleUpdateInput attaches structured patches to property commits', () => {
+  assert.deepEqual(
+    createStyleUpdateInput(
+      'layout',
+      'width',
+      '251.46px',
+      'inline',
+      { value: '251.46', unit: 'px' },
+    ),
+    {
+      property: 'width',
+      value: '251.46px',
+      targetKind: 'inline',
+      patch: {
+        layout: {
+          width: { value: '251.46', unit: 'px' },
+        },
+      },
+    },
+  );
+});
+
+test('resolveStyleWriteTargetKind forces inspector writes to inline styles', () => {
+  assert.equal(resolveStyleWriteTargetKind(), 'inline');
+});
+
+test('GrapesLikeStyleManager renders number values from source snapshots', () => {
+  const markup = renderToStaticMarkup(
+    React.createElement(GrapesLikeStyleManager, {
+      style: {
+        ...EMPTY_STYLE_SNAPSHOT,
+        sectors: [
+          {
+            key: 'layout',
+            title: '布局',
+            properties: [
+              {
+                property: 'width',
+                label: '宽度',
+                kind: 'number',
+                value: { committed: { value: '251.46', unit: 'px' } },
+                units: ['px', '%'],
+              },
+            ],
+          },
+        ],
+      },
+      actions: {
+        updateStyle: () => {},
+      },
+    }),
+  );
+
+  assert.match(markup, /value="251.46"/);
+});
+
 test('GrapesLikeProperty renders transform stack fields with function and argument controls', () => {
   const markup = renderToStaticMarkup(
     React.createElement(GrapesLikeProperty, {
@@ -925,7 +1001,7 @@ test('NumberField preserves usable space for numeric input when a unit select is
   assert.match(markup, /text-\[10px\] font-medium leading-4 text-muted-foreground/);
   assert.match(markup, /aria-label="拖动 左"/);
   assert.match(markup, /cursor-ew-resize/);
-  assert.match(markup, /transition-colors hover:bg-accent focus-within:bg-accent/);
+  assert.match(markup, /transition-colors focus-within:bg-accent hover:bg-accent/);
   assert.match(markup, /<option value="px" selected="">px<\/option>/);
 });
 
@@ -1215,7 +1291,7 @@ test('style fields stay full-width and avoid empty side gutters', () => {
 
   assert.match(markup, /data-style-property="width"/);
   assert.match(markup, /class="gl-property gl-property-compact col-span-1 w-full"/);
-  assert.match(markup, /class="gl-field flex min-w-0 w-full/);
+  assert.match(markup, /class="gl-field flex w-full min-w-0/);
 });
 
 test('mixed style fields render placeholder instead of concrete value', () => {

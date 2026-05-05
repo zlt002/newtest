@@ -555,7 +555,7 @@ test('createGrapesLikeInspectorBridge does not materialize selected container ch
   assert.equal(heroChildReads, 1);
 });
 
-test('createGrapesLikeInspectorBridge reads style values from editor.getSelectedToStyle when classes map to a rule target', () => {
+test('createGrapesLikeInspectorBridge reads selected style target values while defaulting snapshot writes to inline', () => {
   const { editor, cta } = createEditorFixture();
   const ruleTarget = {
     getStyle: () => ({
@@ -576,7 +576,7 @@ test('createGrapesLikeInspectorBridge reads style values from editor.getSelected
   const floatProperty = layout.properties.find((property) => property.property === 'float');
   const displayProperty = layout.properties.find((property) => property.property === 'display');
 
-  assert.equal(snapshot.style.targetKind, 'rule');
+  assert.equal(snapshot.style.targetKind, 'inline');
   assert.equal(floatProperty.value.committed.value, 'left');
   assert.equal(ruleTarget.getStyle().left, '40px');
   assert.equal(displayProperty.value.committed.value, 'flex');
@@ -613,7 +613,7 @@ test('createGrapesLikeInspectorBridge keeps writing rule styles to the same sele
   const layout = snapshot.style.sectors.find((sector) => sector.key === 'layout');
   const positionProperty = layout.properties.find((property) => property.property === 'position');
 
-  assert.equal(snapshot.style.targetKind, 'rule');
+  assert.equal(snapshot.style.targetKind, 'inline');
   assert.equal(positionProperty.value.committed.value, 'absolute');
   assert.equal(ruleState.top, '12px');
 });
@@ -691,4 +691,228 @@ test('createGrapesLikeInspectorBridge falls back to computed styles for inspecto
   assert.equal(fontSize.value.committed.value, '24');
   assert.equal(fontSize.value.committed.unit, 'px');
   assert.equal(backgroundColor.value.committed.value, '#16eec7');
+});
+
+test('createGrapesLikeInspectorBridge does not let blank style target values hide computed inline echo', () => {
+  const { editor, cta } = createEditorFixture();
+  const computedValues = {
+    'font-size': '21px',
+    'font-weight': '500',
+  };
+  const element = {
+    ownerDocument: {
+      defaultView: {
+        getComputedStyle: () => ({
+          getPropertyValue: (property) => computedValues[property] ?? '',
+        }),
+      },
+    },
+  };
+  const styleTarget = {
+    getStyle: () => ({
+      'font-size': '',
+      'font-weight': '500',
+    }),
+  };
+
+  cta.getStyle = () => ({});
+  cta.getEl = () => element;
+  editor.getSelectedToStyle = () => styleTarget;
+  editor.StyleManager = {
+    getModelToStyle: () => styleTarget,
+  };
+
+  const bridge = createGrapesLikeInspectorBridge(editor);
+  const snapshot = bridge.adapter.getSnapshot();
+  const text = snapshot.style.sectors.find((sector) => sector.key === 'text');
+  const fontSize = text.properties.find((property) => property.property === 'fontSize');
+  const fontWeight = text.properties.find((property) => property.property === 'fontWeight');
+
+  assert.equal(fontSize.value.committed.value, '21');
+  assert.equal(fontSize.value.committed.unit, 'px');
+  assert.equal(fontWeight.value.committed.value, '500');
+});
+
+test('createGrapesLikeInspectorBridge prefers DOM inline styles for editable style echo', () => {
+  const { editor, cta } = createEditorFixture();
+  const computedValues = {
+    width: 'auto',
+    height: 'auto',
+    'font-size': '',
+    'background-color': 'rgb(176, 33, 33)',
+    color: 'rgb(255, 255, 255)',
+  };
+  const inlineValues = {
+    width: '251.46px',
+    height: '131.33px',
+    'font-size': '21px',
+    'padding-right': '96px',
+    'background-color': '#b02121',
+    color: '#ffffff',
+  };
+  const element = {
+    style: {
+      getPropertyValue: (property) => inlineValues[property] ?? '',
+    },
+    ownerDocument: {
+      defaultView: {
+        getComputedStyle: () => ({
+          getPropertyValue: (property) => computedValues[property] ?? '',
+        }),
+      },
+    },
+  };
+
+  cta.getStyle = () => ({});
+  cta.getEl = () => element;
+
+  const bridge = createGrapesLikeInspectorBridge(editor);
+  const snapshot = bridge.adapter.getSnapshot();
+  const layout = snapshot.style.sectors.find((sector) => sector.key === 'layout');
+  const spacing = snapshot.style.sectors.find((sector) => sector.key === 'spacing');
+  const text = snapshot.style.sectors.find((sector) => sector.key === 'text');
+  const appearance = snapshot.style.sectors.find((sector) => sector.key === 'appearance');
+  const width = layout.properties.find((property) => property.property === 'width');
+  const height = layout.properties.find((property) => property.property === 'height');
+  const padding = spacing.properties.find((property) => property.property === 'padding');
+  const fontSize = text.properties.find((property) => property.property === 'fontSize');
+  const color = text.properties.find((property) => property.property === 'color');
+  const backgroundColor = appearance.properties.find((property) => property.property === 'backgroundColor');
+
+  assert.equal(width.value.committed.value, '251.46');
+  assert.equal(width.value.committed.unit, 'px');
+  assert.equal(width.value.resolved.source, 'inline');
+  assert.deepEqual(width.value.resolved.computed, { value: 'auto', unit: '' });
+  assert.deepEqual(width.value.resolved.authored, { value: '251.46', unit: 'px' });
+  assert.equal(height.value.committed.value, '131.33');
+  assert.equal(height.value.committed.unit, 'px');
+  assert.equal(height.value.resolved.source, 'inline');
+  assert.equal(fontSize.value.committed.value, '21');
+  assert.equal(fontSize.value.committed.unit, 'px');
+  assert.equal(fontSize.value.resolved.source, 'inline');
+  assert.equal(padding.value.committed.right, '96');
+  assert.equal(padding.value.committed.unit, 'px');
+  assert.equal(padding.value.resolved.source, 'inline');
+  assert.equal(color.value.committed.value, '#ffffff');
+  assert.equal(backgroundColor.value.committed.value, '#b02121');
+  assert.equal(backgroundColor.value.resolved.source, 'inline');
+});
+
+test('createGrapesLikeInspectorBridge keeps rule values contextual while defaulting writes inline', () => {
+  const { editor, cta } = createEditorFixture();
+  const computedValues = { color: 'rgb(0, 0, 0)' };
+  const element = {
+    style: {
+      getPropertyValue: () => '',
+    },
+    ownerDocument: {
+      defaultView: {
+        getComputedStyle: () => ({
+          getPropertyValue: (property) => computedValues[property] ?? '',
+        }),
+      },
+    },
+  };
+  const ruleTarget = {
+    getStyle: () => ({ color: '#ffffff' }),
+  };
+
+  cta.getStyle = () => ({});
+  cta.getEl = () => element;
+  cta.getClasses = () => [{ get: (key) => (key === 'name' ? 'form-label' : undefined) }];
+  editor.getSelectedToStyle = () => ruleTarget;
+
+  const bridge = createGrapesLikeInspectorBridge(editor);
+  const snapshot = bridge.adapter.getSnapshot();
+  const text = snapshot.style.sectors.find((sector) => sector.key === 'text');
+  const color = text.properties.find((property) => property.property === 'color');
+
+  assert.equal(snapshot.style.targetKind, 'inline');
+  assert.equal(color.value.committed.value, '#ffffff');
+  assert.equal(color.value.resolved.source, 'rule');
+});
+
+test('createGrapesLikeInspectorBridge keeps inspector commits inline even when a rule provided the echo', () => {
+  const { editor, cta } = createEditorFixture();
+  const inlineStyleState = {};
+  const ruleStyleState = { width: '251.46px' };
+  const ruleTarget = {
+    getStyle: () => ({ ...ruleStyleState }),
+    addStyle: (patch) => Object.assign(ruleStyleState, patch),
+  };
+
+  cta.getStyle = () => ({ ...inlineStyleState });
+  cta.addStyle = (patch) => Object.assign(inlineStyleState, patch);
+  editor.getSelectedToStyle = () => ruleTarget;
+
+  const bridge = createGrapesLikeInspectorBridge(editor);
+  bridge.actions.style.updateStyle({
+    property: 'width',
+    value: '260px',
+    targetKind: 'inline',
+    patch: {
+      layout: {
+        width: {
+          value: '260',
+          unit: 'px',
+        },
+      },
+    },
+  });
+
+  assert.equal(inlineStyleState.width, '260px');
+  assert.equal(ruleStyleState.width, '251.46px');
+});
+
+test('createGrapesLikeInspectorBridge ignores blank inline style writes by default', () => {
+  const { editor, cta } = createEditorFixture();
+  const styleState = { width: '120px' };
+
+  cta.getStyle = () => ({ ...styleState });
+  cta.addStyle = (patch) => Object.assign(styleState, patch);
+  cta.removeStyle = (property) => {
+    delete styleState[property];
+  };
+
+  const bridge = createGrapesLikeInspectorBridge(editor);
+  bridge.actions.style.updateStyle({ property: 'width', value: '', targetKind: 'inline' });
+
+  assert.equal(styleState.width, '120px');
+});
+
+test('createGrapesLikeInspectorBridge applies structured inline patches through style preservation', () => {
+  const { editor, cta } = createEditorFixture();
+  let styleState = {
+    padding: '10px 20px 30px 40px',
+    'padding-right': '96px',
+  };
+
+  cta.getStyle = () => ({ ...styleState });
+  cta.addStyle = (patch) => {
+    styleState = { ...styleState, ...patch };
+  };
+  cta.removeStyle = (property) => {
+    delete styleState[property];
+  };
+
+  const bridge = createGrapesLikeInspectorBridge(editor);
+  bridge.actions.style.updateStyle({
+    property: 'padding',
+    value: '10px 104px 30px 40px',
+    targetKind: 'inline',
+    patch: {
+      spacing: {
+        padding: {
+          right: '104',
+          unit: 'px',
+        },
+      },
+    },
+  });
+
+  assert.equal(styleState.padding, undefined);
+  assert.equal(styleState['padding-top'], '10px');
+  assert.equal(styleState['padding-right'], '104px');
+  assert.equal(styleState['padding-bottom'], '30px');
+  assert.equal(styleState['padding-left'], '40px');
 });

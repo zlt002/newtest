@@ -1,6 +1,6 @@
 import { useState } from 'react';
 // @ts-ignore - Local runtime supports the .ts specifier used across this folder.
-import type { InspectorSnapshot, LayerSnapshot, StyleSnapshot } from './types.ts';
+import type { InspectorSnapshot, LayerSnapshot, StyleSnapshot, StyleStatePatch } from './types.ts';
 import GrapesLikeLayerManager from './layers/GrapesLikeLayerManager';
 import GrapesLikeStyleManager from './style/GrapesLikeStyleManager';
 import { useGrapesLikeInspectorSnapshot } from './useGrapesLikeInspectorSnapshot';
@@ -25,7 +25,7 @@ type GrapesLikeInspectorPaneProps = {
       setState: (state: string) => void;
     };
     style: {
-      updateStyle: (input: { property: string; value: string; targetKind: 'rule' | 'inline' }) => void;
+      updateStyle: (input: { property: string; value: string; targetKind: 'rule' | 'inline'; patch?: StyleStatePatch }) => void;
     };
     layers: {
       selectLayer: (id: string, event?: { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean } | null) => void;

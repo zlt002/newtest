@@ -1353,6 +1353,17 @@ test('SpacingOverlay source wires ctrl drag marquee selection to the canvas', as
   assert.match(source, /event\.ctrlKey/);
   assert.match(source, /collectMarqueeSelectionComponents/);
   assert.match(source, /clearMarqueeSourceSelection/);
+  assert.match(source, /readMarqueeSelectionCandidatesFromHitTest/);
+  assert.match(source, /elementsFromPoint/);
+  assert.match(source, /readMarqueeCaretElementFromPoint/);
+  assert.match(source, /caretRangeFromPoint/);
+  assert.match(source, /caretPositionFromPoint/);
+  assert.match(source, /findMarqueeSelectionComponentElementFromHit/);
+  assert.match(source, /'_gjs-data'/);
+  assert.match(source, /buildMarqueeComponentByElementMap/);
+  assert.match(source, /componentByElement\.get\(current\)/);
+  assert.match(source, /MARQUEE_SELECTION_MAX_HIT_TEST_POINTS/);
+  assert.doesNotMatch(source, /candidates: readMarqueeSelectionCandidates\(body\)/);
   assert.match(source, /setCanvasMarqueeChromeSuppressed/);
   assert.match(source, /data-ccui-marquee-selection/);
   assert.match(source, /canvas:frame:load/);
@@ -1567,6 +1578,720 @@ test('attachCanvasMarqueeSelection clears existing selection while ctrl is held 
 
   assert.deepEqual(selectCalls, [[], [firstComponent, secondComponent]]);
   assert.equal(body.dataset.ccuiMarqueeSelecting, undefined);
+
+  detach();
+});
+
+test('attachCanvasMarqueeSelection defers expensive candidate scans until drag release', () => {
+  const win = createMarqueeEventTarget();
+  const doc = createMarqueeEventTarget();
+  const html = createMarqueeEventTarget();
+  const body = createMarqueeEventTarget();
+  let querySelectorAllCalls = 0;
+
+  Object.assign(win, {
+    requestAnimationFrame: (callback) => {
+      callback();
+      return 1;
+    },
+    cancelAnimationFrame: () => {},
+  });
+  Object.assign(doc, {
+    defaultView: win,
+    documentElement: html,
+    createElement: () => ({
+      style: {},
+      setAttribute: () => {},
+      remove: () => {},
+    }),
+  });
+  Object.assign(body, {
+    ownerDocument: doc,
+    style: {},
+    dataset: {},
+    appendChild: () => {},
+    querySelectorAll: () => {
+      querySelectorAllCalls += 1;
+      return [];
+    },
+  });
+
+  const eventBase = {
+    pointerId: 13,
+    ctrlKey: true,
+    button: 0,
+    target: {
+      closest: () => null,
+      setPointerCapture: () => {},
+    },
+    preventDefault: () => {},
+    stopPropagation: () => {},
+  };
+
+  const detach = attachCanvasMarqueeSelection({
+    Canvas: {
+      getBody: () => body,
+    },
+    select() {},
+  });
+
+  doc.emit('pointerdown', {
+    ...eventBase,
+    clientX: 0,
+    clientY: 0,
+  });
+  win.emit('pointermove', {
+    ...eventBase,
+    clientX: 80,
+    clientY: 80,
+  });
+
+  assert.equal(querySelectorAllCalls, 0);
+
+  win.emit('pointerup', {
+    ...eventBase,
+    clientX: 80,
+    clientY: 80,
+  });
+
+  assert.equal(querySelectorAllCalls, 1);
+
+  detach();
+});
+
+test('attachCanvasMarqueeSelection uses elementsFromPoint instead of full DOM scans when available', () => {
+  const win = createMarqueeEventTarget();
+  const doc = createMarqueeEventTarget();
+  const html = createMarqueeEventTarget();
+  const body = createMarqueeEventTarget();
+  const selectedComponent = {
+    get: (key) => (key === 'selectable' ? true : undefined),
+    parents: () => [],
+  };
+  const selectedElement = {
+    __gjsv: { model: selectedComponent },
+    closest: () => null,
+    getBoundingClientRect: () => ({ left: 10, top: 10, right: 30, bottom: 30, width: 20, height: 20 }),
+  };
+  const selectCalls = [];
+
+  Object.assign(win, {
+    HTMLElement: Object,
+    requestAnimationFrame: (callback) => {
+      callback();
+      return 1;
+    },
+    cancelAnimationFrame: () => {},
+  });
+  Object.assign(doc, {
+    defaultView: win,
+    documentElement: html,
+    createElement: () => ({
+      style: {},
+      setAttribute: () => {},
+      remove: () => {},
+    }),
+    elementsFromPoint: () => [selectedElement],
+  });
+  Object.assign(body, {
+    ownerDocument: doc,
+    style: {},
+    dataset: {},
+    appendChild: () => {},
+    contains: (element) => element === selectedElement,
+    querySelectorAll: () => {
+      throw new Error('框选命中不应该全量扫描 DOM');
+    },
+  });
+
+  const eventBase = {
+    pointerId: 14,
+    ctrlKey: true,
+    button: 0,
+    target: {
+      closest: () => null,
+      setPointerCapture: () => {},
+    },
+    preventDefault: () => {},
+    stopPropagation: () => {},
+  };
+
+  const detach = attachCanvasMarqueeSelection({
+    Canvas: {
+      getBody: () => body,
+    },
+    select(components) {
+      selectCalls.push(components);
+    },
+  });
+
+  doc.emit('pointerdown', {
+    ...eventBase,
+    clientX: 0,
+    clientY: 0,
+  });
+  win.emit('pointermove', {
+    ...eventBase,
+    clientX: 80,
+    clientY: 80,
+  });
+  win.emit('pointerup', {
+    ...eventBase,
+    clientX: 80,
+    clientY: 80,
+  });
+
+  assert.deepEqual(selectCalls, [[], [selectedComponent]]);
+
+  detach();
+});
+
+test('attachCanvasMarqueeSelection falls back to a batched candidate scan when hit testing finds no components', () => {
+  const win = createMarqueeEventTarget();
+  const doc = createMarqueeEventTarget();
+  const html = createMarqueeEventTarget();
+  const body = createMarqueeEventTarget();
+  const selectedComponent = {
+    get: (key) => (key === 'selectable' ? true : undefined),
+    parents: () => [],
+  };
+  const selectedElement = {
+    __gjsv: { model: selectedComponent },
+    closest: () => null,
+    getBoundingClientRect: () => ({ left: 10, top: 10, right: 30, bottom: 30, width: 20, height: 20 }),
+  };
+  const selectCalls = [];
+  let querySelectorAllCalls = 0;
+  const frameQueue = [];
+
+  Object.assign(win, {
+    HTMLElement: Object,
+    requestAnimationFrame: (callback) => {
+      frameQueue.push(callback);
+      return frameQueue.length;
+    },
+    cancelAnimationFrame: () => {},
+  });
+  Object.assign(doc, {
+    defaultView: win,
+    documentElement: html,
+    createElement: () => ({
+      style: {},
+      setAttribute: () => {},
+      remove: () => {},
+    }),
+    elementsFromPoint: () => [],
+  });
+  Object.assign(body, {
+    ownerDocument: doc,
+    style: {},
+    dataset: {},
+    appendChild: () => {},
+    contains: () => false,
+    querySelectorAll: () => {
+      querySelectorAllCalls += 1;
+      return [selectedElement];
+    },
+  });
+
+  const eventBase = {
+    pointerId: 19,
+    ctrlKey: true,
+    button: 0,
+    target: {
+      closest: () => null,
+      setPointerCapture: () => {},
+    },
+    preventDefault: () => {},
+    stopPropagation: () => {},
+  };
+
+  const detach = attachCanvasMarqueeSelection({
+    Canvas: {
+      getBody: () => body,
+    },
+    select(components) {
+      selectCalls.push(components);
+    },
+  });
+
+  doc.emit('pointerdown', {
+    ...eventBase,
+    clientX: 0,
+    clientY: 0,
+  });
+  win.emit('pointermove', {
+    ...eventBase,
+    clientX: 80,
+    clientY: 80,
+  });
+  frameQueue.shift()?.();
+  win.emit('pointerup', {
+    ...eventBase,
+    clientX: 80,
+    clientY: 80,
+  });
+
+  assert.deepEqual(selectCalls, [[]]);
+  assert.equal(querySelectorAllCalls, 1);
+  frameQueue.shift()?.();
+  frameQueue.shift()?.();
+  assert.deepEqual(selectCalls, [[], [selectedComponent]]);
+
+  detach();
+});
+
+test('attachCanvasMarqueeSelection resolves text hits through caretRangeFromPoint before falling back', () => {
+  const win = createMarqueeEventTarget();
+  const doc = createMarqueeEventTarget();
+  const html = createMarqueeEventTarget();
+  const body = createMarqueeEventTarget();
+  const selectedComponent = {
+    get: (key) => (key === 'selectable' ? true : undefined),
+    parents: () => [],
+  };
+  const textHostElement = {
+    __gjsv: { model: selectedComponent },
+    closest: () => null,
+    parentElement: body,
+    getBoundingClientRect: () => ({ left: 10, top: 10, right: 30, bottom: 30, width: 20, height: 20 }),
+  };
+  const textNode = {
+    nodeType: 3,
+    parentElement: textHostElement,
+  };
+  const selectCalls = [];
+
+  Object.assign(win, {
+    HTMLElement: Object,
+    requestAnimationFrame: (callback) => {
+      callback();
+      return 1;
+    },
+    cancelAnimationFrame: () => {},
+  });
+  Object.assign(doc, {
+    defaultView: win,
+    documentElement: html,
+    createElement: () => ({
+      style: {},
+      setAttribute: () => {},
+      remove: () => {},
+    }),
+    caretRangeFromPoint: () => ({ startContainer: textNode }),
+    elementsFromPoint: () => [],
+  });
+  Object.assign(body, {
+    ownerDocument: doc,
+    style: {},
+    dataset: {},
+    appendChild: () => {},
+    contains: (element) => element === textHostElement,
+    querySelectorAll: () => {
+      throw new Error('caretRangeFromPoint 命中文本后不应该进入慢速全量扫描');
+    },
+  });
+
+  const eventBase = {
+    pointerId: 20,
+    ctrlKey: true,
+    button: 0,
+    target: {
+      closest: () => null,
+      setPointerCapture: () => {},
+    },
+    preventDefault: () => {},
+    stopPropagation: () => {},
+  };
+
+  const detach = attachCanvasMarqueeSelection({
+    Canvas: {
+      getBody: () => body,
+    },
+    select(components) {
+      selectCalls.push(components);
+    },
+  });
+
+  doc.emit('pointerdown', {
+    ...eventBase,
+    clientX: 0,
+    clientY: 0,
+  });
+  win.emit('pointermove', {
+    ...eventBase,
+    clientX: 80,
+    clientY: 80,
+  });
+  win.emit('pointerup', {
+    ...eventBase,
+    clientX: 80,
+    clientY: 80,
+  });
+
+  assert.deepEqual(selectCalls, [[], [selectedComponent]]);
+
+  detach();
+});
+
+test('attachCanvasMarqueeSelection resolves hit-tested child nodes to their nearest component parent', () => {
+  const win = createMarqueeEventTarget();
+  const doc = createMarqueeEventTarget();
+  const html = createMarqueeEventTarget();
+  const body = createMarqueeEventTarget();
+  const selectedComponent = {
+    get: (key) => (key === 'selectable' ? true : undefined),
+    parents: () => [],
+  };
+  const parentElement = {
+    __gjsv: { model: selectedComponent },
+    closest: () => null,
+    parentElement: body,
+    getBoundingClientRect: () => ({ left: 10, top: 10, right: 30, bottom: 30, width: 20, height: 20 }),
+  };
+  const childElement = {
+    closest: () => null,
+    parentElement,
+  };
+  const selectCalls = [];
+
+  Object.assign(win, {
+    HTMLElement: Object,
+    requestAnimationFrame: (callback) => {
+      callback();
+      return 1;
+    },
+    cancelAnimationFrame: () => {},
+  });
+  Object.assign(doc, {
+    defaultView: win,
+    documentElement: html,
+    createElement: () => ({
+      style: {},
+      setAttribute: () => {},
+      remove: () => {},
+    }),
+    elementsFromPoint: () => [childElement],
+  });
+  Object.assign(body, {
+    ownerDocument: doc,
+    style: {},
+    dataset: {},
+    appendChild: () => {},
+    contains: (element) => element === childElement || element === parentElement,
+    querySelectorAll: () => {
+      throw new Error('框选命中子节点不应该回退到全量扫描 DOM');
+    },
+  });
+
+  const eventBase = {
+    pointerId: 15,
+    ctrlKey: true,
+    button: 0,
+    target: {
+      closest: () => null,
+      setPointerCapture: () => {},
+    },
+    preventDefault: () => {},
+    stopPropagation: () => {},
+  };
+
+  const detach = attachCanvasMarqueeSelection({
+    Canvas: {
+      getBody: () => body,
+    },
+    select(components) {
+      selectCalls.push(components);
+    },
+  });
+
+  doc.emit('pointerdown', {
+    ...eventBase,
+    clientX: 0,
+    clientY: 0,
+  });
+  win.emit('pointermove', {
+    ...eventBase,
+    clientX: 80,
+    clientY: 80,
+  });
+  win.emit('pointerup', {
+    ...eventBase,
+    clientX: 80,
+    clientY: 80,
+  });
+
+  assert.deepEqual(selectCalls, [[], [selectedComponent]]);
+
+  detach();
+});
+
+test('attachCanvasMarqueeSelection keeps hit-tested components even when their full rect center is outside the marquee', () => {
+  const win = createMarqueeEventTarget();
+  const doc = createMarqueeEventTarget();
+  const html = createMarqueeEventTarget();
+  const body = createMarqueeEventTarget();
+  const selectedComponent = {
+    get: (key) => (key === 'selectable' ? true : undefined),
+    parents: () => [],
+  };
+  const selectedElement = {
+    __gjsv: { model: selectedComponent },
+    closest: () => null,
+    parentElement: body,
+    getBoundingClientRect: () => ({ left: 0, top: 0, right: 1000, bottom: 1000, width: 1000, height: 1000 }),
+  };
+  const selectCalls = [];
+
+  Object.assign(win, {
+    HTMLElement: Object,
+    requestAnimationFrame: (callback) => {
+      callback();
+      return 1;
+    },
+    cancelAnimationFrame: () => {},
+  });
+  Object.assign(doc, {
+    defaultView: win,
+    documentElement: html,
+    createElement: () => ({
+      style: {},
+      setAttribute: () => {},
+      remove: () => {},
+    }),
+    elementsFromPoint: () => [selectedElement],
+  });
+  Object.assign(body, {
+    ownerDocument: doc,
+    style: {},
+    dataset: {},
+    appendChild: () => {},
+    contains: (element) => element === selectedElement,
+    querySelectorAll: () => {
+      throw new Error('hit-test 命中后不应该因为大 rect 中心在框外而回退扫描');
+    },
+  });
+
+  const eventBase = {
+    pointerId: 16,
+    ctrlKey: true,
+    button: 0,
+    target: {
+      closest: () => null,
+      setPointerCapture: () => {},
+    },
+    preventDefault: () => {},
+    stopPropagation: () => {},
+  };
+
+  const detach = attachCanvasMarqueeSelection({
+    Canvas: {
+      getBody: () => body,
+    },
+    select(components) {
+      selectCalls.push(components);
+    },
+  });
+
+  doc.emit('pointerdown', {
+    ...eventBase,
+    clientX: 20,
+    clientY: 20,
+  });
+  win.emit('pointermove', {
+    ...eventBase,
+    clientX: 80,
+    clientY: 80,
+  });
+  win.emit('pointerup', {
+    ...eventBase,
+    clientX: 80,
+    clientY: 80,
+  });
+
+  assert.deepEqual(selectCalls, [[], [selectedComponent]]);
+
+  detach();
+});
+
+test('attachCanvasMarqueeSelection reads GrapesJS data model fallback from hit-tested elements', () => {
+  const win = createMarqueeEventTarget();
+  const doc = createMarqueeEventTarget();
+  const html = createMarqueeEventTarget();
+  const body = createMarqueeEventTarget();
+  const selectedComponent = {
+    get: (key) => (key === 'selectable' ? true : undefined),
+    parents: () => [],
+  };
+  const selectedElement = {
+    '_gjs-data': { model: selectedComponent },
+    closest: () => null,
+    parentElement: body,
+    getBoundingClientRect: () => ({ left: 10, top: 10, right: 30, bottom: 30, width: 20, height: 20 }),
+  };
+  const selectCalls = [];
+
+  Object.assign(win, {
+    HTMLElement: Object,
+    requestAnimationFrame: (callback) => {
+      callback();
+      return 1;
+    },
+    cancelAnimationFrame: () => {},
+  });
+  Object.assign(doc, {
+    defaultView: win,
+    documentElement: html,
+    createElement: () => ({
+      style: {},
+      setAttribute: () => {},
+      remove: () => {},
+    }),
+    elementsFromPoint: () => [selectedElement],
+  });
+  Object.assign(body, {
+    ownerDocument: doc,
+    style: {},
+    dataset: {},
+    appendChild: () => {},
+    contains: (element) => element === selectedElement,
+    querySelectorAll: () => {
+      throw new Error('GrapesJS data model fallback 命中后不应该全量扫描 DOM');
+    },
+  });
+
+  const eventBase = {
+    pointerId: 17,
+    ctrlKey: true,
+    button: 0,
+    target: {
+      closest: () => null,
+      setPointerCapture: () => {},
+    },
+    preventDefault: () => {},
+    stopPropagation: () => {},
+  };
+
+  const detach = attachCanvasMarqueeSelection({
+    Canvas: {
+      getBody: () => body,
+    },
+    select(components) {
+      selectCalls.push(components);
+    },
+  });
+
+  doc.emit('pointerdown', {
+    ...eventBase,
+    clientX: 0,
+    clientY: 0,
+  });
+  win.emit('pointermove', {
+    ...eventBase,
+    clientX: 80,
+    clientY: 80,
+  });
+  win.emit('pointerup', {
+    ...eventBase,
+    clientX: 80,
+    clientY: 80,
+  });
+
+  assert.deepEqual(selectCalls, [[], [selectedComponent]]);
+
+  detach();
+});
+
+test('attachCanvasMarqueeSelection resolves hit-tested elements through the GrapesJS component tree map', () => {
+  const win = createMarqueeEventTarget();
+  const doc = createMarqueeEventTarget();
+  const html = createMarqueeEventTarget();
+  const body = createMarqueeEventTarget();
+  const selectedElement = {
+    closest: () => null,
+    parentElement: body,
+    getBoundingClientRect: () => ({ left: 10, top: 10, right: 30, bottom: 30, width: 20, height: 20 }),
+  };
+  const selectedComponent = {
+    get: (key) => (key === 'selectable' ? true : undefined),
+    getEl: () => selectedElement,
+    parents: () => [],
+    components: () => [],
+  };
+  const wrapperComponent = {
+    getEl: () => body,
+    components: () => ({ models: [selectedComponent] }),
+  };
+  const selectCalls = [];
+
+  Object.assign(win, {
+    HTMLElement: Object,
+    requestAnimationFrame: (callback) => {
+      callback();
+      return 1;
+    },
+    cancelAnimationFrame: () => {},
+  });
+  Object.assign(doc, {
+    defaultView: win,
+    documentElement: html,
+    createElement: () => ({
+      style: {},
+      setAttribute: () => {},
+      remove: () => {},
+    }),
+    elementsFromPoint: () => [selectedElement],
+  });
+  Object.assign(body, {
+    ownerDocument: doc,
+    style: {},
+    dataset: {},
+    appendChild: () => {},
+    contains: (element) => element === selectedElement,
+    querySelectorAll: () => {
+      throw new Error('component tree map 命中后不应该全量扫描 DOM');
+    },
+  });
+
+  const eventBase = {
+    pointerId: 18,
+    ctrlKey: true,
+    button: 0,
+    target: {
+      closest: () => null,
+      setPointerCapture: () => {},
+    },
+    preventDefault: () => {},
+    stopPropagation: () => {},
+  };
+
+  const detach = attachCanvasMarqueeSelection({
+    Canvas: {
+      getBody: () => body,
+    },
+    getWrapper: () => wrapperComponent,
+    select(components) {
+      selectCalls.push(components);
+    },
+  });
+
+  doc.emit('pointerdown', {
+    ...eventBase,
+    clientX: 0,
+    clientY: 0,
+  });
+  win.emit('pointermove', {
+    ...eventBase,
+    clientX: 80,
+    clientY: 80,
+  });
+  win.emit('pointerup', {
+    ...eventBase,
+    clientX: 80,
+    clientY: 80,
+  });
+
+  assert.deepEqual(selectCalls, [[], [selectedComponent]]);
 
   detach();
 });

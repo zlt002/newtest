@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readStyleSnapshot, readStyleState } from '../styleAdapter.ts';
 
-test('readStyleSnapshot marks mixed values and rule target', () => {
+test('readStyleSnapshot marks mixed values and defaults class selections to inline target', () => {
   const result = readStyleSnapshot({
     selection: [
       { styles: { width: '100px', color: '#111111', 'background-color': '#eeeeee' }, classes: ['btn'] },
@@ -24,7 +24,24 @@ test('readStyleSnapshot marks mixed values and rule target', () => {
   assert.deepEqual(color?.value.committed, { value: '', unit: '' });
   assert.equal(backgroundColor?.value.mixed, true);
   assert.deepEqual(backgroundColor?.value.committed, { value: '', unit: '' });
-  assert.equal(result.targetKind, 'rule');
+  assert.equal(result.targetKind, 'inline');
+});
+
+test('readStyleSnapshot keeps Framer-like generated classes on inline target', () => {
+  const result = readStyleSnapshot({
+    selection: [
+      {
+        styles: {
+          display: 'flex',
+          width: '100%',
+        },
+        classes: ['framer-cgiad', 'framer-1t7cri2'],
+      },
+    ],
+    activeState: '',
+  });
+
+  assert.equal(result.targetKind, 'inline');
 });
 
 test('readStyleState expands margin/padding/appearance fields', () => {
@@ -152,6 +169,56 @@ test('readStyleState expands margin/padding/appearance fields', () => {
     layers: [{ functionName: 'translateY', argument: '4px' }],
   });
   assert.equal(result.advanced.perspective.value, '800');
+});
+
+test('readStyleState merges partial longhands with shorthand fallback', () => {
+  const result = readStyleState({
+    padding: '10px 20px 30px 40px',
+    'padding-right': '96px',
+    'border-radius': '4px 8px 12px 16px',
+    'border-top-left-radius': '6px',
+  });
+
+  assert.deepEqual(result.spacing.padding, {
+    top: '10',
+    right: '96',
+    bottom: '30',
+    left: '40',
+    unit: 'px',
+  });
+  assert.deepEqual(result.appearance.borderRadius, {
+    topLeft: '6',
+    topRight: '8',
+    bottomRight: '12',
+    bottomLeft: '16',
+    unit: 'px',
+  });
+});
+
+test('readStyleSnapshot resolves partial longhands with shorthand fallback', () => {
+  const result = readStyleSnapshot({
+    selection: [
+      {
+        inlineStyles: {
+          padding: '10px 20px 30px 40px',
+          'padding-right': '96px',
+        },
+      },
+    ],
+    activeState: '',
+  });
+
+  const spacing = result.sectors.find((sector) => sector.key === 'spacing');
+  const padding = spacing.properties.find((property) => property.property === 'padding');
+
+  assert.deepEqual(padding.value.committed, {
+    top: '10',
+    right: '96',
+    bottom: '30',
+    left: '40',
+    unit: 'px',
+  });
+  assert.equal(padding.value.resolved.source, 'inline');
 });
 
 test('readStyleState parses multiple box-shadow layers', () => {
@@ -350,4 +417,169 @@ test('readStyleSnapshot surfaces default display float and position when the tar
   assert.equal(display?.value.committed.value, 'block');
   assert.equal(float?.value.committed.value, 'none');
   assert.equal(position?.value.committed.value, 'static');
+});
+
+test('readStyleSnapshot resolves inline authored values over computed values', () => {
+  const result = readStyleSnapshot({
+    selection: [{
+      computedStyles: {
+        width: 'auto',
+        'font-size': '16px',
+        color: 'rgb(0, 0, 0)',
+      },
+      inlineStyles: {
+        width: '251.46px',
+        'font-size': '21px',
+        color: '#ffffff',
+      },
+      modelStyles: {},
+    }],
+    activeState: '',
+  });
+
+  const layout = result.sectors.find((sector) => sector.key === 'layout');
+  const text = result.sectors.find((sector) => sector.key === 'text');
+  const width = layout.properties.find((property) => property.property === 'width');
+  const fontSize = text.properties.find((property) => property.property === 'fontSize');
+  const color = text.properties.find((property) => property.property === 'color');
+
+  assert.equal(width.value.committed.value, '251.46');
+  assert.equal(width.value.resolved.source, 'inline');
+  assert.deepEqual(width.value.resolved.computed, { value: 'auto', unit: '' });
+  assert.deepEqual(width.value.resolved.authored, { value: '251.46', unit: 'px' });
+  assert.equal(fontSize.value.committed.value, '21');
+  assert.equal(fontSize.value.resolved.source, 'inline');
+  assert.equal(color.value.committed.value, '#ffffff');
+  assert.equal(color.value.resolved.source, 'inline');
+});
+
+test('readStyleSnapshot displays computed-only values without treating them as authored', () => {
+  const result = readStyleSnapshot({
+    selection: [{
+      computedStyles: {
+        width: '1200px',
+        'font-size': '16px',
+      },
+      inlineStyles: {},
+      modelStyles: {},
+    }],
+    activeState: '',
+  });
+
+  const layout = result.sectors.find((sector) => sector.key === 'layout');
+  const text = result.sectors.find((sector) => sector.key === 'text');
+  const width = layout.properties.find((property) => property.property === 'width');
+  const fontSize = text.properties.find((property) => property.property === 'fontSize');
+
+  assert.equal(width.value.committed.value, '1200');
+  assert.equal(width.value.resolved.source, 'computed');
+  assert.deepEqual(width.value.resolved.authored, { value: '', unit: '' });
+  assert.equal(fontSize.value.committed.value, '16');
+  assert.equal(fontSize.value.resolved.source, 'computed');
+});
+
+test('readStyleSnapshot treats empty authored values as absent', () => {
+  const result = readStyleSnapshot({
+    selection: [{
+      computedStyles: {
+        'font-size': '21px',
+      },
+      inlineStyles: {},
+      modelStyles: {
+        'font-size': '',
+      },
+    }],
+    activeState: '',
+  });
+
+  const text = result.sectors.find((sector) => sector.key === 'text');
+  const fontSize = text.properties.find((property) => property.property === 'fontSize');
+
+  assert.equal(fontSize.value.committed.value, '21');
+  assert.equal(fontSize.value.resolved.source, 'computed');
+});
+
+test('readStyleSnapshot marks mixed source values consistently', () => {
+  const result = readStyleSnapshot({
+    selection: [
+      {
+        computedStyles: { width: '100px' },
+        inlineStyles: { width: '100px' },
+        modelStyles: {},
+      },
+      {
+        computedStyles: { width: '120px' },
+        inlineStyles: { width: '120px' },
+        modelStyles: {},
+      },
+    ],
+    activeState: '',
+  });
+
+  const layout = result.sectors.find((sector) => sector.key === 'layout');
+  const width = layout.properties.find((property) => property.property === 'width');
+
+  assert.equal(width.value.mixed, true);
+  assert.equal(width.value.resolved.source, 'mixed');
+  assert.deepEqual(width.value.committed, { value: '', unit: '' });
+});
+
+test('readStyleSnapshot keeps position offsets visible for legacy styles input', () => {
+  const result = readStyleSnapshot({
+    selection: [
+      {
+        styles: {
+          position: 'absolute',
+          top: '10px',
+        },
+      },
+    ],
+    activeState: '',
+  });
+
+  const layout = result.sectors.find((sector) => sector.key === 'layout');
+  const position = layout.properties.find((property) => property.property === 'position');
+
+  assert.equal(position.value.committed.value, 'absolute');
+  assert.equal(layout.properties.some((property) => property.property === 'inset'), true);
+  assert.equal(layout.properties.some((property) => property.property === 'zIndex'), true);
+});
+
+test('readStyleSnapshot falls back to legacy styles when modelStyles is empty', () => {
+  const result = readStyleSnapshot({
+    selection: [
+      {
+        styles: { width: '100px' },
+        modelStyles: {},
+      },
+    ],
+    activeState: '',
+  });
+
+  const layout = result.sectors.find((sector) => sector.key === 'layout');
+  const width = layout.properties.find((property) => property.property === 'width');
+
+  assert.equal(width.value.committed.value, '100');
+  assert.equal(width.value.resolved.source, 'model');
+});
+
+test('readStyleSnapshot does not mark same displayed values mixed only because sources differ', () => {
+  const result = readStyleSnapshot({
+    selection: [
+      {
+        inlineStyles: { width: '100px' },
+      },
+      {
+        modelStyles: { width: '100px' },
+      },
+    ],
+    activeState: '',
+  });
+
+  const layout = result.sectors.find((sector) => sector.key === 'layout');
+  const width = layout.properties.find((property) => property.property === 'width');
+
+  assert.equal(width.value.mixed, false);
+  assert.equal(width.value.committed.value, '100');
+  assert.equal(width.value.resolved.source, 'inline');
 });
