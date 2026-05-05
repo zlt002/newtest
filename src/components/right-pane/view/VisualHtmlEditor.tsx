@@ -28,6 +28,7 @@ import GrapesLikeInspectorPane from './visual-html/grapes-like/GrapesLikeInspect
 import { createGrapesLikeInspectorBridge } from './visual-html/grapes-like/createGrapesLikeInspectorBridge';
 import SpacingOverlay from './visual-html/grapes-like/SpacingOverlay';
 import HtmlSourceEditorSurface, { type HtmlSourceCursorPosition } from './visual-html/HtmlSourceEditorSurface';
+import { resolveCanvasDocument } from './visual-html/canvasHeadMarkup';
 import {
   buildSourceLocationDomPathFromElement,
   buildSourceLocationFingerprint,
@@ -484,7 +485,7 @@ function applyPreviewRuntimeElementStylesToCanvas(
   editor: ReturnType<typeof grapesjs.init>,
   elementStyles: PreviewRuntimeElementStyles,
 ) {
-  const canvasDocument = editor.Canvas.getDocument?.();
+  const canvasDocument = resolveCanvasDocument(editor);
   if (canvasDocument) {
     let style = canvasDocument.getElementById(CCUI_PREVIEW_RUNTIME_STYLE_ID) as HTMLStyleElement | null;
     if (!style) {
@@ -498,7 +499,7 @@ function applyPreviewRuntimeElementStylesToCanvas(
   Object.entries(elementStyles).forEach(([elementId, styleText]) => {
     const component = findCanvasComponentByElementId(editor, elementId);
     const element = component?.getEl?.() as HTMLElement | null;
-    const canvasElement = editor.Canvas.getDocument?.()?.getElementById(elementId);
+    const canvasElement = resolveCanvasDocument(editor)?.getElementById(elementId);
 
     component?.addAttributes?.({ style: styleText }, { silent: true });
     canvasElement?.setAttribute('style', styleText);
@@ -569,6 +570,18 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
   const persistedSourceLocationMap = persistedSourceLocationMapRef.current;
   const grapesLikeBridge = useMemo(() => createGrapesLikeInspectorBridge(canvasEditor), [canvasEditor]);
   const canvasAssetBaseUrl = useMemo(() => resolveCanvasAssetBaseUrl(previewRouteUrl), [previewRouteUrl]);
+
+  useEffect(() => {
+    logVisualHtmlPerf('design-canvas-context', {
+      activeMode,
+      isPreviewActive,
+      previewRouteUrlLength: previewRouteUrl?.length ?? 0,
+      assetBaseUrlLength: canvasAssetBaseUrl?.length ?? 0,
+      hasPreviewRouteUrl: Boolean(previewRouteUrl),
+      hasCanvasAssetBaseUrl: Boolean(canvasAssetBaseUrl),
+      targetFilePath: target.filePath,
+    });
+  }, [activeMode, canvasAssetBaseUrl, isPreviewActive, previewRouteUrl, target.filePath]);
 
   const syncCanvasDocumentFromHtml = useCallback((nextHtml: string) => {
     if (canvasDocumentSourceRef.current === nextHtml) {
@@ -1185,9 +1198,23 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
           projectRoot: currentProject?.fullPath ?? currentProject?.path ?? null,
           projectName: targetProjectName,
         });
+        logVisualHtmlPerf('preview-route-resolved', {
+          targetFilePath: target.filePath,
+          targetProjectName,
+          projectRoot: currentProject?.fullPath ?? currentProject?.path ?? null,
+          hasPreviewRouteUrl: Boolean(nextPreviewUrl),
+          previewRouteUrlLength: nextPreviewUrl?.length ?? 0,
+        });
         setPreviewRouteUrl(nextPreviewUrl);
       } catch {
         if (!cancelled) {
+          logVisualHtmlPerf('preview-route-resolved', {
+            targetFilePath: target.filePath,
+            targetProjectName,
+            projectRoot: null,
+            hasPreviewRouteUrl: false,
+            previewRouteUrlLength: 0,
+          });
           setPreviewRouteUrl(null);
         }
       }

@@ -2,7 +2,12 @@ import grapesjs from 'grapesjs';
 import 'grapesjs/dist/css/grapes.min.css';
 import './VisualCanvasPane.css';
 import { useEffect, useRef } from 'react';
-import { injectCanvasHeadMarkup, rewriteCanvasHeadAssetUrls } from './canvasHeadMarkup';
+import {
+  injectCanvasHeadMarkup,
+  resolveCanvasBody,
+  resolveCanvasDocument,
+  rewriteCanvasHeadAssetUrls,
+} from './canvasHeadMarkup';
 import { registerVisualHtmlBlocks } from './grapesjsBlockRegistry';
 import { registerVisualHtmlComponentTypes } from './grapesjsComponentRegistry';
 import grapesjsZhCn from './grapesjsZhCn';
@@ -80,6 +85,43 @@ function logHiddenLayerDebug(payload: Record<string, unknown>) {
     at: new Date().toISOString(),
     ...payload,
   });
+}
+
+function collectCanvasHeadDebugSummary(canvasDocument: Document) {
+  const headElements = Array.from(canvasDocument.head?.children ?? []);
+  const assetUrls = headElements
+    .flatMap((element) => {
+      if (!(element instanceof canvasDocument.defaultView!.HTMLElement)) {
+        return [];
+      }
+
+      const tagName = element.tagName.toLowerCase();
+      const url = element.getAttribute('href')?.trim() || element.getAttribute('src')?.trim() || '';
+      return url ? [`${tagName}:${url}`] : [];
+    })
+    .slice(0, 40);
+  const managedHeadNodes = canvasDocument.head?.querySelectorAll('[data-ccui-canvas-head-node]').length ?? 0;
+  const rawStyleNodes = canvasDocument.head?.querySelectorAll(`[${RAW_CANVAS_STYLE_ATTRIBUTE}]`).length ?? 0;
+
+  return {
+    baseURI: canvasDocument.baseURI,
+    headChildCount: headElements.length,
+    styleTagCount: canvasDocument.head?.querySelectorAll('style').length ?? 0,
+    scriptTagCount: canvasDocument.head?.querySelectorAll('script').length ?? 0,
+    linkTagCount: canvasDocument.head?.querySelectorAll('link').length ?? 0,
+    baseTagCount: canvasDocument.head?.querySelectorAll('base').length ?? 0,
+    managedHeadNodeCount: managedHeadNodes,
+    rawCanvasStyleNodeCount: rawStyleNodes,
+    assetUrls: assetUrls,
+    headTagSummary: headElements
+      .slice(0, 40)
+      .map((element) => {
+        const tagName = element.tagName.toLowerCase();
+        const managed = element.hasAttribute('data-ccui-canvas-head-node') ? ':managed' : '';
+        const raw = element.hasAttribute(RAW_CANVAS_STYLE_ATTRIBUTE) ? ':raw-style' : '';
+        return `${tagName}${managed}${raw}`;
+      }),
+  };
 }
 
 function extractRootCustomProperties(fullHtml: string): Record<string, string> {
@@ -492,7 +534,7 @@ function restoreOriginalElementAttributes(
     return result;
   }
 
-  const canvasBody = editor.Canvas.getBody?.();
+  const canvasBody = resolveCanvasBody(editor);
   const wrapper = editor.getWrapper?.();
   const syncComponentModels = options.syncComponentModels === true;
   const componentByElement = syncComponentModels ? buildComponentByElementMap(wrapper) : new Map<Element, any>();
@@ -563,7 +605,7 @@ function syncOriginalAttributesForComponent(
     return;
   }
 
-  const snapshot = findOriginalElementSnapshotForCanvasElement(editor.Canvas.getBody?.(), snapshots, element);
+  const snapshot = findOriginalElementSnapshotForCanvasElement(resolveCanvasBody(editor), snapshots, element);
   if (!snapshot) {
     return;
   }
@@ -589,7 +631,7 @@ function syncOriginalAttributesForComponent(
 }
 
 function injectRawCanvasStyles(editor: ReturnType<typeof grapesjs.init>, styleMarkup: string) {
-  const canvasDocument = editor.Canvas.getDocument?.();
+  const canvasDocument = resolveCanvasDocument(editor);
   if (!canvasDocument?.head) {
     return;
   }
@@ -937,7 +979,7 @@ function readComponentChildren(component: any) {
 }
 
 function disableNonVisualEditableCanvasComponents(editor: ReturnType<typeof grapesjs.init>) {
-  const canvasDocument = editor.Canvas.getDocument?.();
+  const canvasDocument = resolveCanvasDocument(editor);
   const canvasWindow = canvasDocument?.defaultView;
   const wrapper = editor.DomComponents?.getWrapper?.() as any;
   if (!canvasDocument?.body || !canvasWindow || !wrapper) {
@@ -972,7 +1014,7 @@ function applyHiddenLayerEditing(
   enabled: boolean,
   hiddenLayerFilter: HiddenLayerFilter,
 ) {
-  const canvasDocument = editor.Canvas.getDocument?.();
+  const canvasDocument = resolveCanvasDocument(editor);
   const canvasWindow = canvasDocument?.defaultView;
   const wrapper = editor.DomComponents?.getWrapper?.() as any;
   if (!canvasDocument?.body || !canvasWindow || !wrapper) {
@@ -1284,8 +1326,15 @@ export default function VisualCanvasPane({
       );
     };
     const syncCanvasHeadMarkup = () => {
-      const canvasDocument = editor.Canvas.getDocument?.();
+      const canvasDocument = resolveCanvasDocument(editor);
       if (!canvasDocument?.head) {
+        logCanvasPerf('head-sync-missing-document', {
+          hasDocument: Boolean(canvasDocument),
+          readyState: canvasDocument?.readyState ?? null,
+          hasHead: Boolean(canvasDocument?.head),
+          hasBody: Boolean(canvasDocument?.body),
+          baseURI: canvasDocument?.baseURI ?? null,
+        });
         return;
       }
 
@@ -1319,8 +1368,17 @@ export default function VisualCanvasPane({
         rawStyleMarkupLength: rawStyleMarkup.length,
         canvasHeadMarkupLength: canvasHeadMarkup.length,
       });
+      logCanvasPerf('head-state', collectCanvasHeadDebugSummary(canvasDocument));
     };
     const scheduleCanvasHeadMarkupSync = () => {
+      const canvasDocument = resolveCanvasDocument(editor);
+      logCanvasPerf('head-sync-scheduled', {
+        hasDocument: Boolean(canvasDocument),
+        readyState: canvasDocument?.readyState ?? null,
+        hasHead: Boolean(canvasDocument?.head),
+        hasBody: Boolean(canvasDocument?.body),
+        baseURI: canvasDocument?.baseURI ?? null,
+      });
       const disableInitialNonVisualEditableComponents = () => {
         if (visualEditableFilterRef.current) {
           return;
@@ -1330,7 +1388,7 @@ export default function VisualCanvasPane({
         visualEditableFilterRef.current = true;
       };
       const restoreOriginalAttributesOnce = () => {
-        const canvasDocument = editor.Canvas.getDocument?.();
+        const canvasDocument = resolveCanvasDocument(editor);
         if (!canvasDocument || restoredAttributeDocumentRef.current === canvasDocument) {
           return;
         }
@@ -1347,8 +1405,28 @@ export default function VisualCanvasPane({
     editor.on('update', notifyDirty);
     editor.on('component:styleUpdate', notifyStyleDirty);
     editor.on('component:selected', syncSelectedOriginalAttributes);
-    editor.on('canvas:frame:load', scheduleCanvasHeadMarkupSync);
-    editor.on('canvas:frame:load:body', scheduleCanvasHeadMarkupSync);
+    editor.on('canvas:frame:load', () => {
+      const canvasDocument = resolveCanvasDocument(editor);
+      logCanvasPerf('canvas-frame-load-event', {
+        hasDocument: Boolean(canvasDocument),
+        readyState: canvasDocument?.readyState ?? null,
+        hasHead: Boolean(canvasDocument?.head),
+        hasBody: Boolean(canvasDocument?.body),
+        baseURI: canvasDocument?.baseURI ?? null,
+      });
+      scheduleCanvasHeadMarkupSync();
+    });
+    editor.on('canvas:frame:load:body', () => {
+      const canvasDocument = resolveCanvasDocument(editor);
+      logCanvasPerf('canvas-frame-load-body-event', {
+        hasDocument: Boolean(canvasDocument),
+        readyState: canvasDocument?.readyState ?? null,
+        hasHead: Boolean(canvasDocument?.head),
+        hasBody: Boolean(canvasDocument?.body),
+        baseURI: canvasDocument?.baseURI ?? null,
+      });
+      scheduleCanvasHeadMarkupSync();
+    });
     editor.clearDirtyCount();
     scheduleCanvasHeadMarkupSync();
     onEditorReadyRef.current?.(editor);
@@ -1361,13 +1439,11 @@ export default function VisualCanvasPane({
       editor.off('update', notifyDirty);
       editor.off('component:styleUpdate', notifyStyleDirty);
       editor.off('component:selected', syncSelectedOriginalAttributes);
-      editor.off('canvas:frame:load', scheduleCanvasHeadMarkupSync);
-      editor.off('canvas:frame:load:body', scheduleCanvasHeadMarkupSync);
       editor.destroy();
       editorRef.current = null;
       onEditorReadyRef.current?.(null);
     };
-  }, [fullHtml]);
+  }, [assetBaseUrl, fullHtml]);
 
   return <div ref={containerRef} className="ccui-visual-canvas h-full min-h-0" data-visual-html-mode="design" />;
 }

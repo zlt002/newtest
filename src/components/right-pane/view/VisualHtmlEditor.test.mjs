@@ -96,6 +96,10 @@ test('VisualHtmlEditor source passes preview-based asset url context to the desi
 
   assert.match(source, /function resolveCanvasAssetBaseUrl/);
   assert.match(source, /const canvasAssetBaseUrl = useMemo\(\(\) => resolveCanvasAssetBaseUrl\(previewRouteUrl\), \[previewRouteUrl\]\);/);
+  assert.match(source, /logVisualHtmlPerf\('preview-route-resolved'/);
+  assert.match(source, /logVisualHtmlPerf\('design-canvas-context'/);
+  assert.match(source, /previewRouteUrlLength: nextPreviewUrl\?\.length \?\? 0/);
+  assert.match(source, /assetBaseUrlLength: canvasAssetBaseUrl\?\.length \?\? 0/);
   assert.match(source, /<VisualCanvasPane[\s\S]*assetBaseUrl=\{canvasAssetBaseUrl\}/);
 });
 
@@ -271,7 +275,7 @@ test('VisualHtmlEditor applies live preview DOM state back to the design canvas 
   assert.match(source, /syncCanvasDocumentFromHtml\(nextHtml\)/);
   assert.match(source, /buildSavedHtmlPreservingHead\(\{\s*sourceHtml: controllerRef\.current\.documentText,\s*bodyHtml: previewBodyHtml,\s*\}\)/);
   assert.match(source, /schedulePreviewRuntimeElementStyleRestore\(editor, pendingPreviewRuntimeStyles\)/);
-  assert.match(source, /editor\.Canvas\.getDocument\?\.\(\)\?\.getElementById\(elementId\)/);
+  assert.match(source, /resolveCanvasDocument\(editor\)\?\.getElementById\(elementId\)/);
   assert.match(source, /component\?\.addAttributes\?\.\(\{ style: styleText \}/);
   assert.match(source, /CCUI_PREVIEW_RUNTIME_STYLE_ID/);
   assert.match(source, /style\.textContent = buildPreviewRuntimeStyleOverride\(elementStyles\)/);

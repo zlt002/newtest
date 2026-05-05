@@ -67,7 +67,7 @@ test('VisualCanvasPane source owns editor lifecycle and reload wiring', async ()
   assert.match(source, /logCanvasPerf\('head-sync-skip'/);
   assert.match(source, /scheduleCanvasHeadMarkupSync/);
   assert.match(source, /canvas:frame:load:body/);
-  assert.match(source, /\}, \[fullHtml\]\)/);
+  assert.match(source, /\}, \[assetBaseUrl, fullHtml\]\)/);
   assert.doesNotMatch(source, /\}, \[fullHtml, onDirtyChange, onEditorReady\]\)/);
 });
 
@@ -160,10 +160,25 @@ test('VisualCanvasPane performance diagnostics stay behind a debug gate', async 
 
   assert.match(source, /CCUI_DEBUG_VISUAL_CANVAS_PERF/);
   assert.match(source, /function isCanvasPerfDebugEnabled\(\)/);
+  assert.match(source, /function collectCanvasHeadDebugSummary\(/);
+  assert.match(source, /logCanvasPerf\('head-sync-scheduled'/);
+  assert.match(source, /logCanvasPerf\('head-sync-missing-document'/);
+  assert.match(source, /logCanvasPerf\('canvas-frame-load-event'/);
+  assert.match(source, /logCanvasPerf\('canvas-frame-load-body-event'/);
+  assert.match(source, /readyState: canvasDocument\?\.readyState \?\? null/);
+  assert.match(source, /hasHead: Boolean\(canvasDocument\?\.head\)/);
+  assert.match(source, /hasBody: Boolean\(canvasDocument\?\.body\)/);
+  assert.match(source, /baseURI: canvasDocument\.baseURI/);
+  assert.match(source, /headChildCount:/);
+  assert.match(source, /assetUrls:/);
+  assert.match(source, /styleTagCount:/);
+  assert.match(source, /scriptTagCount:/);
+  assert.match(source, /managedHeadNodeCount:/);
   assert.match(source, /if \(!isCanvasPerfDebugEnabled\(\)\) \{\s*return;\s*\}/);
   assert.match(source, /logCanvasPerf\('prepared'/);
   assert.match(source, /logCanvasPerf\('components'/);
   assert.match(source, /logCanvasPerf\('head-sync'/);
+  assert.match(source, /logCanvasPerf\('head-state'/);
 });
 
 test('VisualCanvasPane source separates design and source toolbar states', async () => {
