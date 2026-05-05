@@ -1359,51 +1359,6 @@ function readPositionDragValue(
   };
 }
 
-function buildSpacingBoxMetrics(
-  base: SpacingBoxMetrics,
-  next: Partial<Record<SpacingSide, { value: string; unit: string }>>,
-): SpacingBoxMetrics {
-  const top = next.top ?? { value: base.top, unit: base.unit };
-  const right = next.right ?? { value: base.right, unit: base.unit };
-  const bottom = next.bottom ?? { value: base.bottom, unit: base.unit };
-  const left = next.left ?? { value: base.left, unit: base.unit };
-  const unit = next.top?.unit ?? next.right?.unit ?? next.bottom?.unit ?? next.left?.unit ?? base.unit;
-
-  return {
-    top: top.value,
-    right: right.value,
-    bottom: bottom.value,
-    left: left.value,
-    unit,
-    topPx: Number(top.value) || 0,
-    rightPx: Number(right.value) || 0,
-    bottomPx: Number(bottom.value) || 0,
-    leftPx: Number(left.value) || 0,
-  };
-}
-
-function buildFrameBox(
-  borderBox: SpacingOverlaySnapshot['borderBox'],
-  metrics: SpacingBoxMetrics,
-  kind: SpacingKind,
-) {
-  if (kind === 'margin') {
-    return {
-      left: borderBox.left - metrics.leftPx,
-      top: borderBox.top - metrics.topPx,
-      width: borderBox.width + metrics.leftPx + metrics.rightPx,
-      height: borderBox.height + metrics.topPx + metrics.bottomPx,
-    };
-  }
-
-  return {
-    left: borderBox.left + metrics.leftPx,
-    top: borderBox.top + metrics.topPx,
-    width: Math.max(borderBox.width - metrics.leftPx - metrics.rightPx, 0),
-    height: Math.max(borderBox.height - metrics.topPx - metrics.bottomPx, 0),
-  };
-}
-
 export function readSpacingBoxFromStyle(style: Pick<CSSStyleDeclaration, 'getPropertyValue'>, prefix: 'margin' | 'padding'): SpacingBoxMetrics {
   const sideKeys = ['top', 'right', 'bottom', 'left'] as const;
   const values = sideKeys.map((side) => style.getPropertyValue(`${prefix}-${side}`));

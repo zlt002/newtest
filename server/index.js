@@ -58,7 +58,7 @@ import filesRoutes from './routes/files.js';
 import sessionsRoutes from './routes/sessions.js';
 import systemRoutes from './routes/system.js';
 import { initializeDatabase } from './local-lite-state.js';
-import { validateApiKey, authenticateToken, authenticateWebSocket } from './middleware/auth.js';
+import { authenticateToken, authenticateWebSocket } from './middleware/auth.js';
 import { IS_PLATFORM } from './constants/config.js';
 import { getConnectableHost } from '../shared/networkHosts.js';
 import { shouldIgnoreWatchedPath } from './utils/projects-watcher.js';
@@ -325,8 +325,8 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// Optional API key validation (if configured)
-app.use('/api', validateApiKey);
+// Attach local user to all /api requests
+app.use('/api', authenticateToken);
 
 // Authentication routes (public)
 app.use('/api/auth', authRoutes);

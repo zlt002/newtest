@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { api } from '../../../utils/api';
-import { AUTH_ERROR_MESSAGES, AUTH_TOKEN_STORAGE_KEY } from '../constants';
+import { AUTH_ERROR_MESSAGES } from '../constants';
 import type {
   AuthContextValue,
   AuthProviderProps,
@@ -10,18 +10,7 @@ import type {
 import { parseJsonSafely } from '../utils';
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-const LOCAL_TOKEN = 'local-mode';
 const LOCAL_USER: AuthUser = { id: 1, username: 'local' };
-
-const readStoredToken = (): string | null => localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
-
-const persistToken = (token: string) => {
-  localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
-};
-
-const clearStoredToken = () => {
-  localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
-};
 
 export function useAuth(): AuthContextValue {
   const context = useContext(AuthContext);
@@ -33,24 +22,8 @@ export function useAuth(): AuthContextValue {
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
-  const [user, setUser] = useState<AuthUser | null>(LOCAL_USER);
-  const [token, setToken] = useState<string | null>(LOCAL_TOKEN);
-  const [isLoading, setIsLoading] = useState(false);
-  const [needsSetup, setNeedsSetup] = useState(false);
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const setSession = useCallback((nextUser: AuthUser, nextToken: string) => {
-    setUser(nextUser);
-    setToken(nextToken);
-    persistToken(nextToken);
-  }, []);
-
-  const clearSession = useCallback(() => {
-    setUser(null);
-    setToken(null);
-    clearStoredToken();
-  }, []);
 
   const checkOnboardingStatus = useCallback(async () => {
     try {
@@ -72,68 +45,44 @@ export function AuthProvider({ children }: AuthProviderProps) {
     await checkOnboardingStatus();
   }, [checkOnboardingStatus]);
 
-  const checkAuthStatus = useCallback(async () => {
+  useEffect(() => {
+    void checkOnboardingStatus();
+  }, [checkOnboardingStatus]);
+
+  const login = useCallback<AuthContextValue['login']>(async () => {
     try {
       setError(null);
-      persistToken(LOCAL_TOKEN);
-      setUser(LOCAL_USER);
-      setToken(LOCAL_TOKEN);
-      setNeedsSetup(false);
       await checkOnboardingStatus();
+      return { success: true };
     } catch (caughtError) {
-      console.error('[Auth] Auth status check failed:', caughtError);
-      setError(AUTH_ERROR_MESSAGES.authStatusCheckFailed);
+      console.error('Login error:', caughtError);
+      setError(AUTH_ERROR_MESSAGES.networkError);
+      return { success: false, error: AUTH_ERROR_MESSAGES.networkError };
     }
   }, [checkOnboardingStatus]);
 
-  useEffect(() => {
-    void checkAuthStatus();
-  }, [checkAuthStatus]);
-
-  const login = useCallback<AuthContextValue['login']>(
-    async (username, password) => {
-      try {
-        setError(null);
-        setSession(LOCAL_USER, LOCAL_TOKEN);
-        setNeedsSetup(false);
-        await checkOnboardingStatus();
-        return { success: true };
-      } catch (caughtError) {
-        console.error('Login error:', caughtError);
-        setError(AUTH_ERROR_MESSAGES.networkError);
-        return { success: false, error: AUTH_ERROR_MESSAGES.networkError };
-      }
-    },
-    [checkOnboardingStatus, setSession],
-  );
-
-  const register = useCallback<AuthContextValue['register']>(
-    async (username, password) => {
-      try {
-        setError(null);
-        setSession(LOCAL_USER, LOCAL_TOKEN);
-        setNeedsSetup(false);
-        await checkOnboardingStatus();
-        return { success: true };
-      } catch (caughtError) {
-        console.error('Registration error:', caughtError);
-        setError(AUTH_ERROR_MESSAGES.networkError);
-        return { success: false, error: AUTH_ERROR_MESSAGES.networkError };
-      }
-    },
-    [checkOnboardingStatus, setSession],
-  );
+  const register = useCallback<AuthContextValue['register']>(async () => {
+    try {
+      setError(null);
+      await checkOnboardingStatus();
+      return { success: true };
+    } catch (caughtError) {
+      console.error('Registration error:', caughtError);
+      setError(AUTH_ERROR_MESSAGES.networkError);
+      return { success: false, error: AUTH_ERROR_MESSAGES.networkError };
+    }
+  }, [checkOnboardingStatus]);
 
   const logout = useCallback(() => {
-    setSession(LOCAL_USER, LOCAL_TOKEN);
-  }, [setSession]);
+    // No-op in local mode
+  }, []);
 
   const contextValue = useMemo<AuthContextValue>(
     () => ({
-      user,
-      token,
-      isLoading,
-      needsSetup,
+      user: LOCAL_USER,
+      token: null,
+      isLoading: false,
+      needsSetup: false,
       hasCompletedOnboarding,
       error,
       login,
@@ -141,18 +90,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       logout,
       refreshOnboardingStatus,
     }),
-    [
-      error,
-      hasCompletedOnboarding,
-      isLoading,
-      login,
-      logout,
-      needsSetup,
-      refreshOnboardingStatus,
-      register,
-      token,
-      user,
-    ],
+    [error, hasCompletedOnboarding, login, logout, refreshOnboardingStatus, register],
   );
 
   return <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>;

@@ -1,35 +1,28 @@
-const LOCAL_USER = {
+/**
+ * Authentication middleware — local single-user mode.
+ *
+ * All requests are authenticated as the built-in local user.
+ * No JWT verification or credential checking is performed.
+ */
+
+const LOCAL_USER = Object.freeze({
   id: 1,
   userId: 1,
   username: 'local',
   created_at: new Date(0).toISOString(),
   last_login: null,
-};
+});
 
-const JWT_SECRET = 'local-mode';
-
-const validateApiKey = (req, _res, next) => {
-  req.user = LOCAL_USER;
+/** Express middleware — attaches the local user to every request. */
+const authenticateToken = (_req, _res, next) => {
+  _req.user = LOCAL_USER;
   next();
 };
 
-const authenticateToken = async (req, _res, next) => {
-  req.user = LOCAL_USER;
-  next();
-};
-
-const generateToken = () => 'local-mode';
-
+/** WebSocket authentication — returns the local user identity. */
 const authenticateWebSocket = () => ({
   userId: LOCAL_USER.userId,
   username: LOCAL_USER.username,
 });
 
-export {
-  LOCAL_USER,
-  validateApiKey,
-  authenticateToken,
-  generateToken,
-  authenticateWebSocket,
-  JWT_SECRET,
-};
+export { LOCAL_USER, authenticateToken, authenticateWebSocket };

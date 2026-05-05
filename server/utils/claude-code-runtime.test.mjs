@@ -6,8 +6,6 @@ import {
   buildClaudeCodeChildEnv,
   parseNodeMajorVersion,
   prependPathEntry,
-  resolveClaudeWorkingDirectory,
-  resolvePreferredNodeCommand,
   resolvePreferredClaudeNodeBinDir,
   supportsClaudeCodeRuntime,
 } from './claude-code-runtime.js';
@@ -80,41 +78,4 @@ test('buildClaudeCodeChildEnv prepends the preferred node bin directory into PAT
   const env = buildClaudeCodeChildEnv({ PATH: originalPath, HOME: '/tmp/home' }, preferredNodeBinDir);
   assert.equal(env.PATH, [preferredNodeBinDir, ...originalPath.split(path.delimiter)].join(path.delimiter));
   assert.equal(env.HOME, '/tmp/home');
-});
-
-test('resolveClaudeWorkingDirectory returns an absolute existing directory path', () => {
-  const resolved = resolveClaudeWorkingDirectory({
-    cwd: './demo',
-    fallbackCwd: '/unused',
-    statPath: (targetPath) => {
-      assert.equal(targetPath, path.resolve('./demo'));
-      return { isDirectory: () => true };
-    },
-  });
-
-  assert.equal(resolved, path.resolve('./demo'));
-});
-
-test('resolveClaudeWorkingDirectory throws a clear error when the project path is missing', () => {
-  assert.throws(
-    () => resolveClaudeWorkingDirectory({
-      cwd: '/missing/project',
-      statPath: () => {
-        const error = new Error('missing');
-        error.code = 'ENOENT';
-        throw error;
-      },
-    }),
-    /Project path not found: .*\/missing\/project$/,
-  );
-});
-
-test('resolvePreferredNodeCommand converts bare node into an absolute compatible runtime path', () => {
-  const preferredNodeBinDir = path.join(path.sep, 'modern', 'bin');
-  assert.equal(
-    resolvePreferredNodeCommand('node', preferredNodeBinDir),
-    path.join(preferredNodeBinDir, process.platform === 'win32' ? 'node.exe' : 'node'),
-  );
-  assert.equal(resolvePreferredNodeCommand('bun', preferredNodeBinDir), 'bun');
-  assert.equal(resolvePreferredNodeCommand('node', null), 'node');
 });

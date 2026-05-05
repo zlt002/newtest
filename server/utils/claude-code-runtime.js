@@ -131,36 +131,3 @@ export function buildClaudeCodeChildEnv(baseEnv = process.env, preferredNodeBinD
     PATH: prependPathEntry(baseEnv.PATH || '', preferredNodeBinDir),
   };
 }
-
-export function resolveClaudeWorkingDirectory({
-  cwd,
-  fallbackCwd = process.cwd(),
-  statPath = statSync,
-} = {}) {
-  const candidate = cwd || fallbackCwd;
-  const resolvedPath = path.resolve(candidate);
-
-  let stats;
-  try {
-    stats = statPath(resolvedPath);
-  } catch (error) {
-    if (error?.code === 'ENOENT') {
-      throw new Error(`Project path not found: ${resolvedPath}`);
-    }
-    throw error;
-  }
-
-  if (!stats?.isDirectory?.()) {
-    throw new Error(`Project path is not a directory: ${resolvedPath}`);
-  }
-
-  return resolvedPath;
-}
-
-export function resolvePreferredNodeCommand(command, preferredNodeBinDir) {
-  if (!preferredNodeBinDir || command !== 'node') {
-    return command;
-  }
-
-  return path.join(preferredNodeBinDir, process.platform === 'win32' ? 'node.exe' : 'node');
-}

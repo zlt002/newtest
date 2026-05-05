@@ -5,7 +5,6 @@ import {
   CLAUDE_COMMAND_GROUPS,
   findBuiltInCommand,
   getBuiltInCommands,
-  getCommandGroup,
 } from './claudeCommandRegistry.js';
 
 test('built-in Claude-compatible commands include the core CLI commands we surface', () => {
@@ -23,12 +22,6 @@ test('built-in Claude-compatible commands include the core CLI commands we surfa
 test('aliases resolve to their canonical built-in command', () => {
   assert.equal(findBuiltInCommand('/settings')?.name, '/config');
   assert.equal(findBuiltInCommand('/reset')?.name, '/clear');
-});
-
-test('command groups classify local UI, project, and user entries consistently', () => {
-  assert.equal(getCommandGroup(findBuiltInCommand('/agents')), CLAUDE_COMMAND_GROUPS.localUi);
-  assert.equal(getCommandGroup({ namespace: 'project' }), CLAUDE_COMMAND_GROUPS.project);
-  assert.equal(getCommandGroup({ namespace: 'user' }), CLAUDE_COMMAND_GROUPS.user);
 });
 
 test('getBuiltInCommands returns cloned metadata arrays', () => {

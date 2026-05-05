@@ -1,5 +1,5 @@
 import express from 'express';
-import { authenticateToken, generateToken, LOCAL_USER } from '../middleware/auth.js';
+import { authenticateToken, LOCAL_USER } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -14,7 +14,6 @@ router.post('/register', (_req, res) => {
   res.json({
     success: true,
     user: { id: LOCAL_USER.id, username: LOCAL_USER.username },
-    token: generateToken(),
   });
 });
 
@@ -22,7 +21,6 @@ router.post('/login', (_req, res) => {
   res.json({
     success: true,
     user: { id: LOCAL_USER.id, username: LOCAL_USER.username },
-    token: generateToken(),
   });
 });
 

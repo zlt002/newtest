@@ -27,13 +27,6 @@ export function markLatencyTrace(trace, mark, timestamp = Date.now()) {
   return trace;
 }
 
-export function updateLatencyTraceSession(trace, sessionId) {
-  if (trace && sessionId && !trace.sessionId) {
-    trace.sessionId = sessionId;
-  }
-  return trace;
-}
-
 export function buildClaudeInvocationSnapshot(options = {}) {
   const settings = options.toolsSettings || {};
   return {
@@ -178,52 +171,4 @@ export function appendSdkEventTimeline(metadata, trace, event, normalizedMessage
     ...summarizeSdkEventForTrace(event),
     normalizedKinds: normalizedMessages.map((message) => message.kind),
   });
-}
-
-export function summarizeLatencyMetadataForLog(metadata = {}) {
-  return {
-    mcp: metadata?.mcp || null,
-    spawn: metadata?.spawn || null,
-    firstSdkEvent: metadata?.firstSdkEvent || null,
-    firstNormalizedKinds: Array.isArray(metadata?.firstNormalizedKinds)
-      ? [...metadata.firstNormalizedKinds]
-      : [],
-    sdkEventTimeline: Array.isArray(metadata?.sdkEventTimeline)
-      ? [...metadata.sdkEventTimeline]
-      : [],
-  };
-}
-
-export function summarizeLatencyTrace(trace) {
-  const marks = trace?.marks || {};
-  const durations = {};
-  const missing = [];
-  const addDuration = (name, startMark, endMark, options = {}) => {
-    const { optional = false } = options;
-    if (marks[startMark] !== undefined && marks[endMark] !== undefined) {
-      durations[name] = marks[endMark] - marks[startMark];
-      return;
-    }
-    if (!optional || marks[startMark] !== undefined) {
-      missing.push(name);
-    }
-  };
-
-  addDuration('sendToSdkStart', 'send_clicked', 'sdk_query_started');
-  addDuration('sdkStartToFirstEvent', 'sdk_query_started', 'first_sdk_event');
-  addDuration('firstEventToFirstStreamDelta', 'first_sdk_event', 'first_stream_delta_sent');
-  addDuration('mcpConfigLoad', 'mcp_config_started', 'mcp_config_loaded', { optional: true });
-  addDuration('queryConstruction', 'query_construction_started', 'sdk_query_instance_created', { optional: true });
-  addDuration('sdkReadyAfterMcp', 'mcp_config_loaded', 'sdk_query_instance_created', { optional: true });
-  addDuration('spawnStartToReady', 'claude_process_spawn_started', 'claude_process_spawn_completed', { optional: true });
-  addDuration('sdkReadyToFirstThinking', 'sdk_query_instance_created', 'first_thinking_event', { optional: true });
-  addDuration('thinkingToFirstStreamDelta', 'first_thinking_event', 'first_stream_delta_sent', { optional: true });
-
-  return {
-    traceId: trace?.traceId || null,
-    sessionId: trace?.sessionId || null,
-    source: trace?.source || 'unknown',
-    durations,
-    missing,
-  };
 }

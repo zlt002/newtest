@@ -5,11 +5,9 @@ import {
   appendSdkEventTimeline,
   createLatencyTrace,
   markLatencyTrace,
-  summarizeLatencyTrace,
   buildClaudeInvocationSnapshot,
   summarizeMcpServersForTrace,
   summarizeSdkEventForTrace,
-  summarizeLatencyMetadataForLog,
 } from './claude-latency-trace.js';
 
 test('createLatencyTrace and markLatencyTrace keep the first timestamp for each milestone', () => {
@@ -27,71 +25,6 @@ test('createLatencyTrace and markLatencyTrace keep the first timestamp for each 
   assert.deepEqual(trace.marks, {
     send_clicked: 1000,
     first_sdk_event: 3500,
-  });
-});
-
-test('summarizeLatencyTrace computes milestone durations from recorded marks', () => {
-  const trace = createLatencyTrace({
-    traceId: 'trace-2',
-    sessionId: 'sess-1',
-    source: 'chat-ws',
-    commandPreview: '1+1',
-  });
-
-  markLatencyTrace(trace, 'send_clicked', 10);
-  markLatencyTrace(trace, 'sdk_query_started', 25);
-  markLatencyTrace(trace, 'first_sdk_event', 60);
-  markLatencyTrace(trace, 'first_stream_delta_sent', 95);
-
-  assert.deepEqual(summarizeLatencyTrace(trace), {
-    traceId: 'trace-2',
-    sessionId: 'sess-1',
-    source: 'chat-ws',
-    durations: {
-      sendToSdkStart: 15,
-      sdkStartToFirstEvent: 35,
-      firstEventToFirstStreamDelta: 35,
-    },
-    missing: [],
-  });
-});
-
-test('summarizeLatencyTrace includes detailed phase timings for MCP, query creation, thinking, and child process spawn', () => {
-  const trace = createLatencyTrace({
-    traceId: 'trace-3',
-    sessionId: 'sess-2',
-    source: 'chat-ws',
-    commandPreview: 'debug latency',
-  });
-
-  markLatencyTrace(trace, 'send_clicked', 10);
-  markLatencyTrace(trace, 'sdk_query_started', 20);
-  markLatencyTrace(trace, 'mcp_config_started', 25);
-  markLatencyTrace(trace, 'mcp_config_loaded', 45);
-  markLatencyTrace(trace, 'query_construction_started', 50);
-  markLatencyTrace(trace, 'claude_process_spawn_started', 55);
-  markLatencyTrace(trace, 'claude_process_spawn_completed', 60);
-  markLatencyTrace(trace, 'sdk_query_instance_created', 70);
-  markLatencyTrace(trace, 'first_sdk_event', 100);
-  markLatencyTrace(trace, 'first_thinking_event', 110);
-  markLatencyTrace(trace, 'first_stream_delta_sent', 150);
-
-  assert.deepEqual(summarizeLatencyTrace(trace), {
-    traceId: 'trace-3',
-    sessionId: 'sess-2',
-    source: 'chat-ws',
-    durations: {
-      sendToSdkStart: 10,
-      sdkStartToFirstEvent: 80,
-      firstEventToFirstStreamDelta: 50,
-      mcpConfigLoad: 20,
-      queryConstruction: 20,
-      sdkReadyAfterMcp: 25,
-      spawnStartToReady: 5,
-      sdkReadyToFirstThinking: 40,
-      thinkingToFirstStreamDelta: 40,
-    },
-    missing: [],
   });
 });
 
@@ -283,22 +216,3 @@ test('appendSdkEventTimeline records compact event snapshots with relative timin
   ]);
 });
 
-test('summarizeLatencyMetadataForLog exposes only the diagnosis-relevant metadata fields', () => {
-  assert.deepEqual(
-    summarizeLatencyMetadataForLog({
-      mcp: { count: 2, names: ['figma', 'browser'] },
-      spawn: { command: '/usr/local/bin/node', cwd: '/repo', argCount: 4 },
-      firstSdkEvent: { type: 'result' },
-      firstNormalizedKinds: ['text', 'tool_use'],
-      sdkEventTimeline: [{ atMs: 1, type: 'system' }],
-      requestedOptions: { model: 'sonnet' },
-    }),
-    {
-      mcp: { count: 2, names: ['figma', 'browser'] },
-      spawn: { command: '/usr/local/bin/node', cwd: '/repo', argCount: 4 },
-      firstSdkEvent: { type: 'result' },
-      firstNormalizedKinds: ['text', 'tool_use'],
-      sdkEventTimeline: [{ atMs: 1, type: 'system' }],
-    },
-  );
-});

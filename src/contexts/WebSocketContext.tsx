@@ -21,14 +21,6 @@ type WebSocketContextType = {
   clientLatencyTraceStore: ReturnType<typeof createClientLatencyTraceStore>;
 };
 
-export const isAgentEventEnvelopeMessage = (message: any) => (
-  typeof message?.eventId === 'string'
-  && typeof message?.runId === 'string'
-  && (typeof message?.sessionId === 'string' || message?.sessionId === null)
-  && typeof message?.sequence === 'number'
-  && typeof message?.type === 'string'
-);
-
 const WebSocketContext = createContext<WebSocketContextType | null>(null);
 
 const extractLatencySessionId = (message: any): string | null => {

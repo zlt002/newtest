@@ -783,18 +783,6 @@ function decodeTemporaryStyle(value: string) {
   }
 }
 
-function hasHiddenLayerPreviewAncestor(element: HTMLElement) {
-  let current = element.parentElement;
-  while (current) {
-    if (current.hasAttribute(HIDDEN_LAYER_PREVIEW_ATTRIBUTE)) {
-      return true;
-    }
-    current = current.parentElement;
-  }
-
-  return false;
-}
-
 function isCanvasInternalElement(element: HTMLElement) {
   const matchesInternalClass = (node: HTMLElement | null) => {
     if (!node) {

@@ -2,7 +2,6 @@ import { css } from '@codemirror/lang-css';
 import { html } from '@codemirror/lang-html';
 import { javascript } from '@codemirror/lang-javascript';
 import { json } from '@codemirror/lang-json';
-import { StreamLanguage } from '@codemirror/language';
 import { markdown } from '@codemirror/lang-markdown';
 import { python } from '@codemirror/lang-python';
 import { getChunks } from '@codemirror/merge';
@@ -10,27 +9,10 @@ import { EditorView, ViewPlugin } from '@codemirror/view';
 import { showMinimap } from '@replit/codemirror-minimap';
 import type { CodeEditorFile } from '../types/types';
 
-// Lightweight lexer for `.env` files (including `.env.*` variants).
-const envLanguage = StreamLanguage.define({
-  token(stream) {
-    if (stream.match(/^#.*/)) return 'comment';
-    if (stream.sol() && stream.match(/^[A-Za-z_][A-Za-z0-9_.]*(?==)/)) return 'variableName.definition';
-    if (stream.match(/^=/)) return 'operator';
-    if (stream.match(/^"(?:[^"\\]|\\.)*"?/)) return 'string';
-    if (stream.match(/^'(?:[^'\\]|\\.)*'?/)) return 'string';
-    if (stream.match(/^\$\{[^}]*\}?/)) return 'variableName.special';
-    if (stream.match(/^\$[A-Za-z_][A-Za-z0-9_]*/)) return 'variableName.special';
-    if (stream.match(/^\d+/)) return 'number';
-
-    stream.next();
-    return null;
-  },
-});
-
 export const getLanguageExtensions = (filename: string) => {
   const lowerName = filename.toLowerCase();
   if (lowerName === '.env' || lowerName.startsWith('.env.')) {
-    return [envLanguage];
+    return [];
   }
 
   const ext = filename.split('.').pop()?.toLowerCase();
@@ -55,7 +37,7 @@ export const getLanguageExtensions = (filename: string) => {
     case 'markdown':
       return [markdown()];
     case 'env':
-      return [envLanguage];
+      return [];
     default:
       return [];
   }

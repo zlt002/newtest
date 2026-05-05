@@ -30,7 +30,9 @@ export function unescapeWithMathProtection(text: string) {
     return `${placeholderPrefix}${index}${placeholderSuffix}`;
   });
 
-  processedText = processedText.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\r/g, '\r');
+  // Only unescape \n (line breaks) — skip \t and \r to avoid corrupting
+  // Windows paths like C:\test, C:\temp, C:\resources, C:\network, etc.
+  processedText = processedText.replace(/\\n/g, '\n');
 
   processedText = processedText.replace(
     new RegExp(`${placeholderPrefix}(\\d+)${placeholderSuffix}`, 'g'),

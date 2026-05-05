@@ -34,17 +34,3 @@ const WORKSPACE_TAB_META: Record<WorkspaceView, WorkspaceTabMeta> = {
   },
 };
 
-export function getWorkspaceTabMeta(view: WorkspaceView): WorkspaceTabMeta {
-  return WORKSPACE_TAB_META[view];
-}
-
-export function getWorkspacePanelState(
-  view: WorkspaceView,
-  selectedProject: Project | null,
-): WorkspacePanelState {
-  if (view === 'projects') {
-    return 'ready';
-  }
-
-  return selectedProject ? 'ready' : 'needs-project';
-}

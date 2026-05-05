@@ -1,7 +1,5 @@
 import type { CodeEditorDiffInfo } from '../../code-editor/types/types';
 import type {
-  RightPaneBrowserSource,
-  RightPaneBrowserTarget,
   RightPaneCodeTarget,
   RightPaneTarget,
   RightPaneVisualHtmlTarget,
@@ -67,37 +65,6 @@ export function createVisualHtmlTarget({
     filePath,
     fileName: getFileName(filePath),
     projectName,
-  };
-}
-
-export function createBrowserTarget({
-  url,
-  source,
-  filePath,
-  title,
-}: {
-  url: string;
-  source: RightPaneBrowserSource;
-  filePath?: string;
-  title?: string;
-}): RightPaneBrowserTarget;
-export function createBrowserTarget({
-  url,
-  source,
-  filePath,
-  title,
-}: {
-  url: string;
-  source: RightPaneBrowserSource;
-  filePath?: string;
-  title?: string;
-}): RightPaneBrowserTarget {
-  return {
-    type: 'browser',
-    url,
-    source,
-    filePath,
-    title,
   };
 }
 
