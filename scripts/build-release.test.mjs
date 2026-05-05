@@ -82,7 +82,7 @@ test('build-release generates a runtime-only dependency whitelist', async () => 
     [...RELEASE_RUNTIME_DEPENDENCIES].sort()
   );
 
-  for (const dependency of ['@xterm/xterm', 'react', 'react-dom', 'typescript', 'i18next']) {
+  for (const dependency of ['react', 'react-dom', 'typescript', 'i18next']) {
     assert.ok(
       !(dependency in releasePackageJson.dependencies),
       `release package.json should not include ${dependency}`

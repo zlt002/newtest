@@ -1,6 +1,5 @@
 import { WebSocketServer } from 'ws';
 import { createChatHandler } from './handlers/chatHandler.js';
-import { createShellHandler } from './handlers/shellHandler.js';
 
 export function setupWebSocket(server, deps) {
     const {
@@ -46,7 +45,6 @@ export function setupWebSocket(server, deps) {
     });
 
     const handleChatConnection = createChatHandler(deps);
-    const handleShellConnection = createShellHandler(deps);
 
     wss.on('connection', (ws, request) => {
         const url = request.url;

@@ -11,7 +11,6 @@ const WINDOWS_LITE_BASE_PRUNE_TARGETS = [
   'node_modules/@anthropic-ai/claude-agent-sdk/vendor/ripgrep/x64-linux',
   'node_modules/@img/sharp-libvips-darwin-arm64',
   'node_modules/@openai',
-  'node_modules/@xterm',
   'node_modules/bcrypt',
   'node_modules/fsevents',
   'node_modules/node-pty',
