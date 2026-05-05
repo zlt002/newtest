@@ -1056,7 +1056,6 @@ function ChatInterface({
       data-chat-v2-context-file-tag={activeContextFilePath}
       className="flex items-center gap-2 rounded-xl border border-border/60 bg-card/80 px-3 py-2 text-xs text-foreground"
     >
-      <span className="text-muted-foreground">上下文文件</span>
       <button
         type="button"
         onClick={() => setIsContextFileEnabled((value) => !value)}
