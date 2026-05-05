@@ -46,10 +46,6 @@ export default defineConfig(({ mode }) => {
         '/ws': {
           target: `ws://${proxyHost}:${serverPort}`,
           ws: true
-        },
-        '/shell': {
-          target: `ws://${proxyHost}:${serverPort}`,
-          ws: true
         }
       }
     },
@@ -69,8 +65,7 @@ export default defineConfig(({ mode }) => {
               '@codemirror/lang-markdown',
               '@codemirror/lang-python',
               '@codemirror/theme-one-dark'
-            ],
-            'vendor-xterm': ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-clipboard', '@xterm/addon-webgl']
+            ]
           }
         }
       }

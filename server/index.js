@@ -293,8 +293,6 @@ async function setupProjectsWatcher() {
 const app = express();
 const server = http.createServer(app);
 
-const ptySessionsMap = new Map();
-
 // Setup WebSocket server via extracted module
 const wss = setupWebSocket(server, {
     IS_PLATFORM,
@@ -307,8 +305,6 @@ const wss = setupWebSocket(server, {
     buildClaudeInvocationSnapshot,
     handleClaudeCommandWithAgentV2,
     defaultAgentV2Services,
-    ptySessionsMap,
-    pty: null, // pty module is not currently imported; shell functionality requires node-pty
     sessionManager,
 });
 
