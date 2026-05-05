@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties } from 'react';
 
 const PREVIEW_MAX_HEIGHT = 420;
+const VIEWPORT_BOTTOM_MARGIN = 16;
 
 type MarkdownAnnotationComposerProps = {
   isOpen: boolean;
@@ -30,8 +31,10 @@ export default function MarkdownAnnotationComposer({
   onSave,
   onCancel,
 }: MarkdownAnnotationComposerProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isSelectedTextPreviewOpen, setIsSelectedTextPreviewOpen] = useState(false);
+  const [adjustedTop, setAdjustedTop] = useState<number | null>(null);
   const canExpandSelectedText =
     selectedText.length > 140 || selectedText.split(/\r?\n/).length > 3;
 
@@ -47,9 +50,34 @@ export default function MarkdownAnnotationComposer({
     }
   }, [isOpen, selectedText]);
 
+  // 渲染后将弹框上移，确保底部不被视口裁切
+  useEffect(() => {
+    if (!isOpen || !containerRef.current) {
+      setAdjustedTop(null);
+      return;
+    }
+
+    const rect = containerRef.current.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    const overflowBottom = rect.bottom - (viewportHeight - VIEWPORT_BOTTOM_MARGIN);
+
+    if (overflowBottom > 0) {
+      setAdjustedTop(Math.max(VIEWPORT_BOTTOM_MARGIN, position.y - overflowBottom));
+    } else {
+      setAdjustedTop(null);
+    }
+  }, [isOpen, position.y]);
+
   if (!isOpen) {
     return null;
   }
+
+  const containerStyle: CSSProperties = {
+    position: 'fixed',
+    left: position.x,
+    top: adjustedTop ?? position.y,
+    zIndex: 10000,
+  };
 
   const handleChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
     onNoteChange(event.target.value);
@@ -58,8 +86,9 @@ export default function MarkdownAnnotationComposer({
   return (
     <>
       <div
+        ref={containerRef}
         data-markdown-annotation-overlay="true"
-        style={{ position: 'fixed', left: position.x, top: position.y, zIndex: 10000 }}
+        style={containerStyle}
         className="w-[min(360px,calc(100vw-32px))] rounded-xl border border-border bg-background p-3 shadow-xl"
       >
         <div className="mb-2">
