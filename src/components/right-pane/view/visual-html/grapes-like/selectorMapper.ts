@@ -3,14 +3,6 @@ import { normalizeSelectorStateValue } from './selectorAdapter.ts';
 // @ts-ignore - Node's strip-types runtime resolves the .ts specifier; tsc flags it without allowImportingTsExtensions.
 import type { SelectorState } from './types.ts';
 
-export function applySelectorPatch(current: SelectorState, patch: Partial<SelectorState>): SelectorState {
-  return {
-    selectedLabel: patch.selectedLabel ?? current.selectedLabel,
-    activeState: patch.activeState ?? current.activeState,
-    classTags: patch.classTags ?? current.classTags,
-  };
-}
-
 function normalizeClassName(className: string) {
   return String(className ?? '').trim();
 }

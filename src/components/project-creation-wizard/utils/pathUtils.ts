@@ -13,9 +13,6 @@ export const shouldShowGithubAuthentication = (
   githubUrl: string,
 ): boolean => workspaceType === 'new' && githubUrl.trim().length > 0 && !isSshGitUrl(githubUrl);
 
-export const isCloneWorkflow = (workspaceType: WorkspaceType, githubUrl: string): boolean =>
-  workspaceType === 'new' && githubUrl.trim().length > 0;
-
 export const getSuggestionRootPath = (inputPath: string): string => {
   const trimmedPath = inputPath.trim();
   const lastSeparatorIndex = Math.max(trimmedPath.lastIndexOf('/'), trimmedPath.lastIndexOf('\\'));

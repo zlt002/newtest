@@ -80,12 +80,3 @@ export function findBuiltInCommand(commandName) {
   return [...BUILT_IN_COMMANDS, ...BUILT_IN_SKILL_COMMANDS].find((command) => command.name === canonicalName) || null;
 }
 
-export function getCommandGroup(command) {
-  if (command?.namespace === 'project') {
-    return CLAUDE_COMMAND_GROUPS.project;
-  }
-  if (command?.namespace === 'user') {
-    return CLAUDE_COMMAND_GROUPS.user;
-  }
-  return command?.metadata?.group || CLAUDE_COMMAND_GROUPS.localUi;
-}

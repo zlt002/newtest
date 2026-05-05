@@ -791,13 +791,3 @@ export default function GrapesLikeProperty({ property, onCommit }: GrapesLikePro
     </div>
   );
 }
-
-export function GrapesLikePropertyFrame({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
-  return <section aria-label={title}>{children}</section>;
-}

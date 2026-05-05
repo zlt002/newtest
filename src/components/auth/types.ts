@@ -8,28 +8,8 @@ export type AuthUser = {
 
 export type AuthActionResult = { success: true } | { success: false; error: string };
 
-export type AuthSessionPayload = {
-  token?: string;
-  user?: AuthUser;
-  error?: string;
-  message?: string;
-};
-
-export type AuthStatusPayload = {
-  needsSetup?: boolean;
-};
-
-export type AuthUserPayload = {
-  user?: AuthUser;
-};
-
 export type OnboardingStatusPayload = {
   hasCompletedOnboarding?: boolean;
-};
-
-export type ApiErrorPayload = {
-  error?: string;
-  message?: string;
 };
 
 export type AuthContextValue = {

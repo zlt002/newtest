@@ -5,8 +5,6 @@ import path from 'node:path';
 import {
   DEFAULT_WORKSPACE_VIEW,
   WORKSPACE_VIEWS,
-  getWorkspaceTabMeta,
-  getWorkspacePanelState,
 } from './sidebarWorkspace.shared.ts';
 import { getDesktopSidebarActionSlots } from './sidebarDesktopActions.ts';
 
@@ -16,22 +14,6 @@ test('WORKSPACE_VIEWS keeps projects, files, git order', () => {
 
 test('DEFAULT_WORKSPACE_VIEW starts on projects', () => {
   assert.equal(DEFAULT_WORKSPACE_VIEW, 'projects');
-});
-
-test('getWorkspacePanelState requires a project for files and git', () => {
-  assert.equal(getWorkspacePanelState('projects', null), 'ready');
-  assert.equal(getWorkspacePanelState('files', null), 'needs-project');
-  assert.equal(getWorkspacePanelState('git', null), 'needs-project');
-  assert.equal(getWorkspacePanelState('files', { name: 'otp-domain' }), 'ready');
-  assert.equal(getWorkspacePanelState('git', { name: 'otp-domain' }), 'ready');
-});
-
-test('getWorkspaceTabMeta returns the files tab metadata', () => {
-  assert.deepEqual(getWorkspaceTabMeta('files'), {
-    value: 'files',
-    labelKey: 'workspace.files',
-    icon: 'folder',
-  });
 });
 
 test('SidebarWorkspaceTabs.tsx keeps the three workspace tabs and icon labels', async () => {

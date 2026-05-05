@@ -58,12 +58,3 @@ const TRANSITIONS = {
   aborted: {},
 };
 
-// 根据当前状态和新事件类型，计算下一状态。
-// 如果转移非法，说明事件顺序或协议出现了问题，应该尽早暴露。
-export function advanceRunState(currentState, eventType) {
-  const nextState = TRANSITIONS[currentState]?.[eventType];
-  if (!nextState) {
-    throw new Error(`Illegal run transition: ${currentState} -> ${eventType}`);
-  }
-  return nextState;
-}

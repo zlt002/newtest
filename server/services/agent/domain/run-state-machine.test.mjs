@@ -5,10 +5,8 @@ import assert from 'node:assert/strict';
 
 import {
   createAgentEventEnvelope,
-  advanceRunState,
   RUN_STATES,
 } from './run-state-machine.js';
-import { createSessionRecord } from './session-record.js';
 
 test('createAgentEventEnvelope builds a stable run event payload', () => {
   const event = createAgentEventEnvelope({
@@ -27,13 +25,6 @@ test('createAgentEventEnvelope builds a stable run event payload', () => {
   assert.ok(event.timestamp);
 });
 
-test('advanceRunState rejects illegal transitions after completion', () => {
-  assert.equal(advanceRunState('queued', 'run.started'), 'starting');
-  assert.equal(advanceRunState('starting', 'assistant.message.delta'), 'streaming');
-  assert.equal(advanceRunState('streaming', 'run.completed'), 'completed');
-  assert.throws(() => advanceRunState('completed', 'assistant.message.delta'));
-});
-
 test('run state machine exposes the full persisted lifecycle contract', () => {
   assert.deepEqual(RUN_STATES, [
     'queued',
@@ -45,25 +36,4 @@ test('run state machine exposes the full persisted lifecycle contract', () => {
     'failed',
     'aborted',
   ]);
-
-  assert.equal(advanceRunState('queued', 'run.started'), 'starting');
-  assert.equal(advanceRunState('starting', 'assistant.message.started'), 'streaming');
-  assert.equal(advanceRunState('streaming', 'tool.call.started'), 'waiting_for_tool');
-  assert.equal(advanceRunState('waiting_for_tool', 'tool.call.completed'), 'streaming');
-  assert.equal(advanceRunState('streaming', 'assistant.message.completed'), 'completing');
-  assert.equal(advanceRunState('completing', 'run.completed'), 'completed');
-});
-
-test('createSessionRecord builds a stable session metadata record', () => {
-  const session = createSessionRecord({
-    id: 'sess-1',
-    title: 'Workspace A',
-    createdAt: '2026-04-19T00:00:00.000Z',
-  });
-
-  assert.deepEqual(session, {
-    id: 'sess-1',
-    title: 'Workspace A',
-    createdAt: '2026-04-19T00:00:00.000Z',
-  });
 });
