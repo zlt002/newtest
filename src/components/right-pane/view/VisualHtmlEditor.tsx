@@ -46,7 +46,8 @@ type VisualHtmlEditorProps = {
 };
 
 const SAVE_SUCCESS_TIMEOUT_MS = 2000;
-const AUTO_FLUSH_DELAY_MS = 500;
+const DESIGN_SYNC_DEBOUNCE_MS = 1000;
+const AUTO_FLUSH_DELAY_MS = 2000;
 const EMPTY_HTML_DOCUMENT = '<!doctype html><html><head></head><body></body></html>';
 
 type ToolbarIcon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -553,7 +554,7 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
   const sourceLocationMapRef = useRef(buildSourceLocationMap('', 0));
   const persistedSourceLocationMapRef = useRef(buildSourceLocationMap('', 0));
   const pendingSourceCursorEntryRef = useRef<SourceLocationEntry | null>(null);
-  const pendingDesignSyncFrameRef = useRef<number | null>(null);
+  const pendingDesignSyncTimeoutRef = useRef<number | null>(null);
   const pendingFileFlushTimeoutRef = useRef<number | null>(null);
   const previewModeRef = useRef<PreviewMode>('route');
   const loadRequestSequenceRef = useRef(0);
@@ -647,12 +648,12 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
   }, [rebuildSourceLocationMap]);
 
   const cancelPendingDesignDocumentSync = useCallback(() => {
-    if (pendingDesignSyncFrameRef.current === null) {
+    if (pendingDesignSyncTimeoutRef.current === null) {
       return;
     }
 
-    window.cancelAnimationFrame(pendingDesignSyncFrameRef.current);
-    pendingDesignSyncFrameRef.current = null;
+    window.clearTimeout(pendingDesignSyncTimeoutRef.current);
+    pendingDesignSyncTimeoutRef.current = null;
   }, []);
 
   const cancelPendingFileFlush = useCallback(() => {
@@ -665,7 +666,7 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
   }, []);
 
   const flushDesignDocumentSync = useCallback(() => {
-    pendingDesignSyncFrameRef.current = null;
+    pendingDesignSyncTimeoutRef.current = null;
     if (!canvasEditorRef.current) {
       return;
     }
@@ -675,18 +676,18 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
   }, [applyCurrentEditorDocument, collectCanvasHtml]);
 
   const requestDesignDocumentSync = useCallback(() => {
-    if (pendingDesignSyncFrameRef.current !== null) {
-      return;
+    if (pendingDesignSyncTimeoutRef.current !== null) {
+      window.clearTimeout(pendingDesignSyncTimeoutRef.current);
     }
 
-    pendingDesignSyncFrameRef.current = window.requestAnimationFrame(() => {
+    pendingDesignSyncTimeoutRef.current = window.setTimeout(() => {
       flushDesignDocumentSync();
-    });
+    }, DESIGN_SYNC_DEBOUNCE_MS);
   }, [flushDesignDocumentSync]);
 
   const ensureFreshSourceLocationMap = useCallback(() => {
-    if (pendingDesignSyncFrameRef.current !== null) {
-      window.cancelAnimationFrame(pendingDesignSyncFrameRef.current);
+    if (pendingDesignSyncTimeoutRef.current !== null) {
+      window.clearTimeout(pendingDesignSyncTimeoutRef.current);
       flushDesignDocumentSync();
       return sourceLocationMapRef.current;
     }
@@ -733,9 +734,22 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
       throw new Error(message);
     }
 
+    const canFlushDesignDocument = activeMode === 'design' && Boolean(canvasEditorRef.current);
     const hasDirtyDocument = controllerRef.current.dirtyDesign || controllerRef.current.dirtySource;
     if (!hasDirtyDocument) {
-      if (indicateSuccess) {
+      let discoveredDesignChange = false;
+      if (canFlushDesignDocument) {
+        cancelPendingDesignDocumentSync();
+        const nextHtml = collectCanvasHtml();
+        if (nextHtml !== (controllerRef.current.persistedText || controllerRef.current.documentText)) {
+          applyCurrentEditorDocument(nextHtml, 'design');
+          controllerRef.current.setDirtyDesign(false);
+          controllerRef.current.setDirtySource(true);
+          discoveredDesignChange = true;
+        }
+      }
+
+      if (!discoveredDesignChange && indicateSuccess) {
         setSaveSuccess(true);
         if (saveSuccessTimeoutRef.current !== null) {
           window.clearTimeout(saveSuccessTimeoutRef.current);
@@ -744,11 +758,14 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
           setSaveSuccess(false);
         }, SAVE_SUCCESS_TIMEOUT_MS);
       }
-      return {
-        html: controllerRef.current.persistedText || controllerRef.current.documentText,
-        mapping: sourceLocationMapRef.current,
-        version: controllerRef.current.version,
-      };
+
+      if (!discoveredDesignChange) {
+        return {
+          html: controllerRef.current.persistedText || controllerRef.current.documentText,
+          mapping: sourceLocationMapRef.current,
+          version: controllerRef.current.version,
+        };
+      }
     }
 
     if (indicateSaving) {

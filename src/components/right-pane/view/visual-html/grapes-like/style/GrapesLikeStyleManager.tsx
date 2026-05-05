@@ -97,6 +97,10 @@ export function createStyleUpdateInput(
   };
 }
 
+export function resolveStyleWriteTargetKind(): 'inline' {
+  return 'inline';
+}
+
 export default function GrapesLikeStyleManager({ selection, selector, style, actions }: GrapesLikeStyleManagerProps) {
   const [expandedSectors, setExpandedSectors] = useState<SectorState>(() => createSectorState(style));
   const shouldShowFlexSector = shouldAutoExpandFlex(style);
@@ -153,7 +157,7 @@ export default function GrapesLikeStyleManager({ selection, selector, style, act
                         sector.key,
                         property.property,
                         value,
-                        style.targetKind,
+                        resolveStyleWriteTargetKind(),
                         patchValue,
                       ));
                     }}

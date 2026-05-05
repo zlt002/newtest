@@ -7,6 +7,8 @@ test('VisualCanvasPane source defines an isolated design surface around GrapesJS
 
   assert.match(source, /data-visual-html-mode="design"/);
   assert.match(source, /grapesjs\.init/);
+  assert.match(source, /avoidInlineStyle: false/);
+  assert.match(source, /forceClass: false/);
   assert.match(source, /registerVisualHtmlComponentTypes/);
   assert.match(source, /registerVisualHtmlBlocks/);
   assert.match(source, /grapesjsZhCn/);
@@ -18,6 +20,15 @@ test('VisualCanvasPane source defines an isolated design surface around GrapesJS
   assert.match(source, /extractRootCustomProperties/);
   assert.match(source, /inlineCustomPropertyReferences/);
   assert.match(source, /collectStyleMarkup/);
+  assert.match(source, /restoreOriginalElementAttributes\(editor, originalElementSnapshots\)/);
+  assert.match(source, /collectOriginalElementSnapshots/);
+  assert.match(source, /component\.setClass\?\.\(className/);
+  assert.match(source, /collectMissingStyleRecord/);
+  assert.match(source, /readComponentInlineStyleRecord/);
+  assert.match(source, /component\.addStyle\?\.\(missingStyle/);
+  assert.match(source, /component\.addAttributes\?\.\(changedRestAttributes/);
+  assert.match(source, /buildComponentByElementMap/);
+  assert.match(source, /findCanvasElementByFingerprint/);
   assert.match(source, /injectRawCanvasStyles/);
   assert.match(source, /collectCanvasHeadMarkup/);
   assert.match(source, /rewriteCanvasHeadAssetUrls/);
@@ -33,6 +44,7 @@ test('VisualCanvasPane source defines an isolated design surface around GrapesJS
   assert.match(source, /allowScripts: true/);
   assert.match(source, /detectDocument: true/);
   assert.match(source, /editor\.on\('update'/);
+  assert.match(source, /editor\.on\('component:styleUpdate', notifyStyleDirty\)/);
   assert.match(source, /onDirtyChange/);
   assert.match(source, /onEditorReady/);
   assert.match(source, /editor\.Panels\.getPanel\('options'\)/);
@@ -80,6 +92,10 @@ test('VisualCanvasPane source keeps hidden interaction nodes but disables non-vi
   assert.match(source, /function getDirectHiddenLayerReason\(/);
   assert.match(source, /function hasDirectHiddenAncestor\(/);
   assert.match(source, /function classifyHiddenLayerElement\(/);
+  assert.match(source, /const NON_VISUAL_HIDDEN_LAYER_TAG_NAMES = new Set/);
+  assert.match(source, /'style'/);
+  assert.match(source, /'script'/);
+  assert.match(source, /NON_VISUAL_HIDDEN_LAYER_TAG_NAMES\.has\(element\.tagName\.toLowerCase\(\)\)/);
   assert.match(source, /function shouldDisplayHiddenLayerRecord\(/);
   assert.match(source, /record\.reason/);
   assert.match(source, /filter\.reasons\.includes\(record\.reason\)/);

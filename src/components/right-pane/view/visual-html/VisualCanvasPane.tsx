@@ -21,6 +21,16 @@ const HIDDEN_LAYER_EDIT_STYLE_ATTRIBUTE = 'data-ccui-hidden-layer-edit-style';
 const HIDDEN_LAYER_PREVIEW_ATTRIBUTE = 'data-ccui-hidden-layer-preview';
 const HIDDEN_LAYER_ORIGINAL_STYLE_ATTRIBUTE = 'data-ccui-hidden-layer-original-style';
 const HIDDEN_LAYER_PASS_THROUGH_ATTRIBUTE = 'data-ccui-hidden-layer-pass-through';
+const NON_VISUAL_HIDDEN_LAYER_TAG_NAMES = new Set([
+  'base',
+  'link',
+  'meta',
+  'noscript',
+  'script',
+  'style',
+  'template',
+  'title',
+]);
 type HiddenLayerDisplayMode = 'block' | 'flex' | 'grid' | 'inline-flex' | 'table-row' | 'table-header-group' | 'table-row-group' | 'table-footer-group' | 'table-cell' | 'list-item';
 type HiddenLayerReason = 'display-none' | 'visibility-hidden' | 'opacity-zero' | 'zero-size' | 'offscreen' | 'ancestor-hidden';
 type HiddenLayerFilter = {
@@ -211,6 +221,373 @@ ${bodyMarkup}
 </html>`;
 }
 
+type OriginalElementSnapshot = {
+  path: number[];
+  tagName: string;
+  className: string;
+  text: string;
+  attributes: Record<string, string>;
+};
+
+type OriginalElementRestoreResult = {
+  snapshots: number;
+  matched: number;
+  classUpdates: number;
+  styleUpdates: number;
+  attributeUpdates: number;
+  domUpdates: number;
+  durationMs: number;
+};
+
+type OriginalElementRestoreOptions = {
+  syncComponentModels?: boolean;
+};
+
+function normalizeOriginalElementFingerprintText(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function readOriginalElementAttributes(element: Element): Record<string, string> {
+  return Array.from(element.attributes).reduce<Record<string, string>>((attributes, { name, value }) => {
+    const normalizedName = name.toLowerCase();
+    if (!normalizedName.startsWith('data-gjs-') && !normalizedName.startsWith('gjs-')) {
+      attributes[name] = value;
+    }
+
+    return attributes;
+  }, {});
+}
+
+function collectOriginalElementSnapshots(fullHtml: string): OriginalElementSnapshot[] {
+  if (typeof DOMParser === 'undefined') {
+    return [];
+  }
+
+  const parsed = new DOMParser().parseFromString(fullHtml, 'text/html');
+  const snapshots: OriginalElementSnapshot[] = [];
+  const visit = (element: Element, path: number[]) => {
+    const attributes = readOriginalElementAttributes(element);
+    if (Object.keys(attributes).length > 0) {
+      snapshots.push({
+        path,
+        tagName: element.tagName.toLowerCase(),
+        className: element.getAttribute('class')?.trim() ?? '',
+        text: normalizeOriginalElementFingerprintText(element.textContent ?? ''),
+        attributes,
+      });
+    }
+
+    Array.from(element.children).forEach((child, index) => visit(child, [...path, index]));
+  };
+
+  visit(parsed.body, []);
+  return snapshots;
+}
+
+function findCanvasElementByPath(root: ParentNode | null | undefined, path: number[], tagName: string): Element | null {
+  if (path.length === 0) {
+    const rootElement = root as Element | null | undefined;
+    return typeof rootElement?.tagName === 'string' && rootElement.tagName.toLowerCase() === tagName ? rootElement : null;
+  }
+
+  let current: Element | null = null;
+  let parent: ParentNode | null | undefined = root;
+
+  for (const index of path) {
+    const next = parent?.children.item(index);
+    if (!next) {
+      return null;
+    }
+
+    current = next;
+    parent = next;
+  }
+
+  return current?.tagName.toLowerCase() === tagName ? current : null;
+}
+
+function hasMatchingClassList(element: Element, className: string): boolean {
+  const expectedClasses = className.split(/\s+/).filter(Boolean);
+  return expectedClasses.length === 0 || expectedClasses.every((classEntry) => element.classList.contains(classEntry));
+}
+
+function scoreOriginalElementCandidate(element: Element, snapshot: OriginalElementSnapshot): number {
+  if (element.tagName.toLowerCase() !== snapshot.tagName) {
+    return -1;
+  }
+
+  let score = 1;
+  const snapshotId = snapshot.attributes.id;
+  if (snapshotId) {
+    return element.getAttribute('id') === snapshotId ? 100 : -1;
+  }
+
+  if (snapshot.className) {
+    if (!hasMatchingClassList(element, snapshot.className)) {
+      return -1;
+    }
+
+    score += 8;
+  }
+
+  Object.entries(snapshot.attributes).forEach(([name, value]) => {
+    if (name === 'class') {
+      return;
+    }
+
+    if (element.getAttribute(name) === value) {
+      score += 12;
+    }
+  });
+
+  const snapshotText = snapshot.text;
+  if (snapshotText) {
+    const elementText = normalizeOriginalElementFingerprintText(element.textContent ?? '');
+    if (elementText === snapshotText) {
+      score += 24;
+    } else if (elementText.includes(snapshotText) || snapshotText.includes(elementText)) {
+      score += 8;
+    }
+  }
+
+  return score;
+}
+
+function findCanvasElementByFingerprint(root: ParentNode | null | undefined, snapshot: OriginalElementSnapshot): Element | null {
+  if (!root) {
+    return null;
+  }
+
+  const candidates = Array.from(root.querySelectorAll(snapshot.tagName));
+  let bestCandidate: Element | null = null;
+  let bestScore = 0;
+  candidates.forEach((candidate) => {
+    const score = scoreOriginalElementCandidate(candidate, snapshot);
+    if (score > bestScore) {
+      bestScore = score;
+      bestCandidate = candidate;
+    }
+  });
+
+  return bestScore >= 9 ? bestCandidate : null;
+}
+
+function parseInlineStyleRecord(styleText: string): Record<string, string> {
+  return styleText
+    .split(';')
+    .map((declaration) => declaration.trim())
+    .filter(Boolean)
+    .reduce<Record<string, string>>((style, declaration) => {
+      const separatorIndex = declaration.indexOf(':');
+      if (separatorIndex <= 0) {
+        return style;
+      }
+
+      const property = declaration.slice(0, separatorIndex).trim();
+      const value = declaration.slice(separatorIndex + 1).trim();
+      if (property && value) {
+        style[property] = value;
+      }
+
+      return style;
+    }, {});
+}
+
+function collectComponentByElement(component: any, result: Map<Element, any>) {
+  if (!component) {
+    return;
+  }
+
+  const element = component.getEl?.();
+  if (element) {
+    result.set(element, component);
+  }
+
+  const children = component.components?.();
+  const childModels = typeof children?.models !== 'undefined' ? children.models : children;
+  for (const child of Array.from(childModels ?? [])) {
+    collectComponentByElement(child, result);
+  }
+}
+
+function buildComponentByElementMap(component: any): Map<Element, any> {
+  const result = new Map<Element, any>();
+  collectComponentByElement(component, result);
+  return result;
+}
+
+function splitOriginalElementAttributes(attributes: Record<string, string>) {
+  const { class: className, style: styleText, ...restAttributes } = attributes;
+  return {
+    className: className?.trim() ?? '',
+    styleText: styleText?.trim() ?? '',
+    restAttributes,
+  };
+}
+
+function normalizeClassAttribute(value: string): string {
+  return value.split(/\s+/).filter(Boolean).join(' ');
+}
+
+function readComponentClassAttribute(component: any): string {
+  const classes = component?.getClasses?.() ?? [];
+  return classes.map((entry: string | { get?: (key: string) => unknown }) => (
+    typeof entry === 'string' ? entry : String(entry?.get?.('name') ?? entry?.get?.('label') ?? '')
+  )).filter(Boolean).join(' ');
+}
+
+function readComponentInlineStyleRecord(component: any): Record<string, string> {
+  const style = component?.getStyle?.({ inline: true }) ?? component?.getStyle?.() ?? {};
+  return Object.entries(style).reduce<Record<string, string>>((record, [property, value]) => {
+    const nextValue = String(value ?? '').trim();
+    if (nextValue) {
+      record[property] = nextValue;
+    }
+
+    return record;
+  }, {});
+}
+
+function collectChangedAttributes(element: Element, attributes: Record<string, string>): Record<string, string> {
+  return Object.entries(attributes).reduce<Record<string, string>>((changedAttributes, [name, value]) => {
+    if (element.getAttribute(name) !== value) {
+      changedAttributes[name] = value;
+    }
+
+    return changedAttributes;
+  }, {});
+}
+
+function collectMissingStyleRecord(
+  sourceStyle: Record<string, string>,
+  componentStyle: Record<string, string>,
+  elementStyle: Record<string, string>,
+): Record<string, string> {
+  return Object.entries(sourceStyle).reduce<Record<string, string>>((missingStyle, [property, value]) => {
+    if (!componentStyle[property] && !elementStyle[property]) {
+      missingStyle[property] = value;
+    }
+
+    return missingStyle;
+  }, {});
+}
+
+function restoreOriginalElementAttributes(
+  editor: ReturnType<typeof grapesjs.init>,
+  snapshots: OriginalElementSnapshot[],
+  options: OriginalElementRestoreOptions = {},
+): OriginalElementRestoreResult {
+  const startedAt = getPerfNow();
+  const result: OriginalElementRestoreResult = {
+    snapshots: snapshots.length,
+    matched: 0,
+    classUpdates: 0,
+    styleUpdates: 0,
+    attributeUpdates: 0,
+    domUpdates: 0,
+    durationMs: 0,
+  };
+
+  if (snapshots.length === 0) {
+    return result;
+  }
+
+  const canvasBody = editor.Canvas.getBody?.();
+  const wrapper = editor.getWrapper?.();
+  const syncComponentModels = options.syncComponentModels === true;
+  const componentByElement = syncComponentModels ? buildComponentByElementMap(wrapper) : new Map<Element, any>();
+  snapshots.forEach((snapshot) => {
+    const pathElement = findCanvasElementByPath(canvasBody, snapshot.path, snapshot.tagName);
+    const element = pathElement ?? findCanvasElementByFingerprint(canvasBody, snapshot);
+    if (!element) {
+      return;
+    }
+
+    result.matched += 1;
+    const component = componentByElement.get(element);
+    const { className, styleText, restAttributes } = splitOriginalElementAttributes(snapshot.attributes);
+    const styleRecord = parseInlineStyleRecord(styleText);
+    if (
+      component
+      && className
+      && normalizeClassAttribute(readComponentClassAttribute(component)) !== normalizeClassAttribute(className)
+    ) {
+      component.setClass?.(className, { avoidStore: true, noUndo: true });
+      result.classUpdates += 1;
+    }
+
+    if (component && styleText && element.getAttribute('style') !== styleText && Object.keys(styleRecord).length > 0) {
+      component.addStyle?.(styleRecord, { avoidStore: true, noUndo: true });
+      result.styleUpdates += 1;
+    }
+
+    const changedRestAttributes = collectChangedAttributes(element, restAttributes);
+    if (component && Object.keys(changedRestAttributes).length > 0) {
+      component.addAttributes?.(changedRestAttributes, { avoidStore: true, noUndo: true });
+      result.attributeUpdates += Object.keys(changedRestAttributes).length;
+    }
+
+    const changedDomAttributes = collectChangedAttributes(element, snapshot.attributes);
+    Object.entries(changedDomAttributes).forEach(([name, value]) => {
+      element.setAttribute(name, value);
+    });
+    result.domUpdates += Object.keys(changedDomAttributes).length;
+  });
+
+  result.durationMs = Math.round(getPerfNow() - startedAt);
+  return result;
+}
+
+function findOriginalElementSnapshotForCanvasElement(
+  canvasBody: ParentNode | null | undefined,
+  snapshots: OriginalElementSnapshot[],
+  element: Element,
+): OriginalElementSnapshot | null {
+  for (const snapshot of snapshots) {
+    const pathElement = findCanvasElementByPath(canvasBody, snapshot.path, snapshot.tagName);
+    if (pathElement === element) {
+      return snapshot;
+    }
+  }
+
+  return null;
+}
+
+function syncOriginalAttributesForComponent(
+  editor: ReturnType<typeof grapesjs.init>,
+  component: any,
+  snapshots: OriginalElementSnapshot[],
+) {
+  const element = component?.getEl?.();
+  if (!element) {
+    return;
+  }
+
+  const snapshot = findOriginalElementSnapshotForCanvasElement(editor.Canvas.getBody?.(), snapshots, element);
+  if (!snapshot) {
+    return;
+  }
+
+  const { className, styleText, restAttributes } = splitOriginalElementAttributes(snapshot.attributes);
+  if (className && normalizeClassAttribute(readComponentClassAttribute(component)) !== normalizeClassAttribute(className)) {
+    component.setClass?.(className, { avoidStore: true, noUndo: true });
+  }
+
+  const missingStyle = collectMissingStyleRecord(
+    parseInlineStyleRecord(styleText),
+    readComponentInlineStyleRecord(component),
+    parseInlineStyleRecord(element.getAttribute('style') ?? ''),
+  );
+  if (Object.keys(missingStyle).length > 0) {
+    component.addStyle?.(missingStyle, { avoidStore: true, noUndo: true });
+  }
+
+  const changedRestAttributes = collectChangedAttributes(element, restAttributes);
+  if (Object.keys(changedRestAttributes).length > 0) {
+    component.addAttributes?.(changedRestAttributes, { avoidStore: true, noUndo: true });
+  }
+}
+
 function injectRawCanvasStyles(editor: ReturnType<typeof grapesjs.init>, styleMarkup: string) {
   const canvasDocument = editor.Canvas.getDocument?.();
   if (!canvasDocument?.head) {
@@ -327,6 +704,10 @@ function classifyHiddenLayerElement(
   viewportWidth: number,
   viewportHeight: number,
 ): HiddenLayerRecord | null {
+  if (NON_VISUAL_HIDDEN_LAYER_TAG_NAMES.has(element.tagName.toLowerCase())) {
+    return null;
+  }
+
   const computedStyle = element.ownerDocument.defaultView?.getComputedStyle(element);
   if (!computedStyle) {
     return null;
@@ -798,18 +1179,21 @@ export default function VisualCanvasPane({
       assetBaseUrl,
     );
     const canvasStructureHtml = createCanvasStructureHtml(canvasHtml);
+    const originalElementSnapshots = collectOriginalElementSnapshots(canvasStructureHtml);
     logCanvasPerf('prepared', {
       fullHtmlLength: fullHtml.length,
       normalizedHtmlLength: canvasHtml.length,
       structureHtmlLength: canvasStructureHtml.length,
       rawStyleMarkupLength: rawStyleMarkup.length,
       canvasHeadMarkupLength: canvasHeadMarkup.length,
+      originalElementSnapshotCount: originalElementSnapshots.length,
       structureReductionPercent: canvasHtml.length > 0
         ? Math.round((1 - canvasStructureHtml.length / canvasHtml.length) * 10000) / 100
         : 0,
     });
     const pendingStyleSyncTimeouts: number[] = [];
     const visualEditableFilterRef = { current: false };
+    const restoredAttributeDocumentRef: { current: Document | null } = { current: null };
     const lastHeadSyncRef: {
       current: {
         document: Document;
@@ -823,6 +1207,8 @@ export default function VisualCanvasPane({
       width: 'auto',
       storageManager: false,
       noticeOnUnload: false,
+      avoidInlineStyle: false,
+      forceClass: false,
       selectorManager: { componentFirst: true },
       parser: {
         optionsHtml: {
@@ -886,8 +1272,16 @@ export default function VisualCanvasPane({
       viewsPanel.set('visible', false);
     }
 
-    const notifyDirty = () => {
-      onDirtyChangeRef.current?.(editor.getDirtyCount() > 0, editor);
+    const notifyDirty = (forceDirty = false) => {
+      onDirtyChangeRef.current?.(forceDirty || editor.getDirtyCount() > 0, editor);
+    };
+    const notifyStyleDirty = () => notifyDirty(true);
+    const syncSelectedOriginalAttributes = (component?: any) => {
+      syncOriginalAttributesForComponent(
+        editor,
+        component ?? editor.getSelected?.(),
+        originalElementSnapshots,
+      );
     };
     const syncCanvasHeadMarkup = () => {
       const canvasDocument = editor.Canvas.getDocument?.();
@@ -935,19 +1329,24 @@ export default function VisualCanvasPane({
         applyHiddenLayerEditing(editor, showHiddenLayers, hiddenLayerFilter);
         visualEditableFilterRef.current = true;
       };
+      const restoreOriginalAttributesOnce = () => {
+        const canvasDocument = editor.Canvas.getDocument?.();
+        if (!canvasDocument || restoredAttributeDocumentRef.current === canvasDocument) {
+          return;
+        }
+
+        restoredAttributeDocumentRef.current = canvasDocument;
+        logCanvasPerf('attribute-restore', restoreOriginalElementAttributes(editor, originalElementSnapshots));
+      };
 
       syncCanvasHeadMarkup();
+      restoreOriginalAttributesOnce();
       disableInitialNonVisualEditableComponents();
-      [0, 50, 150, 350].forEach((delay) => {
-        const timeout = window.setTimeout(() => {
-          syncCanvasHeadMarkup();
-          disableInitialNonVisualEditableComponents();
-        }, delay);
-        pendingStyleSyncTimeouts.push(timeout);
-      });
     };
 
     editor.on('update', notifyDirty);
+    editor.on('component:styleUpdate', notifyStyleDirty);
+    editor.on('component:selected', syncSelectedOriginalAttributes);
     editor.on('canvas:frame:load', scheduleCanvasHeadMarkupSync);
     editor.on('canvas:frame:load:body', scheduleCanvasHeadMarkupSync);
     editor.clearDirtyCount();
@@ -960,6 +1359,8 @@ export default function VisualCanvasPane({
         window.clearTimeout(timeout);
       });
       editor.off('update', notifyDirty);
+      editor.off('component:styleUpdate', notifyStyleDirty);
+      editor.off('component:selected', syncSelectedOriginalAttributes);
       editor.off('canvas:frame:load', scheduleCanvasHeadMarkupSync);
       editor.off('canvas:frame:load:body', scheduleCanvasHeadMarkupSync);
       editor.destroy();

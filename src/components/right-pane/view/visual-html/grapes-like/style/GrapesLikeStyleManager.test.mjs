@@ -21,7 +21,7 @@ export async function load(url, context, nextLoad) {
 register(`data:text/javascript,${encodeURIComponent(loaderSource)}`, import.meta.url);
 
 const { EMPTY_STYLE_SNAPSHOT } = await import('../types.ts');
-const { default: GrapesLikeStyleManager, createStyleUpdateInput, toggleStyleSector } = await import('./GrapesLikeStyleManager.tsx');
+const { default: GrapesLikeStyleManager, createStyleUpdateInput, resolveStyleWriteTargetKind, toggleStyleSector } = await import('./GrapesLikeStyleManager.tsx');
 const { default: GrapesLikeSector } = await import('./GrapesLikeSector.tsx');
 const { default: GrapesLikeProperty, createStylePropertyPatch } = await import('./GrapesLikeProperty.tsx');
 const { default: NumberField, syncNumberFieldState, applyDragDeltaToNumberField } = await import('./fields/NumberField.tsx');
@@ -843,6 +843,10 @@ test('createStyleUpdateInput attaches structured patches to property commits', (
       },
     },
   );
+});
+
+test('resolveStyleWriteTargetKind forces inspector writes to inline styles', () => {
+  assert.equal(resolveStyleWriteTargetKind(), 'inline');
 });
 
 test('GrapesLikeStyleManager renders number values from source snapshots', () => {

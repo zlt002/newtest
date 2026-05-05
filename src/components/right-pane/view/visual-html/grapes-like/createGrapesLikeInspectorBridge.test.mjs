@@ -832,6 +832,38 @@ test('createGrapesLikeInspectorBridge keeps rule values contextual while default
   assert.equal(color.value.resolved.source, 'rule');
 });
 
+test('createGrapesLikeInspectorBridge keeps inspector commits inline even when a rule provided the echo', () => {
+  const { editor, cta } = createEditorFixture();
+  const inlineStyleState = {};
+  const ruleStyleState = { width: '251.46px' };
+  const ruleTarget = {
+    getStyle: () => ({ ...ruleStyleState }),
+    addStyle: (patch) => Object.assign(ruleStyleState, patch),
+  };
+
+  cta.getStyle = () => ({ ...inlineStyleState });
+  cta.addStyle = (patch) => Object.assign(inlineStyleState, patch);
+  editor.getSelectedToStyle = () => ruleTarget;
+
+  const bridge = createGrapesLikeInspectorBridge(editor);
+  bridge.actions.style.updateStyle({
+    property: 'width',
+    value: '260px',
+    targetKind: 'inline',
+    patch: {
+      layout: {
+        width: {
+          value: '260',
+          unit: 'px',
+        },
+      },
+    },
+  });
+
+  assert.equal(inlineStyleState.width, '260px');
+  assert.equal(ruleStyleState.width, '251.46px');
+});
+
 test('createGrapesLikeInspectorBridge ignores blank inline style writes by default', () => {
   const { editor, cta } = createEditorFixture();
   const styleState = { width: '120px' };
