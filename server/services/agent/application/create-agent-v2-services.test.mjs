@@ -564,6 +564,53 @@ test('getSessionHistory returns a canonical fallback when sessionHistoryService 
   });
 });
 
+test('getSessionContextUsage resumes a historical session with its history cwd', async () => {
+  const contextUsage = {
+    totalTokens: 70500,
+    maxTokens: 200000,
+    categories: [{ name: 'Messages', tokens: 47000, color: '#5b8def' }],
+  };
+  const resumeCalls = [];
+  const historyCalls = [];
+  const services = createAgentV2Services({
+    repo: createInMemoryAgentV2Repository(),
+    runtime: {
+      getLiveSession() {
+        return null;
+      },
+      resume(sessionId, options) {
+        resumeCalls.push({ sessionId, options });
+        return {
+          async getContextUsage() {
+            return contextUsage;
+          },
+        };
+      },
+    },
+    sessionHistoryService: {
+      async getSessionHistory(params) {
+        historyCalls.push(params);
+        return {
+          sessionId: params.sessionId,
+          cwd: 'C:/Users/demo/project',
+          metadata: { title: 'Historical session' },
+          messages: [],
+          diagnosticsSummary: { officialMessageCount: 0, debugLogAvailable: false },
+        };
+      },
+    },
+  });
+
+  const result = await services.getSessionContextUsage({ sessionId: 'sess-history-context' });
+
+  assert.deepEqual(result, contextUsage);
+  assert.deepEqual(historyCalls, [{ sessionId: 'sess-history-context' }]);
+  assert.deepEqual(resumeCalls, [{
+    sessionId: 'sess-history-context',
+    options: { cwd: 'C:/Users/demo/project' },
+  }]);
+});
+
 test('createSession returns a synthetic session shell without persisting agent session rows', async () => {
   const runStateStore = createInMemoryAgentV2Repository();
   const services = createAgentV2Services({

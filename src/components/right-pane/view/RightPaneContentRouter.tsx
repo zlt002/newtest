@@ -1,18 +1,49 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, useMemo } from 'react';
 import type { BrowserDependencySnapshot, CodeFollowAlongState } from '../../code-editor/hooks/useEditorSidebar';
 import type { FileDraftPreviewOperation } from '../../code-editor/types/types';
-import type { RightPaneTarget } from '../types';
+import type { RightPaneTab, RightPaneTarget, RightPaneVisualHtmlTarget } from '../types';
 import MarkdownPane from './MarkdownPane';
 import MarkdownDraftPane from './MarkdownDraftPane';
 import BrowserPane from './BrowserPane';
 import GitCommitPane from './GitCommitPane';
 import { createEditorPaneProps } from './editorPaneProps';
+import { getRightPaneTargetIdentity } from '../utils/rightPaneTargetIdentity';
 
 const CodeEditor = lazy(() => import('../../code-editor/view/CodeEditor'));
 const VisualHtmlEditor = lazy(() => import('./VisualHtmlEditor'));
 
+const MemoizedVisualHtmlEditor = React.memo(function MemoizedVisualHtmlEditor({
+  target,
+  isActive,
+  onClosePane,
+  onAppendToChatInput,
+}: {
+  target: RightPaneVisualHtmlTarget;
+  isActive: boolean;
+  onClosePane: () => void;
+  onAppendToChatInput?: ((text: string) => void) | null;
+}) {
+  return (
+    <VisualHtmlEditor
+      target={target}
+      isActive={isActive}
+      onClosePane={onClosePane}
+      onAppendToChatInput={onAppendToChatInput}
+    />
+  );
+}, (previous, next) => (
+  previous.isActive === next.isActive
+  && previous.target.filePath === next.target.filePath
+  && previous.target.fileName === next.target.fileName
+  && previous.target.projectName === next.target.projectName
+  && previous.onClosePane === next.onClosePane
+  && previous.onAppendToChatInput === next.onAppendToChatInput
+));
+
 type RightPaneContentRouterProps = {
   target: RightPaneTarget;
+  tabs: RightPaneTab[];
+  activeTabId: string | null;
   projectPath?: string;
   browserRefreshVersion?: number;
   codeFollowAlongState?: CodeFollowAlongState | null;
@@ -47,6 +78,8 @@ function renderVisualHtmlFallback() {
 
 export default function RightPaneContentRouter({
   target,
+  tabs,
+  activeTabId,
   projectPath,
   browserRefreshVersion = 0,
   codeFollowAlongState = null,
@@ -60,6 +93,24 @@ export default function RightPaneContentRouter({
   isExpanded = false,
   isSidebar = true,
 }: RightPaneContentRouterProps) {
+  const activeTargetIdentity = useMemo(() => getRightPaneTargetIdentity(target), [target]);
+  const renderedVisualHtmlTargets = useMemo(() => {
+    const openVisualHtmlTargets = tabs
+      .filter((tab): tab is RightPaneTab & { target: RightPaneVisualHtmlTarget } => tab.target.type === 'visual-html')
+      .map((tab) => tab.target);
+
+    if (target.type !== 'visual-html') {
+      return openVisualHtmlTargets;
+    }
+
+    const activeIdentity = getRightPaneTargetIdentity(target);
+    if (openVisualHtmlTargets.some((entry) => getRightPaneTargetIdentity(entry) === activeIdentity)) {
+      return openVisualHtmlTargets;
+    }
+
+    return [...openVisualHtmlTargets, target];
+  }, [tabs, target]);
+
   if (target.type === 'browser') {
     return (
       <div className="h-full min-h-0" data-right-pane-view="browser">
@@ -119,11 +170,27 @@ export default function RightPaneContentRouter({
     return (
       <div className="h-full min-h-0" data-right-pane-view="visual-html">
         <Suspense fallback={renderVisualHtmlFallback()}>
-          <VisualHtmlEditor
-            target={target}
-            onClosePane={onClosePane}
-            onAppendToChatInput={onAppendToChatInput}
-          />
+          <div className="relative h-full min-h-0">
+            {renderedVisualHtmlTargets.map((visualTarget) => {
+              const visualTargetIdentity = getRightPaneTargetIdentity(visualTarget);
+              const isActive = visualTargetIdentity === activeTargetIdentity && activeTabId === visualTargetIdentity;
+              return (
+                <div
+                  key={visualTargetIdentity}
+                  className={`absolute inset-0 min-h-0 ${isActive ? '' : 'invisible pointer-events-none'}`}
+                  data-right-pane-visual-html-tab={visualTargetIdentity}
+                  aria-hidden={!isActive}
+                >
+                  <MemoizedVisualHtmlEditor
+                    target={visualTarget}
+                    isActive={isActive}
+                    onClosePane={onClosePane}
+                    onAppendToChatInput={onAppendToChatInput}
+                  />
+                </div>
+              );
+            })}
+          </div>
         </Suspense>
       </div>
     );

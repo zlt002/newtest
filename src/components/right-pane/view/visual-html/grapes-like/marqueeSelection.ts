@@ -24,7 +24,8 @@ export type MarqueeSelectionBox = {
 };
 
 export const MARQUEE_SELECTION_MIN_DISTANCE_PX = 6;
-export const MARQUEE_SELECTION_MAX_COMPONENTS = 200;
+export const MARQUEE_SELECTION_MAX_COMPONENTS = 64;
+const MARQUEE_SELECTION_COLLAPSE_DESCENDANT_COUNT = 8;
 
 export function buildMarqueeSelectionBox(start: { x: number; y: number }, current: { x: number; y: number }): MarqueeSelectionBox {
   const left = Math.min(start.x, current.x);
@@ -77,6 +78,55 @@ function getHitAncestors(
   return ancestors;
 }
 
+function getCollapsedHitElements(
+  ancestorsMap: Map<HTMLElement, Set<HTMLElement>>,
+  ancestorCounts: Map<HTMLElement, number>,
+) {
+  const denseAncestors = new Set<HTMLElement>();
+
+  for (const [ancestor, count] of ancestorCounts) {
+    if (count >= MARQUEE_SELECTION_COLLAPSE_DESCENDANT_COUNT) {
+      denseAncestors.add(ancestor);
+    }
+  }
+
+  if (denseAncestors.size === 0) {
+    return denseAncestors;
+  }
+
+  const denseAncestorsWithDenseDescendants = new Set<HTMLElement>();
+  for (const denseElement of denseAncestors) {
+    for (const ancestor of ancestorsMap.get(denseElement) ?? []) {
+      if (denseAncestors.has(ancestor)) {
+        denseAncestorsWithDenseDescendants.add(ancestor);
+      }
+    }
+  }
+
+  const collapsed = new Set<HTMLElement>();
+  for (const ancestor of denseAncestors) {
+    if (!denseAncestorsWithDenseDescendants.has(ancestor)) {
+      collapsed.add(ancestor);
+    }
+  }
+
+  return collapsed;
+}
+
+function hasCollapsedAncestor(
+  element: HTMLElement,
+  ancestorsMap: Map<HTMLElement, Set<HTMLElement>>,
+  collapsedElements: Set<HTMLElement>,
+) {
+  for (const ancestor of ancestorsMap.get(element) ?? []) {
+    if (collapsedElements.has(ancestor)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export function collectMarqueeSelectionComponents<TComponent>(
   candidates: readonly MarqueeSelectionCandidate<TComponent>[],
   box: MarqueeSelectionBox,
@@ -98,12 +148,24 @@ export function collectMarqueeSelectionComponents<TComponent>(
     }
   }
 
-  const deepestHits = hits.filter((candidate) => !ancestorCounts.has(candidate.element as HTMLElement));
+  const collapsedElements = getCollapsedHitElements(ancestorsMap, ancestorCounts);
+  const selectionHits = hits.filter((candidate) => {
+    const element = candidate.element as HTMLElement;
+    if (collapsedElements.has(element)) {
+      return true;
+    }
+
+    if (hasCollapsedAncestor(element, ancestorsMap, collapsedElements)) {
+      return false;
+    }
+
+    return !ancestorCounts.has(element);
+  });
 
   const seen = new Set<TComponent>();
   const selected: TComponent[] = [];
 
-  for (const hit of deepestHits) {
+  for (const hit of selectionHits) {
     if (seen.has(hit.component)) {
       continue;
     }

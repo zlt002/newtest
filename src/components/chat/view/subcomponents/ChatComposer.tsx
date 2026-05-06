@@ -52,7 +52,16 @@ interface ChatComposerProps {
   setClaudeModel: Dispatch<SetStateAction<string>>;
   thinkingMode: ClaudeEffortLevel;
   setThinkingMode: Dispatch<SetStateAction<ClaudeEffortLevel>>;
-  tokenBudget: { used?: number; total?: number } | null;
+  tokenBudget: {
+    used?: number;
+    total?: number;
+    breakdown?: {
+      input?: number;
+      cacheCreation?: number;
+      cacheRead?: number;
+    };
+  } | null;
+  contextUsageSessionId?: string | null;
   observabilityStatus: {
     enabled: boolean;
     provider: string | null;
@@ -119,6 +128,7 @@ export default function ChatComposer({
   thinkingMode,
   setThinkingMode,
   tokenBudget,
+  contextUsageSessionId,
   observabilityStatus,
   observabilitySessionId,
   composerStatus,
@@ -387,6 +397,8 @@ export default function ChatComposer({
                   <TokenUsagePie
                     used={tokenBudget?.used || 0}
                     total={tokenBudget?.total || parseInt(import.meta.env.VITE_CONTEXT_WINDOW) || 160000}
+                    sessionId={contextUsageSessionId}
+                    fallbackBudget={tokenBudget}
                   />
 
                   {primaryAction.kind === 'stop' ? (

@@ -438,6 +438,8 @@ export default function RightPane({
       <div className="min-h-0 flex-1">
         <RightPaneContentRouter
           target={target}
+          tabs={tabs}
+          activeTabId={activeTabId}
           projectPath={projectPath}
           browserRefreshVersion={browserRefreshVersion}
           codeFollowAlongState={codeFollowAlongState}
@@ -472,6 +474,8 @@ export default function RightPane({
           <div className="min-h-0 flex-1">
             <RightPaneContentRouter
               target={target}
+              tabs={tabs}
+              activeTabId={activeTabId}
               projectPath={projectPath}
               browserRefreshVersion={browserRefreshVersion}
               codeFollowAlongState={codeFollowAlongState}

@@ -304,6 +304,13 @@ function createTrackedSession(session, entry, pool) {
       entry.commandCatalog = null;
       return await loadCommandCatalog(entry, session);
     },
+    async getContextUsage() {
+      if (typeof session.getContextUsage !== 'function') {
+        throw new Error('Context usage is not supported by this Claude Agent SDK session');
+      }
+
+      return await session.getContextUsage();
+    },
     async send(message) {
       entry.status = 'active';
       try {

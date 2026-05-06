@@ -11,6 +11,7 @@ function createComponent({
   visible = true,
   styles = {},
   classes = [],
+  element = null,
 } = {}) {
   const state = {
     id,
@@ -21,6 +22,7 @@ function createComponent({
     visible,
     styles: { ...styles },
     classes: [...classes],
+    element,
   };
 
   const component = {
@@ -385,6 +387,76 @@ test('createGrapesLikeInspectorBridge invalidates cached snapshots when editor s
   assert.deepEqual(second.layers.selectedLayerIds, ['hero']);
 });
 
+test('createGrapesLikeInspectorBridge coalesces burst selection events before rebuilding inspector snapshots', () => {
+  const { editor, hero, cta, calls, frameQueue } = createEditorFixture();
+  let selected = cta;
+  let layerReads = 0;
+  const originalGetLayerData = editor.Layers.getLayerData;
+
+  editor.getSelected = () => selected;
+  editor.getSelectedAll = () => [selected];
+  editor.Layers.getLayerData = (component) => {
+    layerReads += 1;
+    return originalGetLayerData(component);
+  };
+
+  const bridge = createGrapesLikeInspectorBridge(editor);
+  bridge.adapter.getSnapshot();
+  layerReads = 0;
+  const updates = [];
+  const unsubscribe = bridge.adapter.subscribe(() => {
+    updates.push(bridge.adapter.getSnapshot().selection.primarySelectedId);
+  });
+
+  selected = hero;
+  emitEditorEvent(calls, 'component:selected');
+  emitEditorEvent(calls, 'component:selected');
+  emitEditorEvent(calls, 'component:selected');
+
+  assert.deepEqual(updates, []);
+  assert.equal(frameQueue.length, 1);
+
+  flushFrame(frameQueue);
+  assert.deepEqual(updates, ['hero']);
+  assert.ok(layerReads <= 4, `expected one layer snapshot rebuild, got ${layerReads} layer reads`);
+
+  flushFrame(frameQueue);
+  unsubscribe();
+});
+
+test('createGrapesLikeInspectorBridge only reads computed styles for the primary item in large multi-selection snapshots', () => {
+  const { editor } = createEditorFixture();
+  let computedStyleReads = 0;
+  const makeElement = () => ({
+    style: {
+      getPropertyValue: () => '',
+    },
+    ownerDocument: {
+      defaultView: {
+        getComputedStyle: () => {
+          computedStyleReads += 1;
+          return {
+            getPropertyValue: () => '',
+          };
+        },
+      },
+    },
+  });
+  const selected = Array.from({ length: 20 }, (_, index) => createComponent({
+    id: `item-${index}`,
+    type: 'div',
+    element: makeElement(),
+  }));
+
+  editor.getSelected = () => selected[0];
+  editor.getSelectedAll = () => selected;
+
+  const bridge = createGrapesLikeInspectorBridge(editor);
+  bridge.adapter.getSnapshot();
+
+  assert.equal(computedStyleReads, 1);
+});
+
 test('createGrapesLikeInspectorBridge shares one set of editor listeners across multiple subscribers', () => {
   const { editor, calls } = createEditorFixture();
   const bridge = createGrapesLikeInspectorBridge(editor);
@@ -402,7 +474,7 @@ test('createGrapesLikeInspectorBridge shares one set of editor listeners across 
 
   assert.equal(calls.on.length, onCountAfterFirstSubscribe);
 
-  emitEditorEvent(calls, 'component:update');
+  emitEditorEvent(calls, 'selector:add');
 
   assert.equal(firstNotifications, 1);
   assert.equal(secondNotifications, 1);
@@ -458,6 +530,10 @@ test('createGrapesLikeInspectorBridge keeps selection and layer projection align
   selected = hero;
   emitEditorEvent(calls, 'component:selected');
 
+  assert.deepEqual(updates, []);
+  assert.equal(frameQueue.length, 1);
+
+  flushFrame(frameQueue);
   assert.deepEqual(updates, [{
     selection: 'hero',
     styleTargetKind: 'inline',

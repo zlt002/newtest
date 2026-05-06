@@ -125,6 +125,26 @@ export function createAgentV2Router({ services = {} } = {}) {
     }
   });
 
+  router.get('/sessions/:id/context-usage', async (req, res) => {
+    try {
+      const contextUsage = await services.getSessionContextUsage?.({
+        sessionId: req.params.id,
+      });
+
+      if (!contextUsage) {
+        return res.status(404).json({
+          error: 'Context usage is only available for live Claude sessions',
+        });
+      }
+
+      res.json(contextUsage);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to read context usage';
+      const isValidationError = /sessionId/i.test(message);
+      res.status(isValidationError ? 400 : 500).json({ error: message });
+    }
+  });
+
   router.post('/runs/:id/abort', async (req, res) => {
     try {
       const result = await services.abortRun?.({ runId: req.params.id });

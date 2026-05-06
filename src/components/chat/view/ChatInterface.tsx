@@ -1274,6 +1274,7 @@ function ChatInterface({
           thinkingMode={thinkingMode}
           setThinkingMode={setThinkingMode}
           tokenBudget={tokenBudget}
+          contextUsageSessionId={activeAgentSessionId}
           observabilityStatus={observabilityStatus}
           observabilitySessionId={currentSessionId}
           composerStatus={composerState.status}

@@ -315,6 +315,161 @@ test('buildSavedHtmlPreservingHead preserves inline visual edits after save and 
   assert.doesNotMatch(secondSave, /#menu-item\{/);
 });
 
+test('buildSavedHtmlPreservingHead does not persist source css into managed canvas style when only text changes', () => {
+  const source = `<!doctype html>
+<html>
+<head>
+  <style>.usage-title{color:#131212}.usage-panel{display:flex;gap:16px}</style>
+  <style data-ccui-visual-html-canvas-style="true">*{box-sizing:border-box;}body{margin:0;}#__SVG_SPRITE_NODE__{position:absolute;width:0;height:0;}</style>
+</head>
+<body>
+  <div class="usage-panel">
+    <h1 class="usage-title">用量统计</h1>
+  </div>
+</body>
+</html>`;
+
+  const html = buildSavedHtmlPreservingHead({
+    sourceHtml: source,
+    bodyHtml: `
+      <div class="usage-panel">
+        <h1 class="usage-title">用量11统计</h1>
+      </div>
+    `,
+    canvasCss: '.usage-title{color:#131212}.usage-panel{display:flex;gap:16px}*{box-sizing:border-box;}body{margin:0;}#__SVG_SPRITE_NODE__{position:absolute;width:0;height:0;}',
+  });
+
+  assert.match(html, /用量11统计/);
+  assert.equal((html.match(/\.usage-title\{color:#131212\}/g) ?? []).length, 1);
+  assert.equal((html.match(/\.usage-panel\{display:flex;gap:16px\}/g) ?? []).length, 1);
+  assert.equal((html.match(/data-ccui-visual-html-canvas-style="true"/g) ?? []).length, 1);
+  assert.match(html, /\*\{box-sizing:border-box;\}/);
+  assert.match(html, /body\{margin:0;\}/);
+  assert.doesNotMatch(html, /data-ccui-visual-html-canvas-style="true">[^<]*\.usage-title\{/);
+  assert.doesNotMatch(html, /data-ccui-visual-html-canvas-style="true">[^<]*\.usage-panel\{/);
+});
+
+test('buildSavedHtmlPreservingHead drops duplicated non-id selector rules even when Grapes css expands them to longhand', () => {
+  const source = `<!doctype html>
+<html>
+<head>
+  <style>
+    .usage-limit-card .usage-indicator-item .progress-bar[data-v-e914a6ea]{border-radius:4px}
+    .usage-limit-card .usage-indicator-item .progress-bar-value[data-v-e914a6ea]{border-radius:4px 0 0 4px}
+  </style>
+  <style data-ccui-visual-html-canvas-style="true">
+    .usage-limit-card .usage-indicator-item .progress-bar[data-v-e914a6ea]{border-top-left-radius:4px;border-top-right-radius:4px;border-bottom-right-radius:4px;border-bottom-left-radius:4px;}
+  </style>
+</head>
+<body>
+  <div class="usage-limit-card">
+    <div class="usage-indicator-item">
+      <div data-v-e914a6ea="" class="progress-bar">
+        <div data-v-e914a6ea="" class="progress-bar-value" style="width:0%;"></div>
+      </div>
+      <span>用量统计</span>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  const html = buildSavedHtmlPreservingHead({
+    sourceHtml: source,
+    bodyHtml: `
+      <div class="usage-limit-card">
+        <div class="usage-indicator-item">
+          <div data-v-e914a6ea="" class="progress-bar">
+            <div data-v-e914a6ea="" class="progress-bar-value" style="width:0%;"></div>
+          </div>
+          <span>用量11111统计</span>
+        </div>
+      </div>
+    `,
+    canvasCss: `
+      .usage-limit-card .usage-indicator-item .progress-bar[data-v-e914a6ea]{border-top-left-radius:4px;border-top-right-radius:4px;border-bottom-right-radius:4px;border-bottom-left-radius:4px;}
+      .usage-limit-card .usage-indicator-item .progress-bar-value[data-v-e914a6ea]{border-top-left-radius:4px;border-top-right-radius:0px;border-bottom-right-radius:0px;border-bottom-left-radius:4px;}
+    `,
+  });
+
+  assert.match(html, /用量11111统计/);
+  assert.match(html, /class="progress-bar"/);
+  assert.equal((html.match(/data-ccui-visual-html-canvas-style="true"/g) ?? []).length, 0);
+  assert.equal((html.match(/class="flex justify-between items-end"/g) ?? []).length, 0);
+});
+
+test('buildSavedHtmlPreservingHead self-heals legacy managed canvas css pollution on text-only saves', () => {
+  const source = `<!doctype html>
+<html>
+<head>
+  <style>.page-title{font-size:20px;font-weight:600}</style>
+  <style data-ccui-visual-html-canvas-style="true">
+    *{box-sizing:border-box;}
+    body{margin:0;}
+    #__SVG_SPRITE_NODE__{position:absolute;width:0px;height:0px;}
+    .swiper, :host{display:block;position:relative;}
+    .usage-limit-card .usage-indicator-item .progress-bar[data-v-e914a6ea]{border-top-left-radius:4px;border-top-right-radius:4px;border-bottom-right-radius:4px;border-bottom-left-radius:4px;}
+    0%, 20%, 53%, 100%{transform:translateZ(0px);}
+  </style>
+</head>
+<body>
+  <div class="page-title">用量统计</div>
+</body>
+</html>`;
+
+  const html = buildSavedHtmlPreservingHead({
+    sourceHtml: source,
+    bodyHtml: '<div class="page-title">用量11111统计33333333</div>',
+    canvasCss: '',
+  });
+
+  assert.match(html, /用量11111统计33333333/);
+  assert.equal((html.match(/data-ccui-visual-html-canvas-style="true"/g) ?? []).length, 1);
+  assert.match(html, /\*\{box-sizing:border-box;\}/);
+  assert.match(html, /body\{margin:0;\}/);
+  assert.doesNotMatch(html, /\.swiper,\s*:host\{/);
+  assert.doesNotMatch(html, /\.progress-bar\[data-v-e914a6ea\]\{/);
+  assert.doesNotMatch(html, /0%,\s*20%,\s*53%,\s*100%\{/);
+});
+
+test('buildSavedHtmlPreservingHead drops re-exported non-id Grapes css even when legacy managed canvas css was already polluted', () => {
+  const source = `<!doctype html>
+<html>
+<head>
+  <style>.page-title{font-size:20px;font-weight:600}</style>
+  <style data-ccui-visual-html-canvas-style="true">
+    *{box-sizing:border-box;}
+    body{margin:0;}
+    #__SVG_SPRITE_NODE__{position:absolute;width:0px;height:0px;}
+    .swiper, :host{display:block;position:relative;}
+  </style>
+</head>
+<body>
+  <div class="page-title">鐢ㄩ噺缁熻</div>
+</body>
+</html>`;
+
+  const html = buildSavedHtmlPreservingHead({
+    sourceHtml: source,
+    bodyHtml: '<div class="page-title">鐢ㄩ噺11111缁熻33333333</div>',
+    canvasCss: `
+      *{box-sizing:border-box;}
+      body{margin:0;}
+      #__SVG_SPRITE_NODE__{position:absolute;width:0px;height:0px;}
+      .swiper, :host{display:block;margin-left:auto;margin-right:auto;position:relative;z-index:1;}
+      .help-block[data-v-416c94c8]{box-sizing:border-box;display:flex;width:100%;}
+      .justify-between{justify-content:space-between;}
+    `,
+  });
+
+  assert.match(html, /鐢ㄩ噺11111缁熻33333333/);
+  assert.equal((html.match(/data-ccui-visual-html-canvas-style="true"/g) ?? []).length, 1);
+  assert.match(html, /\*\{box-sizing:border-box;\}/);
+  assert.match(html, /body\{margin:0;\}/);
+  assert.doesNotMatch(html, /\.swiper,\s*:host\{/);
+  assert.doesNotMatch(html, /\.help-block\[data-v-416c94c8\]\{/);
+  assert.doesNotMatch(html, /\.justify-between\{/);
+});
+
 test('buildSavedHtmlPreservingHead coalesces repeated canvas selector declarations to the latest value', () => {
   const source = `<!doctype html>
 <html>

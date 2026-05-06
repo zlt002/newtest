@@ -90,6 +90,7 @@ test('agent v2 router exposes session-first endpoints', () => {
     .filter(Boolean);
   const routePaths = routeEntries.map((entry) => entry.path);
   const sessionRunsRoute = routeEntries.find((entry) => entry.path === '/sessions/:id/runs');
+  const sessionContextUsageRoute = routeEntries.find((entry) => entry.path === '/sessions/:id/context-usage');
   const runEventsRoute = routeEntries.find((entry) => entry.path === '/runs/:id/events');
 
   assert.ok(routePaths.includes('/sessions'));
@@ -97,11 +98,47 @@ test('agent v2 router exposes session-first endpoints', () => {
   assert.ok(routePaths.includes('/sessions/:id/runs'));
   assert.deepEqual(sessionRunsRoute?.methods, ['post']);
   assert.ok(routePaths.includes('/sessions/:id/history'));
+  assert.deepEqual(sessionContextUsageRoute?.methods, ['get']);
   assert.equal(routePaths.includes('/conversations'), false);
   assert.equal(routePaths.includes('/conversations/:id'), false);
   assert.equal(routePaths.includes('/conversations/:id/runs'), false);
   assert.ok(routePaths.includes('/runs/:id/abort'));
   assert.equal(runEventsRoute, undefined);
+});
+
+test('agent v2 context usage endpoint returns the live SDK breakdown', async () => {
+  const contextUsage = {
+    totalTokens: 70500,
+    maxTokens: 200000,
+    percentage: 35.25,
+    categories: [
+      { name: 'Messages', tokens: 47000, color: '#5b8def' },
+      { name: 'System tools', tokens: 16800, color: '#8ab4f8' },
+    ],
+  };
+  const calls = [];
+  const app = express();
+  app.use(express.json());
+  app.use('/api/agent-v2', createAgentV2Router({
+    services: {
+      async getSessionContextUsage(params) {
+        calls.push(params);
+        return contextUsage;
+      },
+    },
+  }));
+  const { server, port } = await listenServer(app);
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/agent-v2/sessions/sess-context/context-usage`);
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(calls, [{ sessionId: 'sess-context' }]);
+    assert.deepEqual(body, contextUsage);
+  } finally {
+    await closeServer(server);
+  }
 });
 
 test('agent v2 history endpoint defaults to the tail page when no limit is provided', async () => {

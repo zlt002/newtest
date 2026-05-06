@@ -8,10 +8,15 @@ import {
 } from './marqueeSelection.ts';
 
 function element(rect, children = []) {
-  return {
+  const node = {
+    parentElement: null,
     getBoundingClientRect: () => rect,
     contains: (node) => children.includes(node),
   };
+  for (const child of children) {
+    child.parentElement = node;
+  }
+  return node;
 }
 
 test('buildMarqueeSelectionBox normalizes drag direction', () => {
@@ -64,5 +69,35 @@ test('collectMarqueeSelectionComponents keeps the deepest hit and caps results',
       { component: sibling, element: siblingElement },
     ], { left: 0, top: 0, width: 100, height: 100 }, 1),
     [child],
+  );
+});
+
+test('collectMarqueeSelectionComponents collapses dense descendant hits to their container', () => {
+  const container = { id: 'card' };
+  const childComponents = Array.from({ length: 12 }, (_, index) => ({ id: `child-${index}` }));
+  const childElements = childComponents.map((_, index) => element({
+    left: 10,
+    top: 10 + index * 6,
+    right: 30,
+    bottom: 15 + index * 6,
+    width: 20,
+    height: 5,
+  }));
+  const containerElement = element(
+    { left: 0, top: 0, right: 120, bottom: 120, width: 120, height: 120 },
+    childElements,
+  );
+
+  const candidates = [
+    { component: container, element: containerElement },
+    ...childComponents.map((component, index) => ({
+      component,
+      element: childElements[index],
+    })),
+  ];
+
+  assert.deepEqual(
+    collectMarqueeSelectionComponents(candidates, { left: 0, top: 0, width: 120, height: 120 }, 200),
+    [container],
   );
 });

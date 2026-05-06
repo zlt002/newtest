@@ -150,6 +150,46 @@ test('session pool reuses a live session instead of resuming it again', async ()
   assert.equal(resumeCalls, 0);
 });
 
+test('session pool exposes the live SDK context usage breakdown', async () => {
+  const contextUsage = {
+    totalTokens: 70500,
+    maxTokens: 200000,
+    percentage: 35.25,
+    categories: [
+      { name: 'Messages', tokens: 47000, color: '#5b8def' },
+      { name: 'System tools', tokens: 16800, color: '#8ab4f8' },
+    ],
+  };
+  const fakeSdk = {
+    unstable_v2_createSession() {
+      return {
+        async send() {},
+        async *stream() {
+          yield { type: 'system', subtype: 'init', session_id: 'sess-context' };
+        },
+        async getContextUsage() {
+          return contextUsage;
+        },
+        get sessionId() {
+          return 'sess-context';
+        },
+        close() {},
+      };
+    },
+    unstable_v2_resumeSession() {
+      throw new Error('resume should not be called for a live session');
+    },
+  };
+
+  const pool = createClaudeV2SessionPool(fakeSdk);
+  const created = pool.create({ cwd: '/Users/demo/html' });
+  for await (const _message of created.stream()) {
+    // bind live session id
+  }
+
+  assert.deepEqual(await created.getContextUsage(), contextUsage);
+});
+
 test('session pool passes hooks into unstable_v2_createSession', () => {
   let capturedOptions = null;
   const hooks = {

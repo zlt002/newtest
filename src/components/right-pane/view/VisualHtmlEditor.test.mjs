@@ -91,6 +91,30 @@ test('VisualHtmlEditor source converges design and source state only on mode swi
   assert.match(source, /broadcastFileSyncEvent/);
 });
 
+test('VisualHtmlEditor keeps design and source workspaces mounted and switches visibility instead of unmounting', async () => {
+  const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /data-visual-html-design-workspace="true"/);
+  assert.match(source, /data-visual-html-source-workspace="true"/);
+  assert.match(source, /className=\{`absolute inset-0 \$\{activeMode === 'design' \? 'flex' : 'invisible pointer-events-none'\}`\}/);
+  assert.match(source, /className=\{`absolute inset-0 flex min-h-0 flex-col \$\{activeMode === 'source' \|\| Boolean\(eligibilityError\) \? '' : 'invisible pointer-events-none'\}`\}/);
+  assert.match(source, /aria-hidden=\{activeMode !== 'design'\}/);
+  assert.match(source, /aria-hidden=\{activeMode !== 'source' && !eligibilityError\}/);
+});
+
+test('VisualHtmlEditor quiets hidden tabs and defers design refresh until after activation', async () => {
+  const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /isActive\?: boolean;/);
+  assert.match(source, /isActive = true/);
+  assert.match(source, /if \(!isActive\) \{\s*return undefined;\s*\}/);
+  assert.match(source, /if \(!isActive \|\| activeMode !== 'design'\) \{\s*return;\s*\}/);
+  assert.match(source, /refreshFrame = window\.requestAnimationFrame\(\(\) => \{/);
+  assert.match(source, /canvasEditorRef\.current\.Canvas\.refresh\(\);/);
+  assert.match(source, /const showSpacingOverlay = isActive && !isPreviewActive/);
+  assert.match(source, /const showInspectorPane = isActive && !isPreviewActive && grapesLikeBridge/);
+});
+
 test('VisualHtmlEditor source passes preview-based asset url context to the design canvas', async () => {
   const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
 
@@ -204,7 +228,7 @@ test('VisualHtmlEditor exposes live source-location mapping and a freshness help
 test('VisualHtmlEditor hides the inspector pane while preview mode is active', async () => {
   const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
 
-  assert.match(source, /const showInspectorPane = !isPreviewActive && grapesLikeBridge/);
+  assert.match(source, /const showInspectorPane = isActive && !isPreviewActive && grapesLikeBridge/);
   assert.match(source, /showInspectorPane \? \(/);
   assert.match(source, /<GrapesLikeInspectorPane/);
 });
@@ -250,7 +274,7 @@ test('VisualHtmlEditor treats preview as a read-only browser-like canvas state',
   assert.match(source, /src=\{activePreviewUrl\}/);
   assert.doesNotMatch(source, /srcDoc=\{previewDocument\}/);
   assert.match(source, /bodyHtml: extractCanvasBodyHtmlForSave\(canvasEditorRef\.current\.getHtml\(\)\)/);
-  assert.match(source, /const showSpacingOverlay = !isPreviewActive && !eligibilityError && activeMode === 'design' && canvasEditor && grapesLikeBridge/);
+  assert.match(source, /const showSpacingOverlay = isActive && !isPreviewActive && !eligibilityError && activeMode === 'design' && canvasEditor && grapesLikeBridge/);
   assert.match(source, /const previewViewportWidth = canvasDevice === 'desktop'\s*\?\s*'100%'\s*:\s*canvasDevice === 'tablet'\s*\?\s*'770px'\s*:\s*'320px';/);
   assert.match(source, /setCanvasDevice\(device\);/);
   assert.match(source, /if \(!editor\) \{\s*return;\s*\}/);
@@ -377,7 +401,16 @@ test('RightPaneContentRouter source routes visual-html targets to VisualHtmlEdit
   const source = await readFile(new URL('./RightPaneContentRouter.tsx', import.meta.url), 'utf8');
 
   assert.match(source, /const VisualHtmlEditor = lazy\(\(\) => import\('\.\/VisualHtmlEditor'\)\);/);
+  assert.match(source, /const MemoizedVisualHtmlEditor = React\.memo\(function MemoizedVisualHtmlEditor/);
   assert.match(source, /if \(target\.type === 'visual-html'\)/);
+  assert.match(source, /const renderedVisualHtmlTargets = useMemo\(\(\) => \{/);
+  assert.match(source, /const openVisualHtmlTargets = tabs\s*\.filter\(\(tab\): tab is RightPaneTab & \{ target: RightPaneVisualHtmlTarget \} => tab\.target\.type === 'visual-html'\)/);
+  assert.match(source, /if \(target\.type !== 'visual-html'\) \{\s*return openVisualHtmlTargets;\s*\}/);
+  assert.match(source, /if \(openVisualHtmlTargets\.some\(\(entry\) => getRightPaneTargetIdentity\(entry\) === activeIdentity\)\) \{\s*return openVisualHtmlTargets;\s*\}/);
+  assert.match(source, /return \[\.\.\.openVisualHtmlTargets, target\];/);
+  assert.match(source, /data-right-pane-visual-html-tab=/);
+  assert.match(source, /renderedVisualHtmlTargets\.map/);
+  assert.match(source, /isActive=\{isActive\}/);
   assert.match(source, /<VisualHtmlEditor/);
   assert.match(source, /data-right-pane-view="visual-html"/);
 });

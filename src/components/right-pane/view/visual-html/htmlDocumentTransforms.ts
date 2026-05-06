@@ -29,11 +29,66 @@ type CanvasCssRule = {
   declarations: CanvasCssDeclaration[];
 };
 
+type VisualHtmlSaveDebugEntry = {
+  timestamp: string;
+  sourceHtmlLength: number;
+  bodyHtmlLength: number;
+  canvasCssLength: number;
+  previousManagedCanvasCssLength: number;
+  sanitizedLegacyManagedCanvasCssLength: number;
+  mergedCanvasCssLength: number;
+  persistentCanvasCssLength: number;
+  removedLegacyManagedSelectors: string[];
+  removedDuplicatedSelectors: string[];
+  sourceManagedCanvasCss: string;
+  sanitizedLegacyManagedCanvasCss: string;
+  canvasCssInput: string;
+  mergedCanvasCss: string;
+  persistentCanvasCss: string;
+};
+
 const NON_PERSISTENT_CANVAS_SELECTOR_PATTERNS = [
   /^#plasmo-/i,
   /^#__hcfy__$/i,
   /^\[data-ccui-hidden-layer-preview/i,
 ];
+
+function isVisualHtmlSaveDebugEnabled() {
+  return (
+    typeof window !== 'undefined'
+    && (window as Window & { CCUI_DEBUG_VISUAL_SAVE?: boolean }).CCUI_DEBUG_VISUAL_SAVE === true
+  );
+}
+
+function pushVisualHtmlSaveDebugEntry(entry: VisualHtmlSaveDebugEntry) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const debugWindow = window as Window & {
+    __CCUI_VISUAL_SAVE_DEBUG__?: VisualHtmlSaveDebugEntry;
+    __CCUI_VISUAL_SAVE_DEBUG_HISTORY__?: VisualHtmlSaveDebugEntry[];
+  };
+
+  const nextHistory = [...(debugWindow.__CCUI_VISUAL_SAVE_DEBUG_HISTORY__ ?? []), entry].slice(-20);
+  debugWindow.__CCUI_VISUAL_SAVE_DEBUG__ = entry;
+  debugWindow.__CCUI_VISUAL_SAVE_DEBUG_HISTORY__ = nextHistory;
+
+  console.groupCollapsed('[VisualHtmlSaveDebug]', entry.timestamp);
+  console.info('lengths', {
+    sourceHtmlLength: entry.sourceHtmlLength,
+    bodyHtmlLength: entry.bodyHtmlLength,
+    canvasCssLength: entry.canvasCssLength,
+    previousManagedCanvasCssLength: entry.previousManagedCanvasCssLength,
+    sanitizedLegacyManagedCanvasCssLength: entry.sanitizedLegacyManagedCanvasCssLength,
+    mergedCanvasCssLength: entry.mergedCanvasCssLength,
+    persistentCanvasCssLength: entry.persistentCanvasCssLength,
+  });
+  console.info('removedLegacyManagedSelectors', entry.removedLegacyManagedSelectors);
+  console.info('removedDuplicatedSelectors', entry.removedDuplicatedSelectors);
+  console.info('latestEntry', entry);
+  console.groupEnd();
+}
 
 function serializeAttributesFromElement(element: Element): string {
   return Array.from(element.attributes)
@@ -244,6 +299,14 @@ function normalizePersistentCanvasEdits({
       return;
     }
 
+    // Managed canvas CSS is only for editor-owned element patches and a tiny
+    // set of global bootstrap rules. GrapesJS re-exports imported page-level
+    // class/attribute selectors from <style> tags via getCss(), even on pure
+    // text edits; persisting those rules causes cascade drift on reopen.
+    if (!keepForSourceNonEditableElement && !isAllowedManagedCanvasGlobalSelector(rule.selector)) {
+      return;
+    }
+
     persistentRules.push(rule);
   });
 
@@ -314,6 +377,126 @@ function mergeCanvasCssBlocks(...blocks: string[]) {
     });
 
   return coalesceCanvasCss(mergedBlocks.join('\n'));
+}
+
+const MANAGED_CANVAS_GLOBAL_SELECTOR_ALLOWLIST = new Set([
+  '*',
+  'body',
+  'html',
+  ':root',
+]);
+
+function isAllowedManagedCanvasGlobalSelector(selector: string) {
+  const selectorParts = selector
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  return selectorParts.length > 0
+    && selectorParts.every((part) => MANAGED_CANVAS_GLOBAL_SELECTOR_ALLOWLIST.has(part));
+}
+
+function sanitizeLegacyManagedCanvasCss(css: string) {
+  const normalizedCss = coalesceCanvasCss(css);
+  if (!normalizedCss.trim()) {
+    return {
+      css: normalizedCss,
+      removedSelectors: [] as string[],
+    };
+  }
+
+  const allRules = collectCanvasCssRules(normalizedCss);
+  const filteredRules = allRules
+    .filter(({ selector }) => (
+      Boolean(readSimpleIdSelector(selector))
+      || isAllowedManagedCanvasGlobalSelector(selector)
+    ));
+  const keptSelectors = new Set(filteredRules.map(({ selector }) => selector));
+  const removedSelectors = allRules
+    .map(({ selector }) => selector)
+    .filter((selector) => !keptSelectors.has(selector));
+
+  return {
+    css: serializeCanvasCssRules(filteredRules),
+    removedSelectors,
+  };
+}
+
+function buildCanvasCssDeclarationMap(css: string) {
+  const declarationsBySelector = new Map<string, Map<string, string>>();
+
+  collectCanvasCssRules(coalesceCanvasCss(css)).forEach(({ selector, declarations }) => {
+    if (!selector) {
+      return;
+    }
+
+    let selectorDeclarations = declarationsBySelector.get(selector);
+    if (!selectorDeclarations) {
+      selectorDeclarations = new Map<string, string>();
+      declarationsBySelector.set(selector, selectorDeclarations);
+    }
+
+    declarations.forEach(({ property, value }) => {
+      selectorDeclarations!.set(property, value);
+    });
+  });
+
+  return declarationsBySelector;
+}
+
+function removeSourceDuplicatedCanvasCss(sourceCss: string, canvasCss: string) {
+  const normalizedCanvasCss = coalesceCanvasCss(canvasCss);
+  if (!sourceCss.trim() || !normalizedCanvasCss.trim()) {
+    return {
+      css: normalizedCanvasCss,
+      removedSelectors: [] as string[],
+    };
+  }
+
+  const sourceDeclarationsBySelector = buildCanvasCssDeclarationMap(sourceCss);
+  if (sourceDeclarationsBySelector.size === 0) {
+    return {
+      css: normalizedCanvasCss,
+      removedSelectors: [] as string[],
+    };
+  }
+
+  const removedSelectors: string[] = [];
+  const filteredRules = collectCanvasCssRules(normalizedCanvasCss)
+    .map(({ selector, declarations }) => {
+      const sourceDeclarations = sourceDeclarationsBySelector.get(selector);
+      if (!sourceDeclarations) {
+        return { selector, declarations };
+      }
+
+       // The source document should remain the single owner of non-id selectors
+       // (class, element, attribute, pseudo, etc). GrapesJS getCss() can mirror
+       // those source rules back out in normalized longhand form even when the
+       // user only edited text content, and persisting them causes whole-page
+       // cascade drift on reopen. For persisted visual edits we keep id-based
+       // selectors, which are how element-scoped canvas overrides are stored.
+      if (!readSimpleIdSelector(selector)) {
+        removedSelectors.push(selector);
+        return null;
+      }
+
+      const nextDeclarations = declarations.filter(({ property, value }) => (
+        sourceDeclarations.get(property) !== value
+      ));
+
+      if (nextDeclarations.length === 0) {
+        removedSelectors.push(selector);
+        return null;
+      }
+
+      return { selector, declarations: nextDeclarations };
+    })
+    .filter((rule): rule is CanvasCssRule => Boolean(rule));
+
+  return {
+    css: serializeCanvasCssRules(filteredRules),
+    removedSelectors,
+  };
 }
 
 function collectStyleContents(markup: string): string {
@@ -1115,19 +1298,46 @@ export function buildSavedHtmlPreservingHead({
     snapshot.bodyEventAttributes,
   );
   const headMarkup = stripStyleNodes(readHeadMarkup(sourceHtml));
-  const sourceStyleMarkup = collectStyleMarkup(sourceHtml);
+  const sourceHtmlWithoutManagedCanvasStyles = stripManagedCanvasStyleNodes(sourceHtml);
+  const sourceStyleMarkup = collectStyleMarkup(sourceHtmlWithoutManagedCanvasStyles);
+  const sourceStyleContents = collectStyleContents(sourceHtmlWithoutManagedCanvasStyles);
   const previousCanvasCssBlocks = collectManagedCanvasStyleContents(sourceHtml);
-  const previousCanvasCss = previousCanvasCssBlocks[previousCanvasCssBlocks.length - 1] ?? '';
-  const mergedCanvasCss = mergeCanvasCssBlocks(previousCanvasCss, canvasCss);
+  const sanitizedLegacyManagedCanvasCss = sanitizeLegacyManagedCanvasCss(
+    previousCanvasCssBlocks[previousCanvasCssBlocks.length - 1] ?? '',
+  );
+  const mergedCanvasCss = removeSourceDuplicatedCanvasCss(
+    sourceStyleContents,
+    mergeCanvasCssBlocks(sanitizedLegacyManagedCanvasCss.css, canvasCss),
+  );
   const persistentCanvasEdits = normalizePersistentCanvasEdits({
     sourceHtml,
     bodyHtml: cleanBodyHtml,
-    canvasCss: mergedCanvasCss,
+    canvasCss: mergedCanvasCss.css,
   });
   const canvasStyleMarkup = persistentCanvasEdits.canvasCss
     ? `<style data-ccui-visual-html-canvas-style="true">${persistentCanvasEdits.canvasCss}</style>`
     : '';
   const headParts = [headMarkup, sourceStyleMarkup, canvasStyleMarkup].filter(Boolean);
+
+  if (isVisualHtmlSaveDebugEnabled()) {
+    pushVisualHtmlSaveDebugEntry({
+      timestamp: new Date().toISOString(),
+      sourceHtmlLength: sourceHtml.length,
+      bodyHtmlLength: bodyHtml.length,
+      canvasCssLength: canvasCss.length,
+      previousManagedCanvasCssLength: (previousCanvasCssBlocks[previousCanvasCssBlocks.length - 1] ?? '').length,
+      sanitizedLegacyManagedCanvasCssLength: sanitizedLegacyManagedCanvasCss.css.length,
+      mergedCanvasCssLength: mergedCanvasCss.css.length,
+      persistentCanvasCssLength: persistentCanvasEdits.canvasCss.length,
+      removedLegacyManagedSelectors: sanitizedLegacyManagedCanvasCss.removedSelectors,
+      removedDuplicatedSelectors: mergedCanvasCss.removedSelectors,
+      sourceManagedCanvasCss: previousCanvasCssBlocks[previousCanvasCssBlocks.length - 1] ?? '',
+      sanitizedLegacyManagedCanvasCss: sanitizedLegacyManagedCanvasCss.css,
+      canvasCssInput: canvasCss,
+      mergedCanvasCss: mergedCanvasCss.css,
+      persistentCanvasCss: persistentCanvasEdits.canvasCss,
+    });
+  }
 
   return formatHtmlDocument(`<!doctype html>
 <html${snapshot.htmlAttributes}>

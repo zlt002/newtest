@@ -32,7 +32,7 @@ test('VisualCanvasPane source defines an isolated design surface around GrapesJS
   assert.match(source, /component\.setClass\?\.\(className/);
   assert.match(source, /collectMissingStyleRecord/);
   assert.match(source, /readComponentInlineStyleRecord/);
-  assert.match(source, /component\.addStyle\?\.\(missingStyle/);
+  assert.match(source, /component\.addStyle\?\.\(styleRecord/);
   assert.match(source, /component\.addAttributes\?\.\(changedRestAttributes/);
   assert.match(source, /buildComponentByElementMap/);
   assert.match(source, /findCanvasElementByFingerprint/);
@@ -76,6 +76,7 @@ test('VisualCanvasPane source owns editor lifecycle and reload wiring', async ()
   assert.match(source, /canvas:frame:load:body/);
   assert.match(source, /\}, \[assetBaseUrl, fullHtml\]\)/);
   assert.doesNotMatch(source, /\}, \[fullHtml, onDirtyChange, onEditorReady\]\)/);
+  assert.doesNotMatch(source, /editor\.on\('component:selected', syncSelectedOriginalAttributes\)/);
 });
 
 test('VisualCanvasPane source keeps hidden interaction nodes but disables non-visual editing by default', async () => {
@@ -186,6 +187,50 @@ test('VisualCanvasPane performance diagnostics stay behind a debug gate', async 
   assert.match(source, /logCanvasPerf\('components'/);
   assert.match(source, /logCanvasPerf\('head-sync'/);
   assert.match(source, /logCanvasPerf\('head-state'/);
+});
+
+test('VisualCanvasPane source patches GrapesJS canvas sorter to skip invalid drag children safely', async () => {
+  const source = await readFile(new URL('./VisualCanvasPane.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /const SORTER_SAFETY_PATCH_FLAG = '__ccuiSorterSafetyPatchInstalled';/);
+  assert.match(source, /function isIllegalInvocationError\(error: unknown\)/);
+  assert.match(source, /function isCanvasSortableElement\(/);
+  assert.match(source, /function patchDropLocationDeterminerChildrenDim\(dropLocationDeterminer: /);
+  assert.match(source, /function installGrapesJsSorterSafetyPatch\(editor: ReturnType<typeof grapesjs\.init>\)/);
+  assert.match(source, /const sorterConstructor = .*ComponentSorter/);
+  assert.match(source, /const originalStartSort = sorterConstructor\.prototype\.startSort;/);
+  assert.match(source, /sorterConstructor\.prototype\.startSort = function patchedStartSort\(sources: any\)/);
+  assert.match(source, /patchDropLocationDeterminerChildrenDim\(this\?\.dropLocationDeterminer\);/);
+  assert.match(source, /return originalStartSort\.call\(this, sources\);/);
+  assert.match(source, /const originalGetChildrenDim = dropLocationDeterminer\.getChildrenDim;/);
+  assert.match(source, /const originalGetDropPosition = dropLocationDeterminer\.getDropPosition;/);
+  assert.match(source, /dropLocationDeterminer\[SORTER_SAFETY_PATCH_FLAG\]/);
+  assert.match(source, /if \(this\?\.containerContext\?\.itemSel !== '\*'\) \{\s*return originalGetChildrenDim\.call\(this, targetNode\);\s*\}/);
+  assert.match(source, /const children = targetNode\?\.getChildren\?\.\(\);/);
+  assert.match(source, /if \(!Array\.isArray\(children\) \|\| children\.length === 0\) \{\s*return \[\];\s*\}/);
+  assert.match(source, /if \(!isCanvasSortableElement\(el\)\) \{/);
+  assert.match(source, /logCanvasPerf\('sorter-skip-invalid-child'/);
+  assert.match(source, /if \(!isIllegalInvocationError\(error\)\) \{\s*throw error;\s*\}/);
+  assert.match(source, /logCanvasPerf\('sorter-skip-illegal-invocation'/);
+  assert.match(source, /dropLocationDeterminer\.getDropPosition = function patchedGetDropPosition/);
+  assert.match(source, /const childrenDimensions = node\?\.childrenDimensions;/);
+  assert.match(source, /if \(!Array\.isArray\(childrenDimensions\) \|\| childrenDimensions\.length === 0\) \{/);
+  assert.match(source, /return \{\s*index: 0,\s*placement: 'inside',\s*placeholderDimensions: nodeDimensions\.clone\(\),\s*\};/);
+  assert.match(source, /installGrapesJsSorterSafetyPatch\(editor\);/);
+});
+
+test('VisualCanvasPane source de-duplicates original snapshot matches and avoids selection-time class rewrites', async () => {
+  const source = await readFile(new URL('./VisualCanvasPane.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /type OriginalElementMatchRecord = \{/);
+  assert.match(source, /function buildOriginalElementSnapshotLookup\(/);
+  assert.match(source, /const matchedSnapshots = new Map<Element, OriginalElementMatchRecord>\(\);/);
+  assert.match(source, /if \(matchedSnapshots\.has\(element\)\) \{/);
+  assert.match(source, /matchedSnapshots\.set\(element, \{ snapshot, matchType \}\);/);
+  assert.match(source, /const matchedSnapshots = buildOriginalElementSnapshotLookup\(canvasBody, snapshots\);/);
+  assert.match(source, /for \(const \[element, \{ snapshot, matchType \}\] of matchedSnapshots\) \{/);
+  assert.doesNotMatch(source, /function syncOriginalAttributesForComponent\(/);
+  assert.doesNotMatch(source, /component\.setClass\?\.\(className, \{ avoidStore: true, noUndo: true \}\);\s*\n\s*}\s*\n\s*\n\s*const missingStyle = collectMissingStyleRecord[\s\S]*function injectRawCanvasStyles/);
 });
 
 test('VisualCanvasPane source separates design and source toolbar states', async () => {

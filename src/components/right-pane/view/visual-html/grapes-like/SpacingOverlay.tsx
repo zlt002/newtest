@@ -209,8 +209,8 @@ const MARQUEE_SELECTION_BOX_ATTR = 'data-ccui-marquee-selection';
 const MARQUEE_SELECTING_DATASET_KEY = 'ccuiMarqueeSelecting';
 const MULTI_SELECTING_DATASET_KEY = 'ccuiMultiSelecting';
 const MARQUEE_SELECTION_HIT_TEST_STEP_PX = 24;
-const MARQUEE_SELECTION_MAX_HIT_TEST_POINTS = 900;
-const MARQUEE_FALLBACK_SCAN_BATCH_SIZE = 250;
+const MARQUEE_SELECTION_MAX_HIT_TEST_POINTS = 225;
+const MARQUEE_FALLBACK_SCAN_BATCH_SIZE = 2000;
 const SELECTED_OVERLAY_BORDER_COLOR = 'rgba(37, 99, 235, 0.95)';
 const MULTI_SELECTION_TOOLBAR_OFFSET_PX = 8;
 const SPACING_HANDLE_HOVER_ZONE_PX = 10;
@@ -827,11 +827,44 @@ export function attachSpacingOverlayToolbarSync(
   editor: Pick<GrapesEditor, 'getSelected' | 'refresh' | 'Canvas' | 'on' | 'off' | 'Commands'>,
   onSendSelectionToChat: () => void | Promise<void>,
 ) {
+  type ToolbarSyncComponent = {
+    get?: (key: string) => unknown;
+    set?: (key: string, value: unknown) => void;
+  } | null | undefined;
+
   const syncToolbar = (component?: {
     get?: (key: string) => unknown;
     set?: (key: string, value: unknown) => void;
   } | null) => {
     syncSpacingOverlayToolbar(editor, component, { refreshTools: true });
+  };
+  const getToolbarSyncView = () => editor.Canvas?.getBody?.()?.ownerDocument?.defaultView;
+  let toolbarSyncPending = false;
+  let toolbarSyncFrame: number | null = null;
+  let toolbarSyncTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingToolbarComponent: ToolbarSyncComponent;
+  const runScheduledToolbarSync = () => {
+    toolbarSyncPending = false;
+    toolbarSyncFrame = null;
+    toolbarSyncTimer = null;
+    const component = pendingToolbarComponent;
+    pendingToolbarComponent = undefined;
+    syncToolbar(component);
+  };
+  const scheduleToolbarSync = (component?: ToolbarSyncComponent) => {
+    pendingToolbarComponent = component;
+    if (toolbarSyncPending) {
+      return;
+    }
+
+    toolbarSyncPending = true;
+    const view = getToolbarSyncView();
+    if (view?.requestAnimationFrame) {
+      toolbarSyncFrame = view.requestAnimationFrame(runScheduledToolbarSync);
+      return;
+    }
+
+    toolbarSyncTimer = setTimeout(runScheduledToolbarSync, 0);
   };
 
   editor.Commands?.add?.(SEND_TO_AI_TOOLBAR_COMMAND, {
@@ -841,12 +874,22 @@ export function attachSpacingOverlayToolbarSync(
   });
 
   syncToolbar();
-  editor.on?.('component:selected', syncToolbar);
-  editor.on?.('component:update', syncToolbar);
+  editor.on?.('component:selected', scheduleToolbarSync);
+  editor.on?.('component:update', scheduleToolbarSync);
 
   return () => {
-    editor.off?.('component:selected', syncToolbar);
-    editor.off?.('component:update', syncToolbar);
+    editor.off?.('component:selected', scheduleToolbarSync);
+    editor.off?.('component:update', scheduleToolbarSync);
+    if (toolbarSyncFrame != null) {
+      getToolbarSyncView()?.cancelAnimationFrame?.(toolbarSyncFrame);
+    }
+    if (toolbarSyncTimer) {
+      clearTimeout(toolbarSyncTimer);
+    }
+    toolbarSyncPending = false;
+    toolbarSyncFrame = null;
+    toolbarSyncTimer = null;
+    pendingToolbarComponent = undefined;
     // @ts-ignore - grapesjs Commands has a remove method at runtime but not in types
     editor.Commands?.remove?.(SEND_TO_AI_TOOLBAR_COMMAND);
   };
@@ -1589,6 +1632,53 @@ function buildSpacingBoxesForElement(
   };
 }
 
+function buildSelectedBorderBoxForElement(
+  element: HTMLElement,
+  target: SpacingStyleTarget | null,
+  key: string,
+  id: string,
+): SelectedSpacingBox {
+  const rect = element.getBoundingClientRect();
+  const emptySpacing = {
+    top: '',
+    right: '',
+    bottom: '',
+    left: '',
+    unit: '',
+    topPx: 0,
+    rightPx: 0,
+    bottomPx: 0,
+    leftPx: 0,
+  };
+  const rectBox = {
+    left: rect.left,
+    top: rect.top,
+    width: rect.width,
+    height: rect.height,
+  };
+
+  return {
+    key,
+    id,
+    target,
+    left: rect.left,
+    top: rect.top,
+    width: rect.width,
+    height: rect.height,
+    display: 'block',
+    positionMode: null,
+    resizeValue: {
+      width: { value: formatNumber(rect.width), unit: 'px' },
+      height: { value: formatNumber(rect.height), unit: 'px' },
+      aspectRatio: rect.height > 0 ? rect.width / rect.height : 1,
+    },
+    marginBox: rectBox,
+    paddingBox: rectBox,
+    margin: emptySpacing,
+    padding: emptySpacing,
+  };
+}
+
 function getSelectedComponentForChat(editor: GrapesEditor): SelectedComponentTarget | null {
   try {
     const selected = editor.getSelectedAll?.() ?? [];
@@ -1872,7 +1962,7 @@ export async function buildSendSelectionToChatPayload({
   };
 }
 
-function buildSpacingSnapshot(editor: GrapesEditor): SpacingOverlaySnapshot | null {
+export function buildSpacingSnapshot(editor: GrapesEditor): SpacingOverlaySnapshot | null {
   const body = editor.Canvas?.getBody?.();
   const selected = getSelectedComponent(editor);
   if (!selected || isWrapperComponent(selected)) {
@@ -1889,6 +1979,7 @@ function buildSpacingSnapshot(editor: GrapesEditor): SpacingOverlaySnapshot | nu
   }
 
   const selectedId = String(selected.getId?.() ?? selected.get?.('id') ?? '').trim();
+  const selectedSpacingBox = buildSpacingBoxesForElement(element, computed, selected as SpacingStyleTarget, selectedId || 'selected', selectedId);
   const selectedBorderBoxes = getSelectedComponents(editor)
     .map((component, index) => {
       const selectedElement = component?.getEl?.() as HTMLElement | null | undefined;
@@ -1896,23 +1987,22 @@ function buildSpacingSnapshot(editor: GrapesEditor): SpacingOverlaySnapshot | nu
         return null;
       }
 
-      const selectedComputed = body.ownerDocument?.defaultView?.getComputedStyle?.(selectedElement);
-      if (!selectedComputed) {
-        return null;
+      const id = String(component.getId?.() ?? component.get?.('id') ?? '').trim();
+      if (component === selected || id === selectedId) {
+        return {
+          ...selectedSpacingBox,
+          key: `${id || 'selected'}-${index}`,
+        };
       }
 
-      const id = String(component.getId?.() ?? component.get?.('id') ?? '').trim();
-      return buildSpacingBoxesForElement(
+      return buildSelectedBorderBoxForElement(
         selectedElement,
-        selectedComputed,
         component as SpacingStyleTarget,
         `${id || 'selected'}-${index}`,
         id,
       );
     })
     .filter((box): box is NonNullable<typeof box> => Boolean(box));
-  const selectedSpacingBox = selectedBorderBoxes.find((box) => box.id === selectedId)
-    ?? buildSpacingBoxesForElement(element, computed, selected as SpacingStyleTarget, selectedId || 'selected', selectedId);
   const effectiveSelectedBorderBoxes = selectedBorderBoxes.length > 0 ? selectedBorderBoxes : [selectedSpacingBox];
   const multiSelectionBox = effectiveSelectedBorderBoxes.length > 1 ? buildUnionBox(effectiveSelectedBorderBoxes) : null;
 
@@ -2048,7 +2138,6 @@ export default function SpacingOverlay({
   const rafRef = useRef<number | null>(null);
   const lastSendRef = useRef<{ targetId: string; at: number } | null>(null);
   const sendSelectionPendingRef = useRef(false);
-  const snapshotRef = useRef<SpacingOverlaySnapshot | null>(null);
   const spacingHoverHideTimerRef = useRef<number | null>(null);
   const [spacingHoverActive, setSpacingHoverActive] = useState(false);
   const [hoveredSpacingBoxKey, setHoveredSpacingBoxKey] = useState<string | null>(null);
@@ -2173,10 +2262,6 @@ export default function SpacingOverlay({
       });
     }
   };
-
-  useEffect(() => {
-    snapshotRef.current = snapshot;
-  }, [snapshot]);
 
   useEffect(() => {
     if (!editor) {
@@ -2310,39 +2395,6 @@ export default function SpacingOverlay({
       setDragPreview(null);
       setPositionDragPreview(null);
       setResizeDragPreview(null);
-    };
-  }, [editor]);
-
-  useEffect(() => {
-    if (!editor) {
-      return undefined;
-    }
-
-    const win = editor.Canvas?.getBody?.()?.ownerDocument?.defaultView ?? window;
-    let frameId: number | null = null;
-    let disposed = false;
-
-    const tick = () => {
-      if (disposed) {
-        return;
-      }
-
-      const nextSnapshot = buildSpacingSnapshot(editor);
-      if (!areSpacingSnapshotsEqual(snapshotRef.current, nextSnapshot)) {
-        snapshotRef.current = nextSnapshot;
-        setSnapshot(nextSnapshot);
-      }
-
-      frameId = win.requestAnimationFrame(tick);
-    };
-
-    frameId = win.requestAnimationFrame(tick);
-
-    return () => {
-      disposed = true;
-      if (frameId !== null) {
-        win.cancelAnimationFrame(frameId);
-      }
     };
   }, [editor]);
 

@@ -42,6 +42,7 @@ import VisualCanvasPane from './visual-html/VisualCanvasPane';
 
 type VisualHtmlEditorProps = {
   target: RightPaneVisualHtmlTarget;
+  isActive?: boolean;
   onClosePane: () => void;
   onAppendToChatInput?: ((text: string) => void) | null;
 };
@@ -244,6 +245,94 @@ function logVisualHtmlPerf(stage: string, payload: Record<string, unknown> = {})
     at: new Date().toISOString(),
     ...payload,
   });
+}
+
+function isVisualHtmlEditorConsoleDebugEnabled() {
+  return (globalThis as typeof globalThis & { CCUI_DEBUG_VISUAL_EDITOR?: boolean }).CCUI_DEBUG_VISUAL_EDITOR === true;
+}
+
+function readVisualEditorCssRules(cssText: string) {
+  return Array.from(cssText.matchAll(/([^{}]+)\{([^{}]*)\}/g)).map((match) => ({
+    selector: String(match[1] ?? '').trim().replace(/\s+/g, ' '),
+    body: String(match[2] ?? '').trim(),
+  }));
+}
+
+function exposeVisualHtmlEditorDebugHandle({
+  editor,
+  collectCanvasHtml,
+  getDocumentText,
+  getPersistedText,
+}: {
+  editor: ReturnType<typeof grapesjs.init> | null;
+  collectCanvasHtml: () => string;
+  getDocumentText: () => string;
+  getPersistedText: () => string;
+}) {
+  const debugGlobal = globalThis as typeof globalThis & {
+    __CCUI_VISUAL_HTML_DEBUG__?: Record<string, unknown>;
+    __CCUI_VISUAL_HTML_EDITOR__?: ReturnType<typeof grapesjs.init> | null;
+  };
+
+  if (!isVisualHtmlEditorConsoleDebugEnabled() || !editor) {
+    if (debugGlobal.__CCUI_VISUAL_HTML_EDITOR__ === editor) {
+      debugGlobal.__CCUI_VISUAL_HTML_EDITOR__ = null;
+    }
+    if (debugGlobal.__CCUI_VISUAL_HTML_DEBUG__) {
+      delete debugGlobal.__CCUI_VISUAL_HTML_DEBUG__;
+    }
+    return;
+  }
+
+  debugGlobal.__CCUI_VISUAL_HTML_EDITOR__ = editor;
+  debugGlobal.__CCUI_VISUAL_HTML_DEBUG__ = {
+    getCss: () => editor.getCss(),
+    getHtml: () => editor.getHtml(),
+    getCanvasHtmlSnapshot: () => collectCanvasHtml(),
+    getDocumentText,
+    getPersistedText,
+    getCssRules: () => readVisualEditorCssRules(editor.getCss()),
+    summarizeCssRules: (limit = 200) => readVisualEditorCssRules(editor.getCss()).slice(0, limit),
+    findCssRules: (pattern: string) => {
+      const normalizedPattern = pattern.trim().toLowerCase();
+      return readVisualEditorCssRules(editor.getCss()).filter(({ selector, body }) => (
+        selector.toLowerCase().includes(normalizedPattern)
+        || body.toLowerCase().includes(normalizedPattern)
+      ));
+    },
+    getDomComponentsSummary: () => {
+      const wrapper = editor.DomComponents?.getWrapper?.() as any;
+      const queue = wrapper ? [wrapper] : [];
+      const result: Array<Record<string, unknown>> = [];
+
+      while (queue.length > 0 && result.length < 500) {
+        const component = queue.shift();
+        if (!component) {
+          continue;
+        }
+
+        const element = component.getEl?.() as Element | null;
+        const attributes = component.getAttributes?.({ skipResolve: true }) ?? {};
+        result.push({
+          id: component.getId?.() ?? null,
+          tagName: component.get?.('tagName') ?? element?.tagName?.toLowerCase?.() ?? null,
+          classes: component.getClasses?.()?.map?.((entry: any) => (
+            typeof entry === 'string' ? entry : String(entry?.get?.('name') ?? '')
+          )) ?? [],
+          attributes,
+        });
+
+        const children = component.components?.();
+        if (Array.isArray(children)) {
+          queue.push(...children);
+        } else if (typeof children?.forEach === 'function') {
+          children.forEach((child: any) => queue.push(child));
+        }
+      }
+
+      return result;
+    },
+  };
 }
 
 const CANVAS_OUTLINE_STYLE_ID = 'ccui-visual-outline-override';
@@ -519,7 +608,12 @@ function schedulePreviewRuntimeElementStyleRestore(
   });
 }
 
-export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatInput = null }: VisualHtmlEditorProps) {
+export default function VisualHtmlEditor({
+  target,
+  isActive = true,
+  onClosePane,
+  onAppendToChatInput = null,
+}: VisualHtmlEditorProps) {
   const controller = useHtmlDocumentController({
     filePath: target.filePath,
     projectName: target.projectName ?? null,
@@ -611,6 +705,24 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
       canvasCss: canvasEditorRef.current.getCss(),
     });
   }, [controller.documentText]);
+
+  useEffect(() => {
+    exposeVisualHtmlEditorDebugHandle({
+      editor: canvasEditor,
+      collectCanvasHtml,
+      getDocumentText: () => controllerRef.current.documentText,
+      getPersistedText: () => controllerRef.current.persistedText,
+    });
+
+    return () => {
+      exposeVisualHtmlEditorDebugHandle({
+        editor: null,
+        collectCanvasHtml,
+        getDocumentText: () => '',
+        getPersistedText: () => '',
+      });
+    };
+  }, [canvasEditor, collectCanvasHtml]);
 
   const applyPreviewRuntimeStateToDesign = useCallback(() => {
     if (previewModeRef.current !== 'srcdoc') {
@@ -1041,6 +1153,10 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
   }, []);
 
   useEffect(() => {
+    if (!isActive) {
+      return undefined;
+    }
+
     if (!canvasEditor) {
       return undefined;
     }
@@ -1054,7 +1170,7 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
     return () => {
       canvasEditor.off?.('canvas:frame:load', syncCanvasOutlineVisibility);
     };
-  }, [canvasEditor, isOutlineVisible]);
+  }, [canvasEditor, isActive, isOutlineVisible]);
 
   const handleCanvasDeviceChange = useCallback((device: CanvasDevice) => {
     setCanvasDevice(device);
@@ -1244,6 +1360,10 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
   }, [isFullscreen]);
 
   useEffect(() => {
+    if (!isActive) {
+      return undefined;
+    }
+
     if (!targetProjectName) {
       return undefined;
     }
@@ -1261,33 +1381,40 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
         void loadFileContent({ markLoading: false });
       },
     });
-  }, [hasUnsavedChanges, loadFileContent, target.filePath, targetProjectName]);
+  }, [hasUnsavedChanges, isActive, loadFileContent, target.filePath, targetProjectName]);
 
   useEffect(() => {
-    if (activeMode !== 'design') {
+    if (!isActive || activeMode !== 'design') {
       return;
     }
 
+    let refreshFrame: number | null = null;
     const frame = window.requestAnimationFrame(() => {
-      if (canvasEditorRef.current?.Canvas?.refresh) {
-        canvasEditorRef.current.refresh({ tools: true });
-      }
+      refreshFrame = window.requestAnimationFrame(() => {
+        if (canvasEditorRef.current?.Canvas?.refresh) {
+          canvasEditorRef.current.Canvas.refresh();
+          canvasEditorRef.current.refresh({ tools: true });
+        }
+      });
     });
 
     return () => {
       window.cancelAnimationFrame(frame);
+      if (refreshFrame !== null) {
+        window.cancelAnimationFrame(refreshFrame);
+      }
     };
-  }, [activeMode, isFullscreen]);
+  }, [activeMode, isActive, isFullscreen]);
 
   useEffect(() => {
-    if (activeMode !== 'design' || !canvasEditor) {
+    if (!isActive || activeMode !== 'design' || !canvasEditor) {
       return;
     }
 
     if (!selectCanvasComponentForSourceEntry(canvasEditor, pendingSourceCursorEntryRef.current)) {
       clearPendingSourceCursorEntry();
     }
-  }, [activeMode, canvasEditor, clearPendingSourceCursorEntry]);
+  }, [activeMode, canvasEditor, clearPendingSourceCursorEntry, isActive]);
 
   const handleSave = useCallback(async () => {
     try {
@@ -1315,7 +1442,7 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
   }, [applyCurrentEditorDocument]);
 
   useEffect(() => {
-    if (activeMode !== 'source') {
+    if (!isActive || activeMode !== 'source') {
       return undefined;
     }
 
@@ -1336,7 +1463,7 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
     return () => {
       document.removeEventListener('keydown', handleFormatShortcut);
     };
-  }, [activeMode, handleFormatSource]);
+  }, [activeMode, handleFormatSource, isActive]);
 
   const designActions: ToolbarAction[] = [
     {
@@ -1443,8 +1570,8 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
   const activePreviewUrl = previewRouteUrl
     ? `${previewRouteUrl}${previewRouteUrl.includes('?') ? '&' : '?'}ccui-preview=${previewRouteVersion}`
     : 'about:blank';
-  const showSpacingOverlay = !isPreviewActive && !eligibilityError && activeMode === 'design' && canvasEditor && grapesLikeBridge;
-  const showInspectorPane = !isPreviewActive && grapesLikeBridge;
+  const showSpacingOverlay = isActive && !isPreviewActive && !eligibilityError && activeMode === 'design' && canvasEditor && grapesLikeBridge;
+  const showInspectorPane = isActive && !isPreviewActive && grapesLikeBridge;
 
   return (
     <div
@@ -1685,8 +1812,13 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
             </div>
           ) : null}
 
-          {!eligibilityError && activeMode === 'design' ? (
-            <div className="flex min-h-0 flex-1" data-visual-html-design-workspace="true">
+          <div className="relative flex min-h-0 flex-1 overflow-hidden">
+            {!eligibilityError ? (
+            <div
+              className={`absolute inset-0 ${activeMode === 'design' ? 'flex' : 'invisible pointer-events-none'}`}
+              data-visual-html-design-workspace="true"
+              aria-hidden={activeMode !== 'design'}
+            >
               <div className="min-h-0 flex-1">
                 {isPreviewActive ? (
                   <div
@@ -1769,8 +1901,12 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
                 />
               ) : null}
             </div>
-          ) : (
-            <div className="flex h-full min-h-0 flex-col">
+          ) : null}
+            <div
+              className={`absolute inset-0 flex min-h-0 flex-col ${activeMode === 'source' || Boolean(eligibilityError) ? '' : 'invisible pointer-events-none'}`}
+              data-visual-html-source-workspace="true"
+              aria-hidden={activeMode !== 'source' && !eligibilityError}
+            >
               <HtmlSourceEditorSurface
                 value={controller.documentText}
                 onChange={(value) => {
@@ -1789,7 +1925,7 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
                 <span>Ctrl/Cmd+Shift+F 格式化 HTML</span>
               </div>
             </div>
-          )}
+          </div>
 
           {loading ? (
             <div className="absolute inset-0 flex items-center justify-center bg-background/90 text-sm text-muted-foreground">

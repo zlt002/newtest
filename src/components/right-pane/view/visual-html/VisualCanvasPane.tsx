@@ -87,6 +87,171 @@ function logHiddenLayerDebug(payload: Record<string, unknown>) {
   });
 }
 
+const SORTER_SAFETY_PATCH_FLAG = '__ccuiSorterSafetyPatchInstalled';
+
+function isIllegalInvocationError(error: unknown) {
+  return error instanceof TypeError && /Illegal invocation/i.test(error.message);
+}
+
+function isCanvasSortableElement(value: unknown): value is Element {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as Partial<Element> & {
+    nodeType?: unknown;
+    ownerDocument?: Document | null;
+  };
+
+  if (candidate.nodeType !== 1 || typeof candidate.getBoundingClientRect !== 'function') {
+    return false;
+  }
+
+  const ownerDocument = candidate.ownerDocument;
+  if (!ownerDocument) {
+    return false;
+  }
+
+  const ownerWindow = ownerDocument.defaultView;
+  return ownerWindow ? value instanceof ownerWindow.Element : true;
+}
+
+function readCanvasSortableDebugInfo(value: unknown) {
+  if (!value || typeof value !== 'object') {
+    return {
+      kind: typeof value,
+      nodeType: null,
+      tagName: null,
+      constructorName: null,
+    };
+  }
+
+  const candidate = value as {
+    nodeType?: unknown;
+    tagName?: unknown;
+    constructor?: { name?: string } | null;
+  };
+
+  return {
+    kind: 'object',
+    nodeType: candidate.nodeType ?? null,
+    tagName: typeof candidate.tagName === 'string' ? candidate.tagName : null,
+    constructorName: candidate.constructor?.name ?? null,
+  };
+}
+
+function patchDropLocationDeterminerChildrenDim(dropLocationDeterminer: {
+  getChildrenDim?: (this: any, targetNode: any) => any[];
+  getDropPosition?: (this: any, node: any, mouseX: number, mouseY: number) => {
+    index: number;
+    placement: string;
+    placeholderDimensions: { clone: () => unknown };
+  };
+  [SORTER_SAFETY_PATCH_FLAG]?: boolean;
+} | null | undefined) {
+  if (!dropLocationDeterminer || dropLocationDeterminer[SORTER_SAFETY_PATCH_FLAG]) {
+    return;
+  }
+
+  const originalGetChildrenDim = dropLocationDeterminer.getChildrenDim;
+  const originalGetDropPosition = dropLocationDeterminer.getDropPosition;
+  if (typeof originalGetChildrenDim !== 'function' || typeof originalGetDropPosition !== 'function') {
+    return;
+  }
+
+  dropLocationDeterminer.getChildrenDim = function patchedGetChildrenDim(targetNode: any) {
+    if (this?.containerContext?.itemSel !== '*') {
+      return originalGetChildrenDim.call(this, targetNode);
+    }
+
+    const targetElement = targetNode?.element;
+    if (!isCanvasSortableElement(targetElement)) {
+      return [];
+    }
+
+    const children = targetNode?.getChildren?.();
+    if (!Array.isArray(children) || children.length === 0) {
+      return [];
+    }
+
+    const dims = [];
+    for (const sortableTreeNode of children) {
+      const el = sortableTreeNode?.element;
+      if (!isCanvasSortableElement(el)) {
+        logCanvasPerf('sorter-skip-invalid-child', {
+          targetTagName: targetElement.tagName.toLowerCase(),
+          child: readCanvasSortableDebugInfo(el),
+        });
+        continue;
+      }
+
+      try {
+        const dim = this.getDim(el);
+        dim.dir = this.getDirection(el, targetElement);
+        dims.push(dim);
+      } catch (error) {
+        if (!isIllegalInvocationError(error)) {
+          throw error;
+        }
+
+        logCanvasPerf('sorter-skip-illegal-invocation', {
+          targetTagName: targetElement.tagName.toLowerCase(),
+          childTagName: el.tagName.toLowerCase(),
+          child: readCanvasSortableDebugInfo(el),
+        });
+      }
+    }
+
+    return dims;
+  };
+
+  dropLocationDeterminer.getDropPosition = function patchedGetDropPosition(node: any, mouseX: number, mouseY: number) {
+    const nodeDimensions = node?.nodeDimensions ?? (node?.element ? this.getDim(node.element) : null);
+    const childrenDimensions = node?.childrenDimensions;
+
+    if (!nodeDimensions) {
+      return originalGetDropPosition.call(this, node, mouseX, mouseY);
+    }
+
+    if (!Array.isArray(childrenDimensions) || childrenDimensions.length === 0) {
+      return {
+        index: 0,
+        placement: 'inside',
+        placeholderDimensions: nodeDimensions.clone(),
+      };
+    }
+
+    return originalGetDropPosition.call(this, node, mouseX, mouseY);
+  };
+
+  dropLocationDeterminer[SORTER_SAFETY_PATCH_FLAG] = true;
+}
+
+function installGrapesJsSorterSafetyPatch(editor: ReturnType<typeof grapesjs.init>) {
+  const sorterConstructor = (((editor as any).em?.Utils) ?? (editor as any).Utils)?.ComponentSorter as {
+    prototype?: {
+      startSort?: (this: any, sources: any) => unknown;
+      [SORTER_SAFETY_PATCH_FLAG]?: boolean;
+    };
+  } | undefined;
+
+  if (!sorterConstructor?.prototype || sorterConstructor.prototype[SORTER_SAFETY_PATCH_FLAG]) {
+    return;
+  }
+
+  const originalStartSort = sorterConstructor.prototype.startSort;
+  if (typeof originalStartSort !== 'function') {
+    return;
+  }
+
+  sorterConstructor.prototype.startSort = function patchedStartSort(sources: any) {
+    patchDropLocationDeterminerChildrenDim(this?.dropLocationDeterminer);
+    return originalStartSort.call(this, sources);
+  };
+
+  sorterConstructor.prototype[SORTER_SAFETY_PATCH_FLAG] = true;
+}
+
 function collectCanvasHeadDebugSummary(canvasDocument: Document) {
   const headElements = Array.from(canvasDocument.head?.children ?? []);
   const assetUrls = headElements
@@ -276,6 +441,11 @@ type OriginalElementRestoreResult = {
   durationMs: number;
 };
 
+type OriginalElementMatchRecord = {
+  snapshot: OriginalElementSnapshot;
+  matchType: 'path' | 'fingerprint';
+};
+
 type OriginalElementRestoreOptions = {
   syncComponentModels?: boolean;
 };
@@ -442,6 +612,35 @@ function resolveCanvasElementForSnapshot(
   return { element: null, matchType: 'none' };
 }
 
+function buildOriginalElementSnapshotLookup(
+  root: ParentNode | null | undefined,
+  snapshots: OriginalElementSnapshot[],
+): Map<Element, OriginalElementMatchRecord> {
+  const matchedSnapshots = new Map<Element, OriginalElementMatchRecord>();
+
+  snapshots.forEach((snapshot) => {
+    const { element, matchType } = resolveCanvasElementForSnapshot(root, snapshot);
+    if (!element || matchType === 'none') {
+      return;
+    }
+
+    if (matchedSnapshots.has(element)) {
+      logCanvasPerf('attribute-restore-collision', {
+        tagName: element.tagName.toLowerCase(),
+        existingPath: matchedSnapshots.get(element)?.snapshot.path ?? null,
+        skippedPath: snapshot.path,
+        existingClassName: matchedSnapshots.get(element)?.snapshot.className ?? null,
+        skippedClassName: snapshot.className,
+      });
+      return;
+    }
+
+    matchedSnapshots.set(element, { snapshot, matchType });
+  });
+
+  return matchedSnapshots;
+}
+
 function parseInlineStyleRecord(styleText: string): Record<string, string> {
   return styleText
     .split(';')
@@ -588,16 +787,13 @@ function restoreOriginalElementAttributes(
   const wrapper = editor.getWrapper?.();
   const syncComponentModels = options.syncComponentModels === true;
   const componentByElement = syncComponentModels ? buildComponentByElementMap(wrapper) : new Map<Element, any>();
-  snapshots.forEach((snapshot) => {
-    const { element, matchType } = resolveCanvasElementForSnapshot(canvasBody, snapshot);
-    if (!element) {
-      return;
-    }
+  const matchedSnapshots = buildOriginalElementSnapshotLookup(canvasBody, snapshots);
+  result.matched = matchedSnapshots.size;
 
-    result.matched += 1;
+  for (const [element, { snapshot, matchType }] of matchedSnapshots) {
     const shouldApplyClassAndAttributeRestore = matchType === 'path' || Boolean(snapshot.attributes.id);
     if (!shouldApplyClassAndAttributeRestore) {
-      return;
+      continue;
     }
 
     const component = componentByElement.get(element);
@@ -628,60 +824,10 @@ function restoreOriginalElementAttributes(
       element.setAttribute(name, value);
     });
     result.domUpdates += Object.keys(changedDomAttributes).length;
-  });
+  }
 
   result.durationMs = Math.round(getPerfNow() - startedAt);
   return result;
-}
-
-function findOriginalElementSnapshotForCanvasElement(
-  canvasBody: ParentNode | null | undefined,
-  snapshots: OriginalElementSnapshot[],
-  element: Element,
-): OriginalElementSnapshot | null {
-  for (const snapshot of snapshots) {
-    const matchedElement = findCanvasElementByPath(canvasBody, snapshot.path, snapshot.tagName);
-    if (matchedElement === element) {
-      return snapshot;
-    }
-  }
-
-  return null;
-}
-
-function syncOriginalAttributesForComponent(
-  editor: ReturnType<typeof grapesjs.init>,
-  component: any,
-  snapshots: OriginalElementSnapshot[],
-) {
-  const element = component?.getEl?.();
-  if (!element) {
-    return;
-  }
-
-  const snapshot = findOriginalElementSnapshotForCanvasElement(resolveCanvasBody(editor), snapshots, element);
-  if (!snapshot) {
-    return;
-  }
-
-  const { className, styleText, restAttributes } = splitOriginalElementAttributes(snapshot.attributes);
-  if (className && normalizeClassAttribute(readComponentClassAttribute(component)) !== normalizeClassAttribute(className)) {
-    component.setClass?.(className, { avoidStore: true, noUndo: true });
-  }
-
-  const missingStyle = collectMissingStyleRecord(
-    parseInlineStyleRecord(styleText),
-    readComponentInlineStyleRecord(component),
-    parseInlineStyleRecord(element.getAttribute('style') ?? ''),
-  );
-  if (Object.keys(missingStyle).length > 0) {
-    component.addStyle?.(missingStyle, { avoidStore: true, noUndo: true });
-  }
-
-  const changedRestAttributes = collectChangedAttributes(element, restAttributes);
-  if (Object.keys(changedRestAttributes).length > 0) {
-    component.addAttributes?.(changedRestAttributes, { avoidStore: true, noUndo: true });
-  }
 }
 
 function injectRawCanvasStyles(editor: ReturnType<typeof grapesjs.init>, styleMarkup: string) {
@@ -1333,6 +1479,7 @@ export default function VisualCanvasPane({
         },
       ],
     });
+    installGrapesJsSorterSafetyPatch(editor);
 
     const componentsStartedAt = getPerfNow();
     editor.getWrapper()?.components(canvasStructureHtml, {
@@ -1379,13 +1526,6 @@ export default function VisualCanvasPane({
       onDirtyChangeRef.current?.(forceDirty || editor.getDirtyCount() > 0, editor);
     };
     const notifyStyleDirty = () => notifyDirty(true);
-    const syncSelectedOriginalAttributes = (component?: any) => {
-      syncOriginalAttributesForComponent(
-        editor,
-        component ?? editor.getSelected?.(),
-        originalElementSnapshots,
-      );
-    };
     const syncCanvasHeadMarkup = () => {
       const canvasDocument = resolveCanvasDocument(editor);
       if (!canvasDocument?.head) {
@@ -1480,7 +1620,6 @@ export default function VisualCanvasPane({
 
     editor.on('update', notifyDirty);
     editor.on('component:styleUpdate', notifyStyleDirty);
-    editor.on('component:selected', syncSelectedOriginalAttributes);
     editor.on('canvas:frame:load', () => {
       const canvasDocument = resolveCanvasDocument(editor);
       logCanvasPerf('canvas-frame-load-event', {
@@ -1514,7 +1653,6 @@ export default function VisualCanvasPane({
       });
       editor.off('update', notifyDirty);
       editor.off('component:styleUpdate', notifyStyleDirty);
-      editor.off('component:selected', syncSelectedOriginalAttributes);
       editor.destroy();
       editorRef.current = null;
       onEditorReadyRef.current?.(null);

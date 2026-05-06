@@ -596,7 +596,12 @@ function readInlineStyleRecord(component: GrapesComponent): Record<string, strin
   }, {});
 }
 
-function getStyleSourceForComponent(editor: GrapesEditor, component: GrapesComponent, index: number) {
+function getStyleSourceForComponent(
+  editor: GrapesEditor,
+  component: GrapesComponent,
+  index: number,
+  options: { includeComputedStyles?: boolean } = {},
+) {
   const primaryTarget = index === 0
     ? (editor.getSelectedToStyle?.() as GrapesStyleTarget | undefined)
     : undefined;
@@ -606,11 +611,21 @@ function getStyleSourceForComponent(editor: GrapesEditor, component: GrapesCompo
   const ruleStyle = sanitizeStyleRecord(primaryTarget?.getStyle?.());
 
   return {
-    computedStyles: readComputedStyleRecord(component),
+    computedStyles: options.includeComputedStyles === false ? {} : readComputedStyleRecord(component),
     inlineStyles: readInlineStyleRecord(component),
     modelStyles: Object.keys(modelStyle).length > 0 ? modelStyle : componentStyle,
     ruleStyles: ruleStyle,
   };
+}
+
+function readStyleSourcesForSelection(editor: GrapesEditor) {
+  const selected = getSelectedComponents(editor);
+  return selected.map((component, index) => ({
+    ...getStyleSourceForComponent(editor, component, index, {
+      includeComputedStyles: index === 0 || selected.length === 1,
+    }),
+    classes: readComponentClasses(component),
+  }));
 }
 
 function getStyleTargetsForSelection(editor: GrapesEditor): GrapesStyleTarget[] {
@@ -690,24 +705,22 @@ export function createGrapesLikeInspectorBridge(editor: GrapesEditor | null) {
       activeState: editor.SelectorManager?.getState?.() ?? '',
     }),
     style: () => readStyleSnapshot({
-      selection: getSelectedComponents(editor).map((component, index) => ({
-        ...getStyleSourceForComponent(editor, component, index),
-        classes: readComponentClasses(component),
-      })),
+      selection: readStyleSourcesForSelection(editor),
       activeState: editor.SelectorManager?.getState?.() ?? '',
     }),
     layers: () => readProjectedLayerSnapshot(editor, getPrimarySelectedComponent(editor), expandedLayerIds),
   });
-  const scheduler = createInspectorSnapshotScheduler({
-    scheduleFrame: (task) => {
-      const view = editor.Canvas?.getBody?.()?.ownerDocument?.defaultView;
-      if (view?.requestAnimationFrame) {
-        view.requestAnimationFrame(() => task());
-        return;
-      }
+  const scheduleInspectorFrame = (task: () => void) => {
+    const view = editor.Canvas?.getBody?.()?.ownerDocument?.defaultView;
+    if (view?.requestAnimationFrame) {
+      view.requestAnimationFrame(() => task());
+      return;
+    }
 
-      setTimeout(task, 0);
-    },
+    setTimeout(task, 0);
+  };
+  const scheduler = createInspectorSnapshotScheduler({
+    scheduleFrame: scheduleInspectorFrame,
     applyPatch: (patch) => adapter.patchSnapshot(patch as Partial<ReturnType<typeof adapter.getSnapshot>>),
   });
 
@@ -726,10 +739,7 @@ export function createGrapesLikeInspectorBridge(editor: GrapesEditor | null) {
           activeState: editor.SelectorManager?.getState?.() ?? '',
         }),
         style: readStyleSnapshot({
-          selection: getSelectedComponents(editor).map((component, index) => ({
-            ...getStyleSourceForComponent(editor, component, index),
-            classes: readComponentClasses(component),
-          })),
+          selection: readStyleSourcesForSelection(editor),
           activeState: editor.SelectorManager?.getState?.() ?? '',
         }),
       }),
@@ -750,8 +760,24 @@ export function createGrapesLikeInspectorBridge(editor: GrapesEditor | null) {
     'selector:remove',
     'layer:component',
   ];
+  let activeSubscriberCount = 0;
+  let editorListenersAttached = false;
+  let snapshotMayBeStale = false;
+  let selectionChangePending = false;
   const handleSelectionChange = () => {
-    scheduler.scheduleSelection(buildFullPayload());
+    if (selectionChangePending) {
+      return;
+    }
+
+    selectionChangePending = true;
+    scheduleInspectorFrame(() => {
+      selectionChangePending = false;
+      if (activeSubscriberCount === 0 || !editorListenersAttached) {
+        return;
+      }
+
+      scheduler.scheduleSelection(buildFullPayload());
+    });
   };
   const handleEditorChange = () => {
     adapter.notify();
@@ -771,10 +797,6 @@ export function createGrapesLikeInspectorBridge(editor: GrapesEditor | null) {
       adapter.notify();
     }
   };
-  let activeSubscriberCount = 0;
-  let editorListenersAttached = false;
-  let snapshotMayBeStale = false;
-
   const attachEditorListeners = () => {
     if (editorListenersAttached) {
       return;

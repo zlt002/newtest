@@ -28,6 +28,7 @@ const {
   applyPositionStylesToTarget,
   applyResizeStylesToTarget,
   applySpacingDragDelta,
+  buildSpacingSnapshot,
   buildElementStyleChatPrompt,
   buildSendSelectionToChatPayload,
   extractComponentIdentity,
@@ -1283,6 +1284,68 @@ test('readSpacingBoxFromStyle expands shorthand margin and padding values', () =
   });
 });
 
+test('buildSpacingSnapshot avoids computed-style reads for every multi-selected element', () => {
+  let computedStyleReads = 0;
+  const makeElement = (left) => ({
+    getBoundingClientRect: () => ({
+      left,
+      top: 10,
+      right: left + 20,
+      bottom: 30,
+      width: 20,
+      height: 20,
+    }),
+  });
+  const makeComponent = (id, left) => {
+    const element = makeElement(left);
+    return {
+      getId: () => id,
+      getType: () => 'div',
+      get: (key) => (key === 'id' ? id : key === 'type' ? 'div' : undefined),
+      getEl: () => element,
+    };
+  };
+  const selected = [
+    makeComponent('one', 10),
+    makeComponent('two', 40),
+    makeComponent('three', 70),
+    makeComponent('four', 100),
+  ];
+  const body = {
+    ownerDocument: {
+      defaultView: {
+        getComputedStyle: () => {
+          computedStyleReads += 1;
+          return {
+            display: 'block',
+            position: 'static',
+            getPropertyValue: () => '0px',
+          };
+        },
+      },
+    },
+    contains: () => true,
+  };
+  const editor = {
+    Canvas: {
+      getBody: () => body,
+    },
+    getSelected: () => selected[0],
+    getSelectedAll: () => selected,
+  };
+
+  const snapshot = buildSpacingSnapshot(editor);
+
+  assert.equal(computedStyleReads, 1);
+  assert.equal(snapshot.selectedBorderBoxes.length, selected.length);
+  assert.deepEqual(snapshot.multiSelectionBox, {
+    left: 10,
+    top: 10,
+    width: 110,
+    height: 20,
+  });
+});
+
 test('replaceToolbarMoveCommandWithSendCommand swaps the move tool for send without changing other toolbar actions', () => {
   const toolbar = [
     { command: 'tlb-move', attributes: { class: 'fa fa-arrows' } },
@@ -1384,6 +1447,14 @@ test('SpacingOverlay source keeps a minimal guard for hiding GrapesJS chrome dur
   assert.match(source, /border: `1px solid \$\{SELECTED_OVERLAY_BORDER_COLOR\}`/);
   assert.match(source, /setProperty\('display', 'none', 'important'\)/);
   assert.match(source, /removeProperty\('display'\)/);
+});
+
+test('SpacingOverlay source does not poll spacing snapshots on every animation frame', async () => {
+  const source = await readFile(new URL('./SpacingOverlay.tsx', import.meta.url), 'utf8');
+
+  assert.doesNotMatch(source, /frameId = win\.requestAnimationFrame\(tick\)/);
+  assert.match(source, /editor\.on\?\.\(eventName, scheduleUpdate\)/);
+  assert.match(source, /addEventListener\?\.\('scroll', scheduleUpdate/);
 });
 
 test('SpacingOverlay source wires ctrl drag marquee selection to the canvas', async () => {
@@ -1881,6 +1952,100 @@ test('attachCanvasMarqueeSelection falls back to a batched candidate scan when h
   detach();
 });
 
+test('attachCanvasMarqueeSelection completes fallback scans without many animation frames', () => {
+  const win = createMarqueeEventTarget();
+  const doc = createMarqueeEventTarget();
+  const html = createMarqueeEventTarget();
+  const body = createMarqueeEventTarget();
+  const selectedComponent = {
+    get: (key) => (key === 'selectable' ? true : undefined),
+    parents: () => [],
+  };
+  const selectedElement = {
+    __gjsv: { model: selectedComponent },
+    closest: () => null,
+    getBoundingClientRect: () => ({ left: 10, top: 10, right: 30, bottom: 30, width: 20, height: 20 }),
+  };
+  const elements = Array.from({ length: 1199 }, () => ({
+    closest: () => null,
+    getBoundingClientRect: () => ({ left: 200, top: 200, right: 220, bottom: 220, width: 20, height: 20 }),
+  })).concat(selectedElement);
+  const selectCalls = [];
+  const frameQueue = [];
+
+  Object.assign(win, {
+    HTMLElement: Object,
+    requestAnimationFrame: (callback) => {
+      frameQueue.push(callback);
+      return frameQueue.length;
+    },
+    cancelAnimationFrame: () => {},
+  });
+  Object.assign(doc, {
+    defaultView: win,
+    documentElement: html,
+    createElement: () => ({
+      style: {},
+      setAttribute: () => {},
+      remove: () => {},
+    }),
+    elementsFromPoint: () => [],
+  });
+  Object.assign(body, {
+    ownerDocument: doc,
+    style: {},
+    dataset: {},
+    appendChild: () => {},
+    contains: () => false,
+    querySelectorAll: () => elements,
+  });
+
+  const eventBase = {
+    pointerId: 23,
+    ctrlKey: true,
+    button: 0,
+    target: {
+      closest: () => null,
+      setPointerCapture: () => {},
+    },
+    preventDefault: () => {},
+    stopPropagation: () => {},
+  };
+
+  const detach = attachCanvasMarqueeSelection({
+    Canvas: {
+      getBody: () => body,
+    },
+    select(components) {
+      selectCalls.push(components);
+    },
+  });
+
+  doc.emit('pointerdown', {
+    ...eventBase,
+    clientX: 0,
+    clientY: 0,
+  });
+  win.emit('pointermove', {
+    ...eventBase,
+    clientX: 80,
+    clientY: 80,
+  });
+  frameQueue.shift()?.();
+  win.emit('pointerup', {
+    ...eventBase,
+    clientX: 80,
+    clientY: 80,
+  });
+
+  assert.deepEqual(selectCalls, [[]]);
+  frameQueue.shift()?.();
+  frameQueue.shift()?.();
+  assert.deepEqual(selectCalls, [[], [selectedComponent]]);
+
+  detach();
+});
+
 test('attachCanvasMarqueeSelection resolves text hits through caretRangeFromPoint before falling back', () => {
   const win = createMarqueeEventTarget();
   const doc = createMarqueeEventTarget();
@@ -2061,6 +2226,99 @@ test('attachCanvasMarqueeSelection resolves hit-tested child nodes to their near
     clientY: 80,
   });
 
+  assert.deepEqual(selectCalls, [[], [selectedComponent]]);
+
+  detach();
+});
+
+test('attachCanvasMarqueeSelection keeps large-box hit testing bounded', () => {
+  const win = createMarqueeEventTarget();
+  const doc = createMarqueeEventTarget();
+  const html = createMarqueeEventTarget();
+  const body = createMarqueeEventTarget();
+  const selectedComponent = {
+    get: (key) => (key === 'selectable' ? true : undefined),
+    parents: () => [],
+  };
+  const selectedElement = {
+    __gjsv: { model: selectedComponent },
+    closest: () => null,
+    parentElement: body,
+    getBoundingClientRect: () => ({ left: 10, top: 10, right: 30, bottom: 30, width: 20, height: 20 }),
+  };
+  const selectCalls = [];
+  let hitTestCalls = 0;
+
+  Object.assign(win, {
+    HTMLElement: Object,
+    requestAnimationFrame: (callback) => {
+      callback();
+      return 1;
+    },
+    cancelAnimationFrame: () => {},
+  });
+  Object.assign(doc, {
+    defaultView: win,
+    documentElement: html,
+    createElement: () => ({
+      style: {},
+      setAttribute: () => {},
+      remove: () => {},
+    }),
+    elementsFromPoint: () => {
+      hitTestCalls += 1;
+      return [selectedElement];
+    },
+  });
+  Object.assign(body, {
+    ownerDocument: doc,
+    style: {},
+    dataset: {},
+    appendChild: () => {},
+    contains: (element) => element === selectedElement,
+    querySelectorAll: () => {
+      throw new Error('large marquee hit testing should not fall back to a full DOM scan');
+    },
+  });
+
+  const eventBase = {
+    pointerId: 22,
+    ctrlKey: true,
+    button: 0,
+    target: {
+      closest: () => null,
+      setPointerCapture: () => {},
+    },
+    preventDefault: () => {},
+    stopPropagation: () => {},
+  };
+
+  const detach = attachCanvasMarqueeSelection({
+    Canvas: {
+      getBody: () => body,
+    },
+    select(components) {
+      selectCalls.push(components);
+    },
+  });
+
+  doc.emit('pointerdown', {
+    ...eventBase,
+    clientX: 0,
+    clientY: 0,
+  });
+  win.emit('pointermove', {
+    ...eventBase,
+    clientX: 1000,
+    clientY: 1000,
+  });
+  win.emit('pointerup', {
+    ...eventBase,
+    clientX: 1000,
+    clientY: 1000,
+  });
+
+  assert.ok(hitTestCalls <= 320, `expected bounded hit-test calls, got ${hitTestCalls}`);
   assert.deepEqual(selectCalls, [[], [selectedComponent]]);
 
   detach();
@@ -2774,7 +3032,26 @@ test('syncSpacingOverlayToolbar can refresh tool position even when toolbar is a
   assert.deepEqual(refreshCalls, [{ tools: true }]);
 });
 
-test('SpacingOverlay toolbar refresh preserves same-frame layer selection on selection events', () => {
+test('attachSpacingOverlayToolbarSync coalesces burst selection refreshes into one frame', () => {
+  const fixture = createToolbarSelectionFixture();
+  const toolbarSync = attachSpacingOverlayToolbarSync(fixture.editor, () => Promise.resolve());
+  fixture.refreshCalls.length = 0;
+
+  fixture.selectHero();
+  fixture.emit('component:selected', fixture.editor.getSelected());
+  fixture.emit('component:selected', fixture.editor.getSelected());
+  fixture.emit('component:selected', fixture.editor.getSelected());
+
+  assert.deepEqual(fixture.refreshCalls, []);
+  assert.equal(fixture.getPendingFrameCount(), 1);
+
+  fixture.flushFrame();
+  assert.deepEqual(fixture.refreshCalls, [{ tools: true }]);
+
+  toolbarSync();
+});
+
+test('SpacingOverlay toolbar refresh preserves layer selection after coalesced selection events', () => {
   const fixture = createToolbarSelectionFixture();
   const toolbarSync = attachSpacingOverlayToolbarSync(fixture.editor, () => Promise.resolve());
   const bridge = createGrapesLikeInspectorBridge(fixture.editor);
@@ -2793,8 +3070,17 @@ test('SpacingOverlay toolbar refresh preserves same-frame layer selection on sel
   fixture.selectHero();
   fixture.emit('component:selected', fixture.editor.getSelected());
 
+  assert.deepEqual(fixture.refreshCalls, []);
+  assert.deepEqual(timeline, []);
+  assert.equal(fixture.getPendingFrameCount(), 2);
+
+  fixture.flushFrame();
   assert.deepEqual(fixture.refreshCalls, [{ tools: true }]);
   assert.equal(fixture.readToolbar()[0].command, 'ccui-send-to-ai');
+  assert.deepEqual(timeline, []);
+  assert.equal(fixture.getPendingFrameCount(), 1);
+
+  fixture.flushFrame();
   assert.deepEqual(timeline, [{
     selection: 'hero',
     layerSelection: ['hero'],

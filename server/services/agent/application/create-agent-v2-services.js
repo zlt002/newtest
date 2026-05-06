@@ -665,6 +665,47 @@ export function createAgentV2Services({
     };
   }
 
+  async function readHistoryCwdForSession(sessionId) {
+    if (typeof sessionHistoryService?.getSessionHistory !== 'function') {
+      return null;
+    }
+
+    try {
+      const history = await sessionHistoryService.getSessionHistory({ sessionId });
+      const cwd = typeof history?.cwd === 'string' ? history.cwd.trim() : '';
+      const projectPath = typeof history?.projectPath === 'string' ? history.projectPath.trim() : '';
+      return cwd || projectPath || null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function resolveContextUsageSession(sessionId) {
+    const liveSessionCandidate = typeof runtime.getLiveSession === 'function'
+      ? runtime.getLiveSession(sessionId)
+      : null;
+    const liveSession = liveSessionCandidate || (
+      typeof runtime.get === 'function'
+        ? runtime.get(sessionId)
+        : null
+    );
+
+    if (liveSession && typeof liveSession.getContextUsage === 'function') {
+      return liveSession;
+    }
+
+    if (typeof runtime.resume !== 'function') {
+      return null;
+    }
+
+    const cwd = await readHistoryCwdForSession(sessionId);
+    try {
+      return runtime.resume(sessionId, cwd ? { cwd } : {});
+    } catch {
+      return null;
+    }
+  }
+
   return {
     async createSession({ sessionId, title }) {
       const resolvedSessionId = String(sessionId || '').trim();
@@ -691,6 +732,19 @@ export function createAgentV2Services({
       }
 
       return createCanonicalHistoryFallback(String(sessionId || '').trim());
+    },
+    async getSessionContextUsage({ sessionId }) {
+      const normalizedSessionId = normalizeSessionId(sessionId);
+      if (!normalizedSessionId) {
+        throw new Error('getSessionContextUsage requires a concrete sessionId');
+      }
+
+      const contextUsageSession = await resolveContextUsageSession(normalizedSessionId);
+      if (!contextUsageSession || typeof contextUsageSession.getContextUsage !== 'function') {
+        return null;
+      }
+
+      return await contextUsageSession.getContextUsage();
     },
     startSessionRun,
     continueSessionRun,
