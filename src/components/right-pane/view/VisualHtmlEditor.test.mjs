@@ -155,6 +155,14 @@ test('VisualHtmlEditor performance diagnostics cover load, parsing, and source m
   assert.match(source, /logVisualHtmlPerf\('load-complete'/);
 });
 
+test('VisualHtmlEditor always clears the loading overlay for the latest load request, including sync refreshes', async () => {
+  const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /if \(requestId === loadRequestSequenceRef\.current\) \{\s*setLoading\(false\);\s*\}/);
+  assert.match(source, /void loadFileContent\(\{ markLoading: false \}\)/);
+  assert.doesNotMatch(source, /finally \{\s*if \(markLoading && requestId === loadRequestSequenceRef\.current\) \{\s*setLoading\(false\);\s*\}\s*\}/);
+});
+
 test('VisualHtmlEditor initializes and refreshes mapping on load and before saving design html', async () => {
   const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
 
@@ -362,7 +370,7 @@ test('VisualHtmlEditor ignores out-of-order load responses and only applies the 
   assert.match(source, /const requestId = loadRequestSequenceRef\.current \+ 1/);
   assert.match(source, /loadRequestSequenceRef\.current = requestId/);
   assert.match(source, /if \(requestId !== loadRequestSequenceRef\.current\) \{\s*return;\s*\}/);
-  assert.match(source, /if \(markLoading && requestId === loadRequestSequenceRef\.current\) \{/);
+  assert.match(source, /if \(requestId === loadRequestSequenceRef\.current\) \{\s*setLoading\(false\);\s*\}/);
 });
 
 test('RightPaneContentRouter source routes visual-html targets to VisualHtmlEditor', async () => {

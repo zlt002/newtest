@@ -1088,7 +1088,7 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
     if (!targetProjectName) {
       setLoadError('缺少项目标识，无法加载可视化 HTML 编辑器。');
       setEligibilityError(null);
-      if (markLoading && requestId === loadRequestSequenceRef.current) {
+      if (requestId === loadRequestSequenceRef.current) {
         setLoading(false);
       }
       return;
@@ -1150,7 +1150,7 @@ export default function VisualHtmlEditor({ target, onClosePane, onAppendToChatIn
       const message = getErrorMessage(error);
       setLoadError(message);
     } finally {
-      if (markLoading && requestId === loadRequestSequenceRef.current) {
+      if (requestId === loadRequestSequenceRef.current) {
         setLoading(false);
       }
     }
