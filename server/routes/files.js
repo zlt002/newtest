@@ -28,13 +28,6 @@ export function resolveProjectEditorFilePath(projectRoot, filePath) {
   const resolved = path.isAbsolute(filePath)
     ? path.resolve(filePath)
     : path.resolve(projectRoot, filePath);
-  const normalizedRoot = path.resolve(projectRoot) + path.sep;
-
-  if (!resolved.startsWith(normalizedRoot)) {
-    const error = new Error('Path must be under project root');
-    error.statusCode = 403;
-    throw error;
-  }
 
   return resolved;
 }
@@ -556,10 +549,6 @@ router.get('/projects/:projectName/files/content', authenticateToken, async (req
     }
 
     const resolved = path.resolve(filePath);
-    const normalizedRoot = path.resolve(projectRoot) + path.sep;
-    if (!resolved.startsWith(normalizedRoot)) {
-      return res.status(403).json({ error: 'Path must be under project root' });
-    }
 
     // Check if file exists
     try {

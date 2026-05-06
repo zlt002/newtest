@@ -271,14 +271,14 @@ function getAssistantIdentity(turn: AssistantTurnViewModel) {
 
 function mergeBodySegments(left: AssistantTurnViewModel, right: AssistantTurnViewModel) {
   const byId = new Map(left.bodySegments.map((segment) => [segment.id, segment]));
-  const seenSignatures = new Set(
-    left.bodySegments.map((segment) => `${segment.kind}:${normalizeComparableText(segment.body)}`),
+  const seenBodies = new Set(
+    left.bodySegments.map((segment) => normalizeComparableText(segment.body)),
   );
   for (const segment of right.bodySegments) {
-    const signature = `${segment.kind}:${normalizeComparableText(segment.body)}`;
-    if (!byId.has(segment.id) && !seenSignatures.has(signature)) {
+    const normBody = normalizeComparableText(segment.body);
+    if (!byId.has(segment.id) && !seenBodies.has(normBody)) {
       byId.set(segment.id, segment);
-      seenSignatures.add(signature);
+      seenBodies.add(normBody);
     }
   }
 

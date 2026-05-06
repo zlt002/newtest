@@ -220,6 +220,14 @@ export function useChatSessionState({
     });
     // Keep the locally echoed user turn visible until the real user message arrives in the store.
     const mergedWithPending = mergePendingUserMessage(all, pendingUserMessage);
+    if (typeof window !== 'undefined' && (window as any).__CHAT_USER_MSG_DEBUG__) {
+      const storeUserMsgs = storeMessages.filter(m => m.kind === 'text' && m.role === 'user');
+      const chatUserMsgs = mergedWithPending.filter(m => m.type === 'user');
+      console.warn('[chatMessages] storeMessages.user=', storeUserMsgs.map(m => ({ id: m.id, content: String(m.content || '').slice(0, 60) })),
+        'chatMessages.user=', chatUserMsgs.map(m => ({ id: m.id, content: (m.content || '').slice(0, 60) })),
+        'pending=', pendingUserMessage ? { content: (pendingUserMessage.content || '').slice(0, 60) } : null,
+        'storeLen=', storeMessages.length, 'allLen=', all.length, 'mergedLen=', mergedWithPending.length);
+    }
     if (viewHiddenCount > 0 && viewHiddenCount < mergedWithPending.length) return mergedWithPending.slice(0, -viewHiddenCount);
     return mergedWithPending;
   }, [storeMessages, viewHiddenCount, pendingUserMessage]);

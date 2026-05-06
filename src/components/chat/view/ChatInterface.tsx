@@ -34,6 +34,8 @@ import ChatMessagesPane from './subcomponents/ChatMessagesPane';
 import type { OutputFormatConfig } from '../types/transport.ts';
 import type { RightPaneTarget } from '../../right-pane/types.ts';
 
+const DEFAULT_BUBBLE_MAX_HEIGHT = '60vh';
+
 const shouldLogPrdStreamingDebug = Boolean(import.meta.env?.DEV);
 
 type PendingViewSession = {
@@ -425,6 +427,34 @@ function ChatInterface({
     sessionStore,
     disableSelectedSessionServerHydration: Boolean(selectedSession?.id),
   });
+
+  // Dynamic max height for collapsible bubbles: cap at a fraction of the scroll
+  // container's visible height so the bubble + its chrome always fits.
+  const BUBBLE_MAX_RATIO = 0.6; // leave room for user msg, header, padding, etc.
+  const [bubbleMaxHeight, setBubbleMaxHeight] = useState(DEFAULT_BUBBLE_MAX_HEIGHT);
+
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+
+    const compute = () => {
+      const h = el.clientHeight;
+      if (h > 100) {
+        setBubbleMaxHeight(`${Math.floor(h * BUBBLE_MAX_RATIO)}px`);
+      } else {
+        setBubbleMaxHeight(DEFAULT_BUBBLE_MAX_HEIGHT);
+      }
+    };
+
+    compute();
+    const observer = new ResizeObserver(() => { requestAnimationFrame(compute); });
+    observer.observe(el);
+    window.addEventListener('resize', compute);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', compute);
+    };
+  }, [scrollContainerRef]);
 
   const handleCompactWorkflowStart = useCallback((sourceSessionId: string | null) => {
     if (!sourceSessionId) {
@@ -1229,6 +1259,7 @@ function ChatInterface({
           conversationRounds={conversationRounds}
           handlePermissionDecision={handlePermissionDecision}
           pendingDecisionRequests={pendingDecisionRequests}
+          bubbleMaxHeight={bubbleMaxHeight}
         />
 
         <ChatComposer

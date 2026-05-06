@@ -18,6 +18,12 @@ function ClaudeAvatar() {
   );
 }
 
+function normalizeComparableText(value: unknown): string {
+  return String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
 function resolveCardTone(cardStatus: RunCardModel['cardStatus']) {
   switch (cardStatus) {
     case 'completed':
@@ -208,10 +214,12 @@ export function RunCard({
   card,
   interactionNode = null,
   onFileOpen = null,
+  bubbleMaxHeight,
 }: {
   card: RunCardModel;
   interactionNode?: ReactNode;
   onFileOpen?: ((filePath: string, diffInfo?: unknown) => void) | null;
+  bubbleMaxHeight?: string;
 }) {
   const [isProcessModalOpen, setIsProcessModalOpen] = useState(false);
   const modalScrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -241,7 +249,25 @@ export function RunCard({
     const canonicalResponseMessages = Array.isArray(card.responseMessages)
       ? card.responseMessages.filter((item) => String(item?.body || '').trim())
       : [];
-    const segments = canonicalResponseMessages.map((item) => ({
+
+    // Deduplicate: if an earlier segment's normalized body is a prefix of or
+    // included in a later one, drop the earlier one (handles streaming partial + final).
+    const deduped = canonicalResponseMessages.filter((item, idx) => {
+      const body = String(item?.body || '').trim();
+      if (!body) return false;
+      const norm = normalizeComparableText(body);
+      for (let j = idx + 1; j < canonicalResponseMessages.length; j++) {
+        const laterBody = String(canonicalResponseMessages[j]?.body || '').trim();
+        if (!laterBody) continue;
+        const laterNorm = normalizeComparableText(laterBody);
+        if (laterNorm.startsWith(norm) || laterNorm.includes(norm)) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    const segments = deduped.map((item) => ({
       id: item.id,
       body: item.body,
       kind: item.kind,
@@ -435,7 +461,7 @@ export function RunCard({
                 data-chat-v2-run-card-response-segment={segment.kind}
                 className={''}
               >
-                <RuntimeMarkdown className="max-w-none prose prose-sm dark:prose-invert">
+                <RuntimeMarkdown className="max-w-none prose prose-sm dark:prose-invert" maxHeight={bubbleMaxHeight}>
                   {segment.body}
                 </RuntimeMarkdown>
               </div>

@@ -873,12 +873,19 @@ export function normalizedToChatMessages(
 
         if (msg.role === 'user') {
           if (isExpandedSkillPromptContent(content)) {
+            if ((window as any)?.__CHAT_USER_MSG_DEBUG__) {
+              console.warn('[normalizedToChatMessages] FILTERED user msg (skill prompt):', content.slice(0, 80));
+            }
             break;
           }
+          const rawBeforeSanitize = content;
           const sanitizedUserText = sanitizeDisplayText(
             unescapeWithMathProtection(decodeHtmlEntities(content)),
           );
           if (!sanitizedUserText || isSdkImageAttachmentPlaceholderText(sanitizedUserText)) {
+            if ((window as any)?.__CHAT_USER_MSG_DEBUG__) {
+              console.warn('[normalizedToChatMessages] FILTERED user msg (empty after sanitize). raw=', JSON.stringify(rawBeforeSanitize).slice(0, 120), 'sanitized=', JSON.stringify(sanitizedUserText));
+            }
             break;
           }
           converted.push({

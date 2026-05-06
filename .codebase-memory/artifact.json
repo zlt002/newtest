@@ -1,11 +1,11 @@
 {
     "schema_version": 1,
-    "commit": "",
-    "indexed_at": "2026-05-05T08:47:42Z",
-    "project": "C-Users-Administrator-Desktop-ccuitest-newtest",
-    "nodes": 8425,
-    "edges": 12760,
-    "original_size": 14024704,
-    "compressed_size": 2675473,
-    "compression_level": 9
+    "commit": "5496f3976eaa09df43ba44aa5b00d6cbef29a8ff",
+    "indexed_at": "2026-05-06T07:31:25Z",
+    "project": "Users-zhanglt21-Desktop-accrnew-cc-ui",
+    "nodes": 5486,
+    "edges": 9856,
+    "original_size": 15400960,
+    "compressed_size": 2904001,
+    "compression_level": 3
 }

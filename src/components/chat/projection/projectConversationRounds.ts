@@ -50,15 +50,15 @@ function mergeResponseSegments(
   right: AssistantCardViewModel['responseSegments'],
 ) {
   const byId = new Map(left.map((segment) => [segment.id, segment]));
-  const seenSignatures = new Set(
-    left.map((segment) => `${segment.kind}:${normalizeComparableText(segment.body)}`),
+  const seenBodies = new Set(
+    left.map((segment) => normalizeComparableText(segment.body)),
   );
 
   for (const segment of right) {
-    const signature = `${segment.kind}:${normalizeComparableText(segment.body)}`;
-    if (!byId.has(segment.id) && !seenSignatures.has(signature)) {
+    const normBody = normalizeComparableText(segment.body);
+    if (!byId.has(segment.id) && !seenBodies.has(normBody)) {
       byId.set(segment.id, segment);
-      seenSignatures.add(signature);
+      seenBodies.add(normBody);
     }
   }
 

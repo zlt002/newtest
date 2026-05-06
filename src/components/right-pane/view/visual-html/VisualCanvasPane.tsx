@@ -495,6 +495,23 @@ function collectChangedAttributes(element: Element, attributes: Record<string, s
   }, {});
 }
 
+// Layout-affecting CSS properties that could cause unexpected canvas collapse
+// if auto-restored during component selection. These are handled by GrapesJS's
+// own style system and should not be blindly restored from original inline styles.
+const LAYOUT_AFFECTING_STYLE_PROPERTIES = new Set([
+  'width', 'height',
+  'max-width', 'maxWidth', 'max-height', 'maxHeight',
+  'min-width', 'minWidth', 'min-height', 'minHeight',
+  'display', 'position', 'float', 'clear',
+  'top', 'right', 'bottom', 'left',
+  'margin-top', 'marginTop', 'margin-right', 'marginRight',
+  'margin-bottom', 'marginBottom', 'margin-left', 'marginLeft',
+  'padding-top', 'paddingTop', 'padding-right', 'paddingRight',
+  'padding-bottom', 'paddingBottom', 'padding-left', 'paddingLeft',
+  'overflow', 'overflow-x', 'overflowX', 'overflow-y', 'overflowY',
+  'z-index', 'zIndex',
+]);
+
 function collectMissingStyleRecord(
   sourceStyle: Record<string, string>,
   componentStyle: Record<string, string>,
@@ -502,7 +519,12 @@ function collectMissingStyleRecord(
 ): Record<string, string> {
   return Object.entries(sourceStyle).reduce<Record<string, string>>((missingStyle, [property, value]) => {
     if (!componentStyle[property] && !elementStyle[property]) {
-      missingStyle[property] = value;
+      // Skip layout-affecting properties to prevent unexpected dimension changes
+      // that could collapse the canvas content. GrapesJS manages these through
+      // its own style system.
+      if (!LAYOUT_AFFECTING_STYLE_PROPERTIES.has(property)) {
+        missingStyle[property] = value;
+      }
     }
 
     return missingStyle;

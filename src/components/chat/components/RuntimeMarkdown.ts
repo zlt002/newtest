@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
@@ -11,6 +11,8 @@ type RuntimeMarkdownProps = {
   children?: React.ReactNode;
   className?: string;
   onOpenUrl?: ((url: string) => void) | null;
+  collapsible?: boolean;
+  maxHeight?: string;
 };
 
 type CodeBlockProps = {
@@ -120,23 +122,160 @@ function createMarkdownComponents(onOpenUrl?: ((url: string) => void) | null) {
   };
 }
 
-export function RuntimeMarkdown({ children, className, onOpenUrl }: RuntimeMarkdownProps) {
+export function RuntimeMarkdown({ children, className, onOpenUrl, collapsible = true, maxHeight = '320px' }: RuntimeMarkdownProps) {
   const content = String(children ?? '');
   const remarkPlugins = useMemo(() => [remarkGfm, remarkMath], []);
   const rehypePlugins = useMemo(() => [rehypeKatex], []);
   const markdownComponents = useMemo(() => createMarkdownComponents(onOpenUrl), [onOpenUrl]);
 
+  const [expanded, setExpanded] = useState(!collapsible);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const contentInnerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!collapsible) return;
+    const el = contentRef.current;
+    const inner = contentInnerRef.current;
+    if (!el || !inner) return;
+
+    const maxH = parseFloat(maxHeight);
+    if (isNaN(maxH) || maxH <= 0) return;
+
+    const checkOverflow = () => {
+      setIsOverflowing(inner.offsetHeight > Math.ceil(maxH));
+    };
+
+    // Double rAF to ensure layout is complete
+    requestAnimationFrame(() => requestAnimationFrame(checkOverflow));
+
+    // Observe content size changes (e.g. streaming text, images loading)
+    const observer = new ResizeObserver(() => {
+      requestAnimationFrame(checkOverflow);
+    });
+    observer.observe(inner);
+
+    return () => observer.disconnect();
+  }, [content, collapsible, maxHeight]);
+
+  // Auto-scroll content to bottom so latest content is always visible
+  const scrollToBottom = useCallback(() => {
+    requestAnimationFrame(() => {
+      if (contentRef.current) {
+        contentRef.current.scrollTop = contentRef.current.scrollHeight;
+      }
+    });
+  }, []);
+
+  // Scroll to bottom whenever content changes (new streaming text)
+  useEffect(() => {
+    if (expanded) return; // don't auto-scroll when user manually expanded
+    scrollToBottom();
+  }, [content, expanded, scrollToBottom]);
+
+  const handleExpand = useCallback(() => {
+    setExpanded(true);
+    // Scroll to bottom to show latest content after expanding
+    requestAnimationFrame(() => {
+      if (contentRef.current) {
+        contentRef.current.scrollTop = contentRef.current.scrollHeight;
+      }
+    });
+  }, []);
+
+  const handleCollapse = useCallback(() => {
+    setExpanded(false);
+    // Scroll to bottom to show latest content after collapsing
+    requestAnimationFrame(() => {
+      if (contentRef.current) {
+        contentRef.current.scrollTop = contentRef.current.scrollHeight;
+      }
+    });
+  }, []);
+
+  if (!collapsible) {
+    return React.createElement(
+      'div',
+      { className },
+      React.createElement(
+        ReactMarkdown,
+        {
+          remarkPlugins,
+          rehypePlugins,
+          components: markdownComponents as any,
+        },
+        content,
+      ),
+    );
+  }
+
   return React.createElement(
     'div',
-    { className },
+    { className: 'relative' },
     React.createElement(
-      ReactMarkdown,
+      'div',
       {
-        remarkPlugins,
-        rehypePlugins,
-        components: markdownComponents as any,
+        ref: contentRef,
+        className: 'overflow-y-auto',
+        style: expanded ? { maxHeight: 'none' } : { maxHeight },
       },
-      content,
+      React.createElement(
+        'div',
+        { ref: contentInnerRef, className },
+        React.createElement(
+          ReactMarkdown,
+          {
+            remarkPlugins,
+            rehypePlugins,
+            components: markdownComponents as any,
+          },
+          content,
+        ),
+      ),
     ),
+    // Expand button overlay (collapsed state) - small corner button
+    isOverflowing && !expanded
+      ? React.createElement(
+          'button',
+          {
+            type: 'button',
+            onClick: handleExpand,
+            className: 'absolute bottom-1 right-1 z-10 inline-flex items-center gap-0.5 rounded-md bg-blue-600/90 px-2 py-1 text-[10px] font-medium text-white shadow-sm backdrop-blur-sm hover:bg-blue-700 transition-colors',
+          },
+          '展开',
+          React.createElement(
+            'svg',
+            { className: 'h-3 w-3', fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24', strokeWidth: 2 },
+            React.createElement(
+              'path',
+              { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M19 14l-7 7m0 0l-7-7m7 7V3' },
+            ),
+          ),
+        )
+      : null,
+    // Collapse button (expanded state) - small inline button
+    isOverflowing && expanded
+      ? React.createElement(
+          'div',
+          { className: 'flex justify-end pt-1' },
+          React.createElement(
+            'button',
+            {
+              type: 'button',
+              onClick: handleCollapse,
+              className: 'inline-flex items-center gap-0.5 rounded-md bg-neutral-100 px-2 py-0.5 text-[10px] font-medium text-neutral-500 hover:bg-neutral-200 transition-colors dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700',
+            },
+            '收起',
+            React.createElement(
+              'svg',
+              { className: 'h-3 w-3', fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24', strokeWidth: 2 },
+              React.createElement(
+                'path',
+                { strokeLinecap: 'round', strokeLinejoin: 'round', d: 'M5 10l7-7m0 0l7 7m-7-7v18' },
+              ),
+            ),
+          ),
+        )
+      : null,
   );
 }

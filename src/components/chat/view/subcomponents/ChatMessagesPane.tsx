@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { RefObject } from 'react';
 import RunCardView from '../../components/RunCard.tsx';
@@ -13,6 +13,25 @@ import { getIntrinsicMessageKey } from '../../utils/messageKeys';
 import MessageComponent from './MessageComponent';
 import ProviderSelectionEmptyState from './ProviderSelectionEmptyState';
 import { shouldRenderChatEmptyState } from './chatMessagesPaneState';
+
+// Cap how many conversation rounds are rendered at once to avoid
+// freezing the browser on very long conversations. Older rounds
+// are rendered as lightweight placeholders that expand on demand.
+const MAX_RENDERED_ROUNDS = 20;
+
+function OldRoundsPlaceholder({ count, onExpand }: { count: number; onExpand: () => void }) {
+  return (
+    <div className="flex items-center justify-center py-2">
+      <button
+        type="button"
+        onClick={onExpand}
+        className="rounded-full border border-neutral-200 bg-white px-4 py-1.5 text-xs text-neutral-500 transition hover:border-neutral-300 hover:text-neutral-700 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-400 dark:hover:border-neutral-600 dark:hover:text-neutral-200"
+      >
+        上方还有 {count} 条历史消息，点击加载
+      </button>
+    </div>
+  );
+}
 
 function getMessageIdentity(message: ChatMessage) {
   return String(message.id || message.messageId || '').trim();
@@ -455,6 +474,7 @@ interface ChatMessagesPaneProps {
   runCards?: RunCardModel[];
   conversationTurns?: ConversationTurn[];
   conversationRounds?: ConversationRound[];
+  bubbleMaxHeight?: string;
 }
 
 function roundAssistantCardToRunCard(round: ConversationRound): RunCardModel {
@@ -541,6 +561,7 @@ export default function ChatMessagesPane({
   runCards = [],
   conversationTurns = [],
   conversationRounds = [],
+  bubbleMaxHeight,
 }: ChatMessagesPaneProps) {
   const { t } = useTranslation('chat');
   const useConversationRounds = conversationRounds.length > 0;
@@ -548,6 +569,7 @@ export default function ChatMessagesPane({
   const useConversationTurns = !useConversationRounds
     && conversationTurns.length > 0
     && (hasAssistantConversationTurn || runCards.length === 0);
+  const [oldRoundsExpanded, setOldRoundsExpanded] = useState(false);
   const pendingPermissionRequestIds = new Set(
     pendingDecisionRequests.map((request) => String(request.requestId || '').trim()).filter(Boolean),
   );
@@ -666,6 +688,8 @@ export default function ChatMessagesPane({
         renderingMode: 'conversationRounds' | 'conversationTurns' | 'legacy';
         turns: Array<Record<string, unknown>>;
         legacyMessages: Array<Record<string, unknown>>;
+        conversationRounds: Array<Record<string, unknown>>;
+        userMessageContent: Array<Record<string, unknown>>;
       };
     }).__CCUI_CHAT_DEBUG__ = {
       renderingMode: useConversationRounds
@@ -681,11 +705,25 @@ export default function ChatMessagesPane({
           ? turn.content
           : turn.bodySegments.map((segment) => segment.body).filter(Boolean).join('\n\n'),
       })),
+      conversationRounds: conversationRounds.map((round) => ({
+        id: round.id,
+        userId: round.userMessage.id,
+        userContent: round.userMessage.content,
+        userContentLen: round.userMessage.content?.length ?? 0,
+        hasAssistantCard: Boolean(round.assistantCard),
+        assistantStatus: round.assistantCard?.status,
+      })),
       legacyMessages: renderedMessages.map((message) => ({
         type: message.type,
         id: String(message.id || message.messageId || ''),
         timestamp: message.timestamp,
         text: message.content,
+      })),
+      userMessageContent: conversationRounds.map((round) => ({
+        roundId: round.id,
+        userId: round.userMessage.id,
+        contentPreview: String(round.userMessage.content || '').slice(0, 100),
+        contentEmpty: !round.userMessage.content || !round.userMessage.content.trim(),
       })),
     };
 
@@ -743,6 +781,7 @@ export default function ChatMessagesPane({
         card={card}
         interactionNode={renderRunCardInteraction(card)}
         onFileOpen={onFileOpen}
+        bubbleMaxHeight={bubbleMaxHeight}
       />
     </section>
   );
@@ -800,6 +839,7 @@ export default function ChatMessagesPane({
           card={card}
           interactionNode={renderRunCardInteraction(card)}
           onFileOpen={onFileOpen}
+          bubbleMaxHeight={bubbleMaxHeight}
         />
       </section>
     );
@@ -853,6 +893,7 @@ export default function ChatMessagesPane({
               card={assistantCard}
               interactionNode={renderRunCardInteraction(assistantCard)}
               onFileOpen={onFileOpen}
+              bubbleMaxHeight={bubbleMaxHeight}
             />
           </section>
         ) : null}
@@ -894,9 +935,37 @@ export default function ChatMessagesPane({
           )}
 
           {useConversationRounds ? (
-            conversationRounds.map((round) => renderConversationRound(round))
+            (() => {
+              const allRounds = conversationRounds;
+              const hiddenCount = allRounds.length - MAX_RENDERED_ROUNDS;
+              const visibleRounds = oldRoundsExpanded
+                ? allRounds
+                : allRounds.slice(Math.max(0, hiddenCount));
+              return (
+                <>
+                  {!oldRoundsExpanded && hiddenCount > 0 && (
+                    <OldRoundsPlaceholder count={hiddenCount} onExpand={() => setOldRoundsExpanded(true)} />
+                  )}
+                  {visibleRounds.map((round) => renderConversationRound(round))}
+                </>
+              );
+            })()
           ) : useConversationTurns ? (
-            conversationTurns.map((turn) => renderConversationTurn(turn))
+            (() => {
+              const allTurns = conversationTurns;
+              const hiddenCount = allTurns.length - MAX_RENDERED_ROUNDS;
+              const visibleTurns = oldRoundsExpanded
+                ? allTurns
+                : allTurns.slice(Math.max(0, hiddenCount));
+              return (
+                <>
+                  {!oldRoundsExpanded && hiddenCount > 0 && (
+                    <OldRoundsPlaceholder count={hiddenCount} onExpand={() => setOldRoundsExpanded(true)} />
+                  )}
+                  {visibleTurns.map((turn) => renderConversationTurn(turn))}
+                </>
+              );
+            })()
           ) : (
             <>
               {renderedMessages.map((message, index) => {
