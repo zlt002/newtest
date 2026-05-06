@@ -101,6 +101,13 @@ type SpacingOverlaySnapshot = {
   padding: SpacingBoxMetrics;
 };
 
+type OverlayRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
 type PositionDragValue = {
   left: { value: string; unit: string };
   top: { value: string; unit: string };
@@ -247,6 +254,91 @@ function getTimingNow() {
   }
 
   return Date.now();
+}
+
+function isSameOverlayRect(a: OverlayRect | null | undefined, b: OverlayRect | null | undefined) {
+  if (!a || !b) {
+    return a === b;
+  }
+
+  return a.left === b.left
+    && a.top === b.top
+    && a.width === b.width
+    && a.height === b.height;
+}
+
+function isSameSelectedSpacingBox(a: SelectedSpacingBox, b: SelectedSpacingBox) {
+  return a.key === b.key
+    && a.id === b.id
+    && a.left === b.left
+    && a.top === b.top
+    && a.width === b.width
+    && a.height === b.height
+    && isSameOverlayRect(a.marginBox, b.marginBox)
+    && isSameOverlayRect(a.paddingBox, b.paddingBox);
+}
+
+function areSpacingSnapshotsEqual(
+  a: SpacingOverlaySnapshot | null | undefined,
+  b: SpacingOverlaySnapshot | null | undefined,
+) {
+  if (!a || !b) {
+    return a === b;
+  }
+
+  if (a.selectedId !== b.selectedId || a.positionMode !== b.positionMode) {
+    return false;
+  }
+
+  if (!isSameOverlayRect(a.borderBox, b.borderBox) || !isSameOverlayRect(a.multiSelectionBox, b.multiSelectionBox)) {
+    return false;
+  }
+
+  if (a.selectedBorderBoxes.length !== b.selectedBorderBoxes.length) {
+    return false;
+  }
+
+  return a.selectedBorderBoxes.every((box, index) => isSameSelectedSpacingBox(box, b.selectedBorderBoxes[index]));
+}
+
+export function getScrollSyncTargets(body: HTMLElement | null | undefined): EventTarget[] {
+  if (!body) {
+    return [];
+  }
+
+  const targets: EventTarget[] = [];
+  const seen = new Set<EventTarget>();
+  const doc = body.ownerDocument ?? null;
+  const win = doc?.defaultView ?? null;
+  const pushTarget = (target: EventTarget | null | undefined) => {
+    if (!target || seen.has(target)) {
+      return;
+    }
+
+    seen.add(target);
+    targets.push(target);
+  };
+
+  let current: HTMLElement | null = body;
+  while (current) {
+    const style = current.ownerDocument?.defaultView?.getComputedStyle?.(current);
+    const overflowY = style?.overflowY ?? '';
+    const overflowX = style?.overflowX ?? '';
+    const isScrollable = /(auto|scroll|overlay)/.test(`${overflowX} ${overflowY}`);
+
+    if (isScrollable) {
+      pushTarget(current);
+    }
+
+    current = current.parentElement;
+  }
+
+  pushTarget(body);
+  pushTarget(doc);
+  pushTarget(doc?.documentElement ?? null);
+  pushTarget(win);
+
+  return targets;
 }
 
 function setCanvasDragChromeHidden(doc: Document | null | undefined, hidden: boolean) {
@@ -1956,6 +2048,7 @@ export default function SpacingOverlay({
   const rafRef = useRef<number | null>(null);
   const lastSendRef = useRef<{ targetId: string; at: number } | null>(null);
   const sendSelectionPendingRef = useRef(false);
+  const snapshotRef = useRef<SpacingOverlaySnapshot | null>(null);
   const spacingHoverHideTimerRef = useRef<number | null>(null);
   const [spacingHoverActive, setSpacingHoverActive] = useState(false);
   const [hoveredSpacingBoxKey, setHoveredSpacingBoxKey] = useState<string | null>(null);
@@ -2082,6 +2175,10 @@ export default function SpacingOverlay({
   };
 
   useEffect(() => {
+    snapshotRef.current = snapshot;
+  }, [snapshot]);
+
+  useEffect(() => {
     if (!editor) {
       setSnapshot(null);
       return undefined;
@@ -2147,7 +2244,8 @@ export default function SpacingOverlay({
     }
 
     const updateSnapshot = () => {
-      setSnapshot(buildSpacingSnapshot(editor));
+      const nextSnapshot = buildSpacingSnapshot(editor);
+      setSnapshot((previous) => (areSpacingSnapshotsEqual(previous, nextSnapshot) ? previous : nextSnapshot));
     };
 
     const scheduleUpdate = () => {
@@ -2178,16 +2276,21 @@ export default function SpacingOverlay({
       editor.on?.(eventName, scheduleUpdate);
     });
 
+    const scrollTargets = getScrollSyncTargets(editor.Canvas?.getBody?.() as HTMLElement | null | undefined);
     const win = editor.Canvas?.getBody?.()?.ownerDocument?.defaultView;
     const scrollListenerOptions = { capture: true, passive: true } as const;
-    win?.addEventListener('scroll', scheduleUpdate, scrollListenerOptions);
+    scrollTargets.forEach((target) => {
+      target.addEventListener?.('scroll', scheduleUpdate, scrollListenerOptions);
+    });
     win?.addEventListener('resize', scheduleUpdate);
 
     return () => {
       eventNames.forEach((eventName) => {
         editor.off?.(eventName, scheduleUpdate);
       });
-      win?.removeEventListener('scroll', scheduleUpdate, scrollListenerOptions);
+      scrollTargets.forEach((target) => {
+        target.removeEventListener?.('scroll', scheduleUpdate, scrollListenerOptions);
+      });
       win?.removeEventListener('resize', scheduleUpdate);
       if (rafRef.current !== null) {
         win?.cancelAnimationFrame(rafRef.current);
@@ -2207,6 +2310,39 @@ export default function SpacingOverlay({
       setDragPreview(null);
       setPositionDragPreview(null);
       setResizeDragPreview(null);
+    };
+  }, [editor]);
+
+  useEffect(() => {
+    if (!editor) {
+      return undefined;
+    }
+
+    const win = editor.Canvas?.getBody?.()?.ownerDocument?.defaultView ?? window;
+    let frameId: number | null = null;
+    let disposed = false;
+
+    const tick = () => {
+      if (disposed) {
+        return;
+      }
+
+      const nextSnapshot = buildSpacingSnapshot(editor);
+      if (!areSpacingSnapshotsEqual(snapshotRef.current, nextSnapshot)) {
+        snapshotRef.current = nextSnapshot;
+        setSnapshot(nextSnapshot);
+      }
+
+      frameId = win.requestAnimationFrame(tick);
+    };
+
+    frameId = win.requestAnimationFrame(tick);
+
+    return () => {
+      disposed = true;
+      if (frameId !== null) {
+        win.cancelAnimationFrame(frameId);
+      }
     };
   }, [editor]);
 

@@ -41,6 +41,7 @@ const {
   shouldSuppressDuplicateSend,
   getVisibleSpacingKinds,
   getVisibleSpacingHandleSides,
+  getScrollSyncTargets,
   parseSpacingLength,
   readSpacingBoxFromStyle,
   syncSpacingOverlayToolbar,
@@ -319,6 +320,44 @@ test('applyResizeDragDelta preserves aspect ratio while shift is held', () => {
     ),
     { width: { value: '150', unit: 'px' }, height: { value: '100', unit: 'px' } },
   );
+});
+
+test('getScrollSyncTargets includes document scroll roots, scrollable ancestors, and de-duplicates targets', () => {
+  const win = {
+    getComputedStyle(element) {
+      return {
+        overflowX: element.overflowX ?? 'visible',
+        overflowY: element.overflowY ?? 'visible',
+      };
+    },
+  };
+  const html = {
+    overflowY: 'visible',
+    parentElement: null,
+    ownerDocument: null,
+  };
+  const doc = {
+    defaultView: win,
+    documentElement: html,
+  };
+  const root = {
+    overflowY: 'auto',
+    parentElement: html,
+    ownerDocument: doc,
+  };
+  const frame = {
+    overflowY: 'scroll',
+    parentElement: root,
+    ownerDocument: doc,
+  };
+  const body = {
+    overflowY: 'visible',
+    parentElement: frame,
+    ownerDocument: doc,
+  };
+  html.ownerDocument = doc;
+
+  assert.deepEqual(getScrollSyncTargets(body), [frame, root, body, doc, html, win]);
 });
 
 test('applyResizeStylesToTarget writes inline width height and promotes inline display', () => {
