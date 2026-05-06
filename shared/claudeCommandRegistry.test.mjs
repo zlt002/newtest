@@ -12,16 +12,19 @@ test('built-in Claude-compatible commands include the core CLI commands we surfa
 
   assert.deepEqual(
     names,
-    ['/add-dir', '/agents', '/clear', '/config', '/copy', '/doctor', '/export', '/help', '/ide', '/mcp'],
+    ['/add-dir', '/agents', '/clear', '/compact', '/config', '/context', '/copy', '/doctor', '/export', '/help', '/ide', '/mcp'],
   );
-  assert.equal(names.includes('/compact'), false);
-  assert.equal(names.includes('/context'), false);
   assert.equal(names.includes('/cost'), false);
 });
 
 test('aliases resolve to their canonical built-in command', () => {
   assert.equal(findBuiltInCommand('/settings')?.name, '/config');
   assert.equal(findBuiltInCommand('/reset')?.name, '/clear');
+});
+
+test('compact and context resolve as local UI commands', () => {
+  assert.equal(findBuiltInCommand('/compact')?.metadata?.type, 'local-ui');
+  assert.equal(findBuiltInCommand('/context')?.metadata?.type, 'local-ui');
 });
 
 test('getBuiltInCommands returns cloned metadata arrays', () => {

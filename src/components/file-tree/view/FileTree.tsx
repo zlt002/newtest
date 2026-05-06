@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect, useRef } from 'react';
+import { useCallback, useState, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Check, X, Loader2, Folder, Upload } from 'lucide-react';
 import { cn } from '../../../lib/utils';
@@ -9,8 +9,14 @@ import { useFileTreeOperations } from '../hooks/useFileTreeOperations';
 import { useFileTreeSearch } from '../hooks/useFileTreeSearch';
 import { useFileTreeViewMode } from '../hooks/useFileTreeViewMode';
 import { useFileTreeUpload } from '../hooks/useFileTreeUpload';
-import type { FileTreeImageSelection, FileTreeNode } from '../types/types';
+import type {
+  FileTreeImageSelection,
+  FileTreeNode,
+  FileTreeSortConfig,
+  FileTreeSortKey,
+} from '../types/types';
 import { formatFileSize, formatRelativeTime, isImageFile } from '../utils/fileTreeUtils';
+import { sortFileTree } from '../utils/fileTreeSort';
 import { Project } from '../../../types/app';
 import type { CodeEditorDiffInfo } from '../../code-editor/types/types';
 import { ScrollArea, Input } from '../../../shared/view/ui';
@@ -41,6 +47,10 @@ export default function FileTree({
   const { t } = useTranslation();
   const [selectedImage, setSelectedImage] = useState<FileTreeImageSelection | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [sortConfig, setSortConfig] = useState<FileTreeSortConfig>({
+    key: 'name',
+    direction: 'asc',
+  });
   const newItemInputRef = useRef<HTMLInputElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
@@ -64,6 +74,10 @@ export default function FileTree({
     files,
     expandDirectories,
   });
+  const displayedFiles = useMemo(
+    () => (viewMode === 'detailed' ? sortFileTree(filteredFiles, sortConfig) : filteredFiles),
+    [filteredFiles, sortConfig, viewMode],
+  );
 
   // File operations
   const operations = useFileTreeOperations({
@@ -153,6 +167,13 @@ export default function FileTree({
     [onAppendToChatInput],
   );
 
+  const handleSortChange = useCallback((key: FileTreeSortKey) => {
+    setSortConfig((current) => ({
+      key,
+      direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc',
+    }));
+  }, []);
+
   if (loading) {
     return <FileTreeLoadingState />;
   }
@@ -198,7 +219,9 @@ export default function FileTree({
         embedded={embedded}
       />
 
-      {viewMode === 'detailed' && filteredFiles.length > 0 && <FileTreeDetailedColumns />}
+      {viewMode === 'detailed' && filteredFiles.length > 0 && (
+        <FileTreeDetailedColumns sortConfig={sortConfig} onSortChange={handleSortChange} />
+      )}
 
       <ScrollArea className={`flex-1 ${embedded ? 'px-1 py-1' : 'px-2 py-1'}`}>
         {/* New item input */}
@@ -235,7 +258,7 @@ export default function FileTree({
 
         <FileTreeBody
           files={files}
-          filteredFiles={filteredFiles}
+          filteredFiles={displayedFiles}
           searchQuery={searchQuery}
           viewMode={viewMode}
           expandedDirs={expandedDirs}

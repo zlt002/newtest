@@ -34,9 +34,11 @@ export const BUILT_IN_COMMANDS = [
   localUi('/clear', 'End the current chat view and start a fresh local conversation', 20, {
     aliases: ['/reset', '/new'],
   }),
+  localUi('/compact', 'Summarize the current conversation into a concise handoff note', 25),
   localUi('/config', 'Open settings and preferences', 30, {
     aliases: ['/settings'],
   }),
+  localUi('/context', 'Show current context usage and compaction guidance', 35),
   localUi('/copy', 'Copy the current conversation transcript or provided text to the clipboard', 40),
   localUi('/doctor', 'Run a local diagnostic summary for the current CC UI environment', 50),
   localUi('/export', 'Export the current conversation transcript to a local markdown file', 60),
