@@ -251,7 +251,7 @@ const COMPONENT_OUTLINE_COMMAND_ID = 'core:component-outline';
 const CCUI_PREVIEW_RUNTIME_STYLE_ID = 'ccui-preview-runtime-style-override';
 
 function ensureCanvasOutlineOverrideStyle(editor: ReturnType<typeof grapesjs.init>) {
-  const body = editor.Canvas.getBody();
+  const body = editor.Canvas?.getBody();
   const document = body?.ownerDocument;
   if (!document) {
     return;
@@ -277,7 +277,7 @@ function ensureCanvasOutlineOverrideStyle(editor: ReturnType<typeof grapesjs.ini
 }
 
 function applyCanvasOutlineVisibility(editor: ReturnType<typeof grapesjs.init>, visible: boolean) {
-  const body = editor.Canvas.getBody();
+  const body = editor.Canvas?.getBody();
   const docEl = body?.ownerDocument?.documentElement;
   const roots = [body, docEl].filter(Boolean) as HTMLElement[];
   const dashedClassName = `${editor.getConfig().stylePrefix}dashed`;

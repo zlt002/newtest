@@ -82,7 +82,7 @@ export function resolveCanvasDocument(editor: ReturnType<typeof grapesjs.init>):
 }
 
 export function resolveCanvasBody(editor: ReturnType<typeof grapesjs.init>): HTMLBodyElement | null {
-  const directBody = editor.Canvas.getBody?.();
+  const directBody = editor.Canvas?.getBody?.();
   if (directBody) {
     return directBody;
   }
