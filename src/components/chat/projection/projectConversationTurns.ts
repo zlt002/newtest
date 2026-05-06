@@ -371,6 +371,7 @@ function attachPendingRequests(
   assistantTurns: AssistantTurnViewModel[],
   pendingDecisionRequests: PendingDecisionRequest[],
   sessionId: string | null,
+  userTurns: UserTurnViewModel[],
 ) {
   if (pendingDecisionRequests.length === 0) {
     return assistantTurns;
@@ -385,6 +386,21 @@ function attachPendingRequests(
 
     const interaction = pendingRequestToInteraction(request);
     const requestSessionId = request.sessionId || sessionId || '';
+    const latestUserTurn = [...userTurns]
+      .filter((turn) => {
+        if (!requestSessionId) {
+          return true;
+        }
+        return String(turn.sessionId || '') === requestSessionId;
+      })
+      .sort((left, right) => {
+        const leftTime = Date.parse(String(left.timestamp || ''));
+        const rightTime = Date.parse(String(right.timestamp || ''));
+        if (Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime !== rightTime) {
+          return rightTime - leftTime;
+        }
+        return 0;
+      })[0] || null;
     const targetIndex = nextTurns.findIndex((turn) => (
       turn.sessionId === (requestSessionId || turn.sessionId)
       && (turn.status === 'running' || turn.status === 'waiting_for_input')
@@ -423,7 +439,7 @@ function attachPendingRequests(
       id: `${requestSessionId || 'session'}:pending:${request.requestId}`,
       sessionId: requestSessionId,
       runId: null,
-      anchorMessageId: '',
+      anchorMessageId: latestUserTurn?.id || '',
       status: 'waiting_for_input',
       headline: interaction.kind === 'interactive_prompt' ? '等待你的回答' : '等待授权',
       activityItems: [{
@@ -436,7 +452,7 @@ function attachPendingRequests(
       }],
       bodySegments: [],
       activeInteraction: interaction,
-      startedAt: receivedAt,
+      startedAt: latestUserTurn?.timestamp || receivedAt,
       updatedAt: receivedAt,
       completedAt: null,
       source: 'fallback',
@@ -609,6 +625,7 @@ export function projectConversationTurns({
     [...assistantTurnsByIdentity.values()],
     pendingDecisionRequests,
     sessionId,
+    userTurns,
   );
   const constrainedAssistantTurns = constrainAssistantTurnsToUserWindows(assistantTurns, userTurns);
   const turns: ConversationTurn[] = [...userTurns, ...constrainedAssistantTurns];

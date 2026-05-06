@@ -21,6 +21,7 @@ type RightPaneContentRouterProps = {
   onClosePane: () => void;
   onTogglePaneExpand?: (() => void) | null;
   onAppendToChatInput?: ((text: string) => void) | null;
+  onFileOpen?: ((filePath: string) => void) | null;
   onPopOut?: (() => void) | null;
   isExpanded?: boolean;
   isSidebar?: boolean;
@@ -54,6 +55,7 @@ export default function RightPaneContentRouter({
   onClosePane,
   onTogglePaneExpand = null,
   onAppendToChatInput = null,
+  onFileOpen = null,
   onPopOut = null,
   isExpanded = false,
   isSidebar = true,
@@ -88,6 +90,7 @@ export default function RightPaneContentRouter({
         onClosePane={onClosePane}
         onTogglePaneExpand={onTogglePaneExpand}
         onAppendToChatInput={onAppendToChatInput}
+        onFileOpen={onFileOpen}
         onPopOut={onPopOut}
         isExpanded={isExpanded}
         isSidebar={isSidebar}
@@ -146,6 +149,7 @@ export default function RightPaneContentRouter({
             onClosePane,
             onTogglePaneExpand,
             onAppendToChatInput,
+            onFileOpen,
             onPopOut,
             isExpanded,
             isSidebar,

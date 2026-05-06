@@ -30,6 +30,7 @@ type CodeEditorProps = {
   onToggleExpand?: (() => void) | null;
   onPopOut?: (() => void) | null;
   onAppendToChatInput?: ((text: string) => void) | null;
+  onFileOpen?: ((filePath: string) => void) | null;
   draftPreviewOperations?: FileDraftPreviewOperation[];
 };
 
@@ -42,6 +43,7 @@ export default function CodeEditor({
   onToggleExpand = null,
   onPopOut = null,
   onAppendToChatInput = null,
+  onFileOpen = null,
   draftPreviewOperations = [],
 }: CodeEditorProps) {
   const { t } = useTranslation('codeEditor');
@@ -363,12 +365,13 @@ export default function CodeEditor({
               markdownPreview={markdownPreview}
               isMarkdownFile={isMarkdownFile}
               markdownAnnotations={markdownAnnotations}
-              fileName={file.name}
-              filePath={file.path}
-              onAppendToChatInput={onAppendToChatInput}
-              onMarkdownToolbarStateChange={handleMarkdownToolbarStateChange}
-              requestedEditAnnotationId={requestedEditAnnotationId}
-              onRequestedEditAnnotationHandled={() => {
+            fileName={file.name}
+            filePath={file.path}
+            onAppendToChatInput={onAppendToChatInput}
+            onFileOpen={onFileOpen}
+            onMarkdownToolbarStateChange={handleMarkdownToolbarStateChange}
+            requestedEditAnnotationId={requestedEditAnnotationId}
+            onRequestedEditAnnotationHandled={() => {
                 setRequestedEditAnnotationId(null);
               }}
               shouldAutoFollowOutput={draftPreviewOperations.length > 0}

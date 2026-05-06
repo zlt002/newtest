@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { InteractivePanelProps } from '../../configs/interactivePanelRegistry';
 import type { Question } from '../../../types/types';
@@ -145,7 +146,7 @@ export const AskUserQuestionPanel: React.FC<InteractivePanelProps> = ({
   const isFirst = currentStep === 0;
   const hasCurrentSelection = selected.size > 0 || (isOtherOn && (otherTexts.get(currentStep) || '').trim().length > 0);
 
-  return (
+  const panel = (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
@@ -390,6 +391,12 @@ export const AskUserQuestionPanel: React.FC<InteractivePanelProps> = ({
         </div>
       </div>
     </div>
-  </div>
+    </div>
   );
+
+  if (typeof document === 'undefined') {
+    return panel;
+  }
+
+  return createPortal(panel, document.body);
 };

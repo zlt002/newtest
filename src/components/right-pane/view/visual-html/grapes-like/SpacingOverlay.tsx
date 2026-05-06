@@ -35,6 +35,7 @@ type SpacingBoxMetrics = BoxValue & {
 
 type SpacingStyleTarget = {
   getId?: () => string;
+  getType?: () => string;
   get?: (key: string) => unknown;
   addStyle?: (style: Record<string, string>) => void;
   removeStyle?: (property: string) => void;
@@ -165,6 +166,7 @@ type SpacingOverlayProps = {
 
 type SelectedComponentTarget = {
   getId?: () => string;
+  getType?: () => string;
   get?: (key: string) => unknown;
   getAttributes?: () => Record<string, string>;
   getEl?: () => HTMLElement | null | undefined;
@@ -1429,6 +1431,11 @@ function getSelectedComponents(editor: GrapesEditor): SelectedComponentTarget[] 
   }
 }
 
+export function isWrapperComponent(component: { getType?: () => string; get?: (key: string) => unknown } | null | undefined) {
+  const type = String(component?.getType?.() ?? component?.get?.('type') ?? '').trim().toLowerCase();
+  return type === 'wrapper';
+}
+
 function buildUnionBox(boxes: Array<{ left: number; top: number; width: number; height: number }>) {
   if (boxes.length === 0) {
     return null;
@@ -1776,7 +1783,7 @@ export async function buildSendSelectionToChatPayload({
 function buildSpacingSnapshot(editor: GrapesEditor): SpacingOverlaySnapshot | null {
   const body = editor.Canvas?.getBody?.();
   const selected = getSelectedComponent(editor);
-  if (!selected) {
+  if (!selected || isWrapperComponent(selected)) {
     return null;
   }
   const element = selected?.getEl?.() as HTMLElement | null | undefined;

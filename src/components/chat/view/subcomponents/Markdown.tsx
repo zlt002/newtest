@@ -8,7 +8,9 @@ import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { useTranslation } from 'react-i18next';
 import { normalizeInlineCodeFences } from '../../utils/chatFormatting';
 import { copyTextToClipboard } from '../../../../utils/clipboard';
+import { resolveMarkdownFileTarget } from './markdownFileLink';
 import { getMarkdownLinkAttributes } from './markdownLinkRouting';
+import { preserveMarkdownHref } from './markdownUrlTransform';
 import MermaidBlock from '../../../shared/markdown/MermaidBlock';
 import { parseMarkdownCodeBlock, shouldRenderMermaidBlock } from '../../../shared/markdown/mermaidCodeBlock';
 
@@ -16,6 +18,7 @@ type MarkdownProps = {
   children: React.ReactNode;
   className?: string;
   onOpenUrl?: (url: string) => void;
+  onFileOpen?: (filePath: string) => void;
 };
 
 type CodeBlockProps = {
@@ -131,7 +134,9 @@ const CodeBlock = ({ node, inline, className, children, ...props }: CodeBlockPro
   );
 };
 
-const createMarkdownComponents = (onOpenUrl?: (url: string) => void) => ({
+const FILE_LINK_BUTTON_CLASS_NAME = 'inline-flex max-w-full items-center gap-1 rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs text-neutral-700 transition hover:border-neutral-300 hover:text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-300 dark:hover:border-neutral-600 dark:hover:text-neutral-100';
+
+const createMarkdownComponents = (onOpenUrl?: (url: string) => void, onFileOpen?: (filePath: string) => void) => ({
   code: CodeBlock,
   blockquote: ({ children }: { children?: React.ReactNode }) => (
     <blockquote className="my-2 border-l-4 border-gray-300 pl-4 italic text-gray-600 dark:border-gray-600 dark:text-gray-400">
@@ -139,6 +144,21 @@ const createMarkdownComponents = (onOpenUrl?: (url: string) => void) => ({
     </blockquote>
   ),
   a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
+    const fileTarget = resolveMarkdownFileTarget(href);
+    if (fileTarget && onFileOpen) {
+      return (
+        <button
+          type="button"
+          title={fileTarget.filePath}
+          className={FILE_LINK_BUTTON_CLASS_NAME}
+          data-chat-markdown-file-link={fileTarget.filePath}
+          onClick={() => onFileOpen(fileTarget.filePath)}
+        >
+          <span className="truncate">{children || fileTarget.fileName}</span>
+        </button>
+      );
+    }
+
     const { shouldRouteToRightPane, target, rel } = getMarkdownLinkAttributes({
       href,
       onOpenUrl,
@@ -178,15 +198,20 @@ const createMarkdownComponents = (onOpenUrl?: (url: string) => void) => ({
   ),
 });
 
-export function Markdown({ children, className, onOpenUrl }: MarkdownProps) {
+export function Markdown({ children, className, onOpenUrl, onFileOpen }: MarkdownProps) {
   const content = normalizeInlineCodeFences(String(children ?? ''));
   const remarkPlugins = useMemo(() => [remarkGfm, remarkMath], []);
   const rehypePlugins = useMemo(() => [rehypeKatex], []);
-  const markdownComponents = useMemo(() => createMarkdownComponents(onOpenUrl), [onOpenUrl]);
+  const markdownComponents = useMemo(() => createMarkdownComponents(onOpenUrl, onFileOpen), [onFileOpen, onOpenUrl]);
 
   return (
     <div className={className}>
-      <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={markdownComponents as any}>
+      <ReactMarkdown
+        remarkPlugins={remarkPlugins}
+        rehypePlugins={rehypePlugins}
+        components={markdownComponents as any}
+        urlTransform={preserveMarkdownHref}
+      >
         {content}
       </ReactMarkdown>
     </div>

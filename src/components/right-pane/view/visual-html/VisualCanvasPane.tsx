@@ -321,6 +321,22 @@ function collectOriginalElementSnapshots(fullHtml: string): OriginalElementSnaps
   return snapshots;
 }
 
+function resolveCanvasPathTraversalRoot(root: ParentNode | null | undefined, path: number[]): ParentNode | null | undefined {
+  if (path.length === 0) {
+    return root;
+  }
+
+  const rootElement = root as Element | null | undefined;
+  const wrapperCandidate = Array.from(rootElement?.children ?? []).find((child) => (
+    child.getAttribute('data-gjs-type') === 'wrapper'
+  )) ?? null;
+  if (wrapperCandidate?.getAttribute('data-gjs-type') === 'wrapper') {
+    return wrapperCandidate;
+  }
+
+  return root;
+}
+
 function findCanvasElementByPath(root: ParentNode | null | undefined, path: number[], tagName: string): Element | null {
   if (path.length === 0) {
     const rootElement = root as Element | null | undefined;
@@ -328,7 +344,7 @@ function findCanvasElementByPath(root: ParentNode | null | undefined, path: numb
   }
 
   let current: Element | null = null;
-  let parent: ParentNode | null | undefined = root;
+  let parent: ParentNode | null | undefined = resolveCanvasPathTraversalRoot(root, path);
 
   for (const index of path) {
     const next = parent?.children.item(index);
@@ -407,6 +423,23 @@ function findCanvasElementByFingerprint(root: ParentNode | null | undefined, sna
   });
 
   return bestScore >= 9 ? bestCandidate : null;
+}
+
+function resolveCanvasElementForSnapshot(
+  root: ParentNode | null | undefined,
+  snapshot: OriginalElementSnapshot,
+): { element: Element | null; matchType: 'path' | 'fingerprint' | 'none' } {
+  const pathElement = findCanvasElementByPath(root, snapshot.path, snapshot.tagName);
+  if (pathElement) {
+    return { element: pathElement, matchType: 'path' };
+  }
+
+  const fingerprintElement = findCanvasElementByFingerprint(root, snapshot);
+  if (fingerprintElement) {
+    return { element: fingerprintElement, matchType: 'fingerprint' };
+  }
+
+  return { element: null, matchType: 'none' };
 }
 
 function parseInlineStyleRecord(styleText: string): Record<string, string> {
@@ -556,13 +589,17 @@ function restoreOriginalElementAttributes(
   const syncComponentModels = options.syncComponentModels === true;
   const componentByElement = syncComponentModels ? buildComponentByElementMap(wrapper) : new Map<Element, any>();
   snapshots.forEach((snapshot) => {
-    const pathElement = findCanvasElementByPath(canvasBody, snapshot.path, snapshot.tagName);
-    const element = pathElement ?? findCanvasElementByFingerprint(canvasBody, snapshot);
+    const { element, matchType } = resolveCanvasElementForSnapshot(canvasBody, snapshot);
     if (!element) {
       return;
     }
 
     result.matched += 1;
+    const shouldApplyClassAndAttributeRestore = matchType === 'path' || Boolean(snapshot.attributes.id);
+    if (!shouldApplyClassAndAttributeRestore) {
+      return;
+    }
+
     const component = componentByElement.get(element);
     const { className, styleText, restAttributes } = splitOriginalElementAttributes(snapshot.attributes);
     const styleRecord = parseInlineStyleRecord(styleText);
@@ -603,8 +640,8 @@ function findOriginalElementSnapshotForCanvasElement(
   element: Element,
 ): OriginalElementSnapshot | null {
   for (const snapshot of snapshots) {
-    const pathElement = findCanvasElementByPath(canvasBody, snapshot.path, snapshot.tagName);
-    if (pathElement === element) {
+    const matchedElement = findCanvasElementByPath(canvasBody, snapshot.path, snapshot.tagName);
+    if (matchedElement === element) {
       return snapshot;
     }
   }
@@ -983,6 +1020,24 @@ function readComponentChildren(component: any) {
   return items;
 }
 
+function configureCanvasWrapper(editor: ReturnType<typeof grapesjs.init>) {
+  const wrapper = editor.DomComponents?.getWrapper?.() as any;
+  if (!wrapper?.set) {
+    return;
+  }
+
+  wrapper.set({
+    selectable: false,
+    hoverable: false,
+    draggable: false,
+    editable: false,
+    copyable: false,
+    resizable: false,
+    badgable: false,
+    highlightable: false,
+  }, { silent: true });
+}
+
 function disableNonVisualEditableCanvasComponents(editor: ReturnType<typeof grapesjs.init>) {
   const canvasDocument = resolveCanvasDocument(editor);
   const canvasWindow = canvasDocument?.defaultView;
@@ -1296,6 +1351,7 @@ export default function VisualCanvasPane({
       durationMs: Math.round(getPerfNow() - componentsStartedAt),
       structureHtmlLength: canvasStructureHtml.length,
     });
+    configureCanvasWrapper(editor);
 
     editorRef.current = editor;
 

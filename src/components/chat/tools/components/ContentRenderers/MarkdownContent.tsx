@@ -5,6 +5,7 @@ interface MarkdownContentProps {
   content: string;
   className?: string;
   onOpenUrl?: (url: string) => void;
+  onFileOpen?: (filePath: string) => void;
 }
 
 /**
@@ -15,9 +16,10 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({
   content,
   className = 'mt-1 prose prose-sm max-w-none dark:prose-invert',
   onOpenUrl,
+  onFileOpen,
 }) => {
   return (
-    <Markdown className={className} onOpenUrl={onOpenUrl}>
+    <Markdown className={className} onOpenUrl={onOpenUrl} onFileOpen={onFileOpen}>
       {content}
     </Markdown>
   );

@@ -6,11 +6,14 @@ import remarkMath from 'remark-math';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import oneLight from 'react-syntax-highlighter/dist/esm/styles/prism/one-light.js';
 import { getMarkdownLinkAttributes } from '../../chat/view/subcomponents/markdownLinkRouting';
+import { resolveMarkdownFileTarget } from '../../chat/view/subcomponents/markdownFileLink';
+import { preserveMarkdownHref } from '../../chat/view/subcomponents/markdownUrlTransform';
 
 type RuntimeMarkdownProps = {
   children?: React.ReactNode;
   className?: string;
   onOpenUrl?: ((url: string) => void) | null;
+  onFileOpen?: ((filePath: string) => void) | null;
   collapsible?: boolean;
   maxHeight?: string;
 };
@@ -63,10 +66,30 @@ function CodeBlock({ inline, className, children }: CodeBlockProps) {
   );
 }
 
-function createMarkdownComponents(onOpenUrl?: ((url: string) => void) | null) {
+const FILE_LINK_BUTTON_CLASS_NAME = 'inline-flex max-w-full items-center gap-1 rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs text-neutral-700 transition hover:border-neutral-300 hover:text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-300 dark:hover:border-neutral-600 dark:hover:text-neutral-100';
+
+function createMarkdownComponents(
+  onOpenUrl?: ((url: string) => void) | null,
+  onFileOpen?: ((filePath: string) => void) | null,
+) {
   return {
     code: CodeBlock,
     a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
+      const fileTarget = resolveMarkdownFileTarget(href);
+      if (fileTarget && onFileOpen) {
+        return React.createElement(
+          'button',
+          {
+            type: 'button',
+            title: fileTarget.filePath,
+            className: FILE_LINK_BUTTON_CLASS_NAME,
+            onClick: () => onFileOpen(fileTarget.filePath),
+            'data-chat-markdown-file-link': fileTarget.filePath,
+          },
+          React.createElement('span', { className: 'truncate' }, children || fileTarget.fileName),
+        );
+      }
+
       const { shouldRouteToRightPane, target, rel } = getMarkdownLinkAttributes({
         href,
         onOpenUrl,
@@ -122,11 +145,18 @@ function createMarkdownComponents(onOpenUrl?: ((url: string) => void) | null) {
   };
 }
 
-export function RuntimeMarkdown({ children, className, onOpenUrl, collapsible = true, maxHeight = '320px' }: RuntimeMarkdownProps) {
+export function RuntimeMarkdown({
+  children,
+  className,
+  onOpenUrl,
+  onFileOpen,
+  collapsible = true,
+  maxHeight = '320px',
+}: RuntimeMarkdownProps) {
   const content = String(children ?? '');
   const remarkPlugins = useMemo(() => [remarkGfm, remarkMath], []);
   const rehypePlugins = useMemo(() => [rehypeKatex], []);
-  const markdownComponents = useMemo(() => createMarkdownComponents(onOpenUrl), [onOpenUrl]);
+  const markdownComponents = useMemo(() => createMarkdownComponents(onOpenUrl, onFileOpen), [onFileOpen, onOpenUrl]);
 
   const [expanded, setExpanded] = useState(!collapsible);
   const [isOverflowing, setIsOverflowing] = useState(false);
@@ -203,6 +233,7 @@ export function RuntimeMarkdown({ children, className, onOpenUrl, collapsible = 
           remarkPlugins,
           rehypePlugins,
           components: markdownComponents as any,
+          urlTransform: preserveMarkdownHref,
         },
         content,
       ),
@@ -228,6 +259,7 @@ export function RuntimeMarkdown({ children, className, onOpenUrl, collapsible = 
             remarkPlugins,
             rehypePlugins,
             components: markdownComponents as any,
+            urlTransform: preserveMarkdownHref,
           },
           content,
         ),

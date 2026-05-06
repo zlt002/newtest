@@ -9,6 +9,7 @@ type CreateEditorPanePropsParams = {
   onClosePane: () => void;
   onTogglePaneExpand?: (() => void) | null;
   onAppendToChatInput?: ((text: string) => void) | null;
+  onFileOpen?: ((filePath: string) => void) | null;
   onPopOut?: (() => void) | null;
   isExpanded?: boolean;
   isSidebar?: boolean;
@@ -23,6 +24,7 @@ type EditorPaneProps = {
   onToggleExpand: (() => void) | null;
   onPopOut: (() => void) | null;
   onAppendToChatInput: ((text: string) => void) | null;
+  onFileOpen: ((filePath: string) => void) | null;
 };
 
 function createEditorPaneFile(target: EditorPaneTarget): CodeEditorFile {
@@ -45,6 +47,7 @@ export function createEditorPaneProps({
   onClosePane,
   onTogglePaneExpand = null,
   onAppendToChatInput = null,
+  onFileOpen = null,
   onPopOut = null,
   isExpanded = false,
   isSidebar = true,
@@ -58,5 +61,6 @@ export function createEditorPaneProps({
     onToggleExpand: onTogglePaneExpand,
     onPopOut,
     onAppendToChatInput,
+    onFileOpen,
   };
 }

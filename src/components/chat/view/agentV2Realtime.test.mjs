@@ -968,14 +968,16 @@ test('ChatInterface keeps completed degraded execution warnings visible after ru
   assert.match(source, /contextBar=\{composerContextBar\}/);
 });
 
-test('ChatInterface auto-opens markdown files when Write or Edit starts streaming', async () => {
+test('ChatInterface auto-opens markdown and html files when Write or Edit starts streaming', async () => {
   const source = await readFile(new URL('./ChatInterface.tsx', import.meta.url), 'utf8');
 
   assert.match(source, /const autoOpenedMarkdownWriteKeysRef = useRef\(new Set<string>\(\)\);/);
   assert.match(source, /if \(!activeAgentSessionId \|\| !onFileOpen\)/);
   assert.match(source, /const sessionEvents = agentEventStoreRef\.current\.listBySession\(activeAgentSessionId\);/);
   assert.match(source, /event\.type !== 'tool\.call\.started' && event\.type !== 'tool\.call\.delta'/);
-  assert.match(source, /getMarkdownFilePathFromToolPayload\(event\.payload\)/);
+  assert.match(source, /getAutoOpenFilePathFromToolPayload\(event\.payload\)/);
+  assert.match(source, /filePath \|\| !\/\\\.md/);
+  assert.match(source, /\\\.html\?\$\/i\.test\(filePath\)/);
   assert.match(source, /onFileOpen\(markdownWrite\.filePath, undefined\);/);
 });
 

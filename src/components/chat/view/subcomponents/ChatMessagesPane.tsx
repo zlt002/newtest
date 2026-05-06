@@ -781,6 +781,7 @@ export default function ChatMessagesPane({
         card={card}
         interactionNode={renderRunCardInteraction(card)}
         onFileOpen={onFileOpen}
+        onOpenUrl={onOpenUrl}
         bubbleMaxHeight={bubbleMaxHeight}
       />
     </section>
@@ -839,6 +840,7 @@ export default function ChatMessagesPane({
           card={card}
           interactionNode={renderRunCardInteraction(card)}
           onFileOpen={onFileOpen}
+          onOpenUrl={onOpenUrl}
           bubbleMaxHeight={bubbleMaxHeight}
         />
       </section>
@@ -893,6 +895,7 @@ export default function ChatMessagesPane({
               card={assistantCard}
               interactionNode={renderRunCardInteraction(assistantCard)}
               onFileOpen={onFileOpen}
+              onOpenUrl={onOpenUrl}
               bubbleMaxHeight={bubbleMaxHeight}
             />
           </section>
@@ -1012,6 +1015,7 @@ export default function ChatMessagesPane({
                         card={anchoredRunCard}
                         interactionNode={renderRunCardInteraction(anchoredRunCard)}
                         onFileOpen={onFileOpen}
+                        onOpenUrl={onOpenUrl}
                       />
                     ) : null}
                   </React.Fragment>

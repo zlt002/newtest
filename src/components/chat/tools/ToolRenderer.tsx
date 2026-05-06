@@ -154,7 +154,7 @@ export const ToolRenderer: React.FC<ToolRendererProps> = memo(({
         break;
 
       case 'markdown':
-        contentComponent = <MarkdownContent content={contentProps.content || ''} onOpenUrl={onOpenUrl} />;
+        contentComponent = <MarkdownContent content={contentProps.content || ''} onOpenUrl={onOpenUrl} onFileOpen={onFileOpen} />;
         break;
 
       case 'file-list':

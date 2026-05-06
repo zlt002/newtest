@@ -269,13 +269,7 @@ export default function AppContent() {
     }
 
     handleFileOpen(filePath, diffInfo);
-
-    // 桌面端：文件打开后自动切换到 peek-expanded 模式，保持侧边栏可见
-    // 用户点击外部遮罩区域才关闭侧边栏
-    if (!isMobile && !isRightPaneVisible) {
-      setIsDesktopSidebarPeekOpen(true);
-    }
-  }, [handleFileOpen, isMobile, isRightPaneVisible, rightPaneTarget]);
+  }, [handleFileOpen, rightPaneTarget, isRightPaneVisible]);
 
   const handleChatMarkdownDraftOpen = useCallback((payload: {
     filePath: string;

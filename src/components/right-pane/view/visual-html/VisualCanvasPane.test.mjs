@@ -22,6 +22,13 @@ test('VisualCanvasPane source defines an isolated design surface around GrapesJS
   assert.match(source, /collectStyleMarkup/);
   assert.match(source, /restoreOriginalElementAttributes\(editor, originalElementSnapshots\)/);
   assert.match(source, /collectOriginalElementSnapshots/);
+  assert.match(source, /function resolveCanvasPathTraversalRoot/);
+  assert.match(source, /Array\.from\(rootElement\?\.children \?\? \[\]\)\.find/);
+  assert.match(source, /wrapperCandidate\?\.getAttribute\('data-gjs-type'\) === 'wrapper'/);
+  assert.match(source, /let parent: ParentNode \| null \| undefined = resolveCanvasPathTraversalRoot\(root, path\);/);
+  assert.match(source, /function resolveCanvasElementForSnapshot/);
+  assert.match(source, /matchType: 'path' \| 'fingerprint' \| 'none'/);
+  assert.match(source, /const shouldApplyClassAndAttributeRestore = matchType === 'path' \|\| Boolean\(snapshot\.attributes\.id\);/);
   assert.match(source, /component\.setClass\?\.\(className/);
   assert.match(source, /collectMissingStyleRecord/);
   assert.match(source, /readComponentInlineStyleRecord/);

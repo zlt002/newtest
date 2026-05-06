@@ -175,6 +175,7 @@ function MainContent({
         fillSpace={useBalancedEditorLayout}
         onAppendToChatInput={appendToChatInput}
         onBrowserDependenciesChange={onBrowserDependenciesChange}
+        onFileOpen={(filePath) => onFileOpen(filePath)}
       />
     </div>
   );

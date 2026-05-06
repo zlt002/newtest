@@ -87,7 +87,7 @@ test('chat interface adds a standalone fallback run card when pending requests a
   assert.match(source, /pendingDecisionRequests/);
   assert.match(source, /activeInteraction\?\.requestId/);
   assert.match(source, /headline: kind === 'interactive_prompt' \? '等待你的回答' : '等待授权'/);
-  assert.match(source, /runCards=\{conversationTurns\.length > 0 \? \[\] : runCardsWithPendingFallback\}/);
+  assert.match(source, /fallbackRunCards: runCardsWithPendingFallback/);
 });
 
 test('chat interface skips live run cards entirely when there are no realtime events', async () => {
@@ -120,6 +120,14 @@ test('AskUserQuestion panel reads chrome copy from chat i18n instead of hardcode
   assert.doesNotMatch(source, /Claude needs your input/);
   assert.doesNotMatch(source, /Select all that apply/);
   assert.doesNotMatch(source, /Type your answer/);
+});
+
+test('AskUserQuestion panel renders through a portal so the modal is not clipped by the run card container', async () => {
+  const sourcePath = path.join(process.cwd(), 'src/components/chat/tools/components/InteractiveRenderers/AskUserQuestionPanel.tsx');
+  const source = await fs.readFile(sourcePath, 'utf8');
+
+  assert.match(source, /createPortal/);
+  assert.match(source, /document\.body/);
 });
 
 test('composer context bar no longer renders raw English runtime status tokens', async () => {

@@ -319,7 +319,7 @@ const MessageComponent = memo(({ messageKey, message, prevMessage, createDiff, o
               <>
                 {toolUseLeadText && (
                   <div className="flex flex-col">
-                    <Markdown className="prose prose-sm max-w-none dark:prose-invert" onOpenUrl={onOpenUrl}>
+                    <Markdown className="prose prose-sm max-w-none dark:prose-invert" onOpenUrl={onOpenUrl} onFileOpen={onFileOpen}>
                       {toolUseLeadText}
                     </Markdown>
                   </div>
@@ -503,7 +503,7 @@ const MessageComponent = memo(({ messageKey, message, prevMessage, createDiff, o
                     <span>{t('thinking.emoji')}</span>
                   </summary>
                   <div className="mt-2 border-l-2 border-gray-300 pl-4 text-sm text-gray-600 dark:border-gray-600 dark:text-gray-400">
-                    <Markdown className="prose prose-sm prose-gray max-w-none dark:prose-invert" onOpenUrl={onOpenUrl}>
+                    <Markdown className="prose prose-sm prose-gray max-w-none dark:prose-invert" onOpenUrl={onOpenUrl} onFileOpen={onFileOpen}>
                       {message.content}
                     </Markdown>
                   </div>
@@ -561,7 +561,7 @@ const MessageComponent = memo(({ messageKey, message, prevMessage, createDiff, o
                   // Normal rendering for non-JSON content
                   return message.type === 'assistant' ? (
                     <>
-                      <Markdown className="prose prose-sm prose-gray max-w-none dark:prose-invert" onOpenUrl={onOpenUrl}>
+                      <Markdown className="prose prose-sm prose-gray max-w-none dark:prose-invert" onOpenUrl={onOpenUrl} onFileOpen={onFileOpen}>
                         {content}
                       </Markdown>
                       {message.structuredOutput !== undefined && (

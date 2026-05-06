@@ -17,6 +17,7 @@ type CodeEditorSurfaceProps = {
   fileName: string;
   filePath: string;
   onAppendToChatInput?: ((text: string) => void) | null;
+  onFileOpen?: ((filePath: string) => void) | null;
   onMarkdownToolbarStateChange?: ((state: {
     addToChatInput: (() => void) | null;
     validAnnotationCount: number;
@@ -76,6 +77,7 @@ export default function CodeEditorSurface({
   fileName,
   filePath,
   onAppendToChatInput,
+  onFileOpen = null,
   onMarkdownToolbarStateChange = null,
   requestedEditAnnotationId = null,
   onRequestedEditAnnotationHandled = null,
@@ -134,6 +136,7 @@ export default function CodeEditorSurface({
             filePath={filePath}
             overlayAnchorRef={previewViewportRef}
             onAppendToChatInput={onAppendToChatInput}
+            onFileOpen={onFileOpen}
             onToolbarStateChange={onMarkdownToolbarStateChange}
             requestedEditAnnotationId={requestedEditAnnotationId}
             onRequestedEditAnnotationHandled={onRequestedEditAnnotationHandled}

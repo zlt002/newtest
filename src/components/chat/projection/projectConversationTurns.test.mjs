@@ -801,6 +801,57 @@ test('projectConversationTurns treats question-shaped pending requests as intera
   assert.equal(assistantTurn?.activeInteraction?.toolName, 'CustomQuestionTool');
 });
 
+test('projectConversationTurns anchors a pending interactive prompt to the latest user turn when no active assistant turn exists', () => {
+  const turns = projectConversationTurns({
+    sessionId: 'sess-latest-question',
+    historicalMessages: [
+      {
+        id: 'user-1',
+        sessionId: 'sess-latest-question',
+        role: 'user',
+        text: '创建一个新的需求',
+        timestamp: '2026-05-06T09:42:25.000Z',
+        kind: 'message',
+        type: 'message',
+      },
+      {
+        id: 'user-2',
+        sessionId: 'sess-latest-question',
+        role: 'user',
+        text: '我自己提出的，我觉得合同管理这个页面展示的内容和可筛选的条件太少了',
+        timestamp: '2026-05-06T09:42:44.000Z',
+        kind: 'message',
+        type: 'message',
+      },
+    ],
+    transientMessages: [],
+    realtimeEvents: [],
+    pendingDecisionRequests: [
+      {
+        requestId: 'question-2',
+        sessionId: 'sess-latest-question',
+        toolName: 'AskUserQuestion',
+        input: {
+          questions: [
+            {
+              question: 'R005 已存在，你想怎么做？',
+              options: [{ label: '查看 R005 状态' }, { label: '重新创建' }],
+            },
+          ],
+        },
+        receivedAt: new Date('2026-05-06T09:42:57.000Z'),
+        kind: 'interactive_prompt',
+      },
+    ],
+    isLoading: true,
+  });
+
+  const assistantTurn = turns.find((turn) => turn.kind === 'assistant');
+  assert.equal(assistantTurn?.status, 'waiting_for_input');
+  assert.equal(assistantTurn?.anchorMessageId, 'user-2');
+  assert.equal(assistantTurn?.activeInteraction?.kind, 'interactive_prompt');
+});
+
 test('projectConversationTurns filters expanded skill prompt user echoes', () => {
   const turns = projectConversationTurns({
     sessionId: 'sess-skill',

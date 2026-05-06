@@ -36,6 +36,7 @@ const {
   getPositionDragCursor,
   getPositionDragPreviewLabel,
   isPositionDragEnabled,
+  isWrapperComponent,
   replaceToolbarMoveCommandWithSendCommand,
   shouldSuppressDuplicateSend,
   getVisibleSpacingKinds,
@@ -2661,6 +2662,24 @@ test('SpacingOverlay toolbar profiling logs stay behind a debug gate', () => {
       globalThis.CCUI_DEBUG_SPACING_OVERLAY = originalFlag;
     }
   }
+});
+
+test('isWrapperComponent only treats GrapesJS wrapper nodes as the page root', () => {
+  assert.equal(isWrapperComponent({
+    getType: () => 'wrapper',
+    get: () => undefined,
+  }), true);
+
+  assert.equal(isWrapperComponent({
+    getType: () => 'default',
+    get: (key) => (key === 'type' ? 'default' : undefined),
+  }), false);
+
+  assert.equal(isWrapperComponent({
+    get: (key) => (key === 'type' ? 'wrapper' : undefined),
+  }), true);
+
+  assert.equal(isWrapperComponent(null), false);
 });
 
 test('SpacingOverlay send-to-chat diagnostic logs stay behind a debug gate', async () => {

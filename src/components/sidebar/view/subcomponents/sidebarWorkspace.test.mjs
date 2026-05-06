@@ -242,12 +242,13 @@ test('AppContent.tsx renders a temporary overlay sidebar when the right pane aut
   assert.match(source, /'peek-collapsed'/);
 });
 
-test('AppContent.tsx keeps the floating sidebar open when opening a file from the tree', async () => {
+test('AppContent.tsx no longer auto-expands the floating sidebar when files open in the right pane', async () => {
   const sourcePath = path.join(process.cwd(), 'src/components/app/AppContent.tsx');
   const source = await fs.readFile(sourcePath, 'utf8');
 
   assert.match(source, /onFileOpen: \(filePath: string, diffInfo\?: Parameters<NonNullable<typeof handleFileOpen>>\[1\]\) => \{\s*handleChatFileOpen\(filePath, diffInfo\);/);
   assert.doesNotMatch(source, /onFileOpen: \(filePath: string, diffInfo\?: Parameters<NonNullable<typeof handleFileOpen>>\[1\]\) => \{\s*closeDesktopSidebarPeek\(\);/);
+  assert.doesNotMatch(source, /handleChatFileOpen[\s\S]*setIsDesktopSidebarPeekOpen\(true\)/);
 });
 
 test('AppContent.tsx queries pending decisions with the split recovery event name', async () => {

@@ -32,6 +32,8 @@ import MarkdownAnnotationBanner from './MarkdownAnnotationBanner';
 import MarkdownAnnotationComposer from './MarkdownAnnotationComposer';
 import MarkdownAnnotationContextMenu from './MarkdownAnnotationContextMenu';
 import MarkdownCodeBlock from './MarkdownCodeBlock';
+import { resolveMarkdownFileTarget } from '../../../../chat/view/subcomponents/markdownFileLink';
+import { preserveMarkdownHref } from '../../../../chat/view/subcomponents/markdownUrlTransform';
 
 type MarkdownPreviewProps = {
   content: string;
@@ -50,6 +52,7 @@ type MarkdownPreviewProps = {
   }) => void) | null;
   requestedEditAnnotationId?: string | null;
   onRequestedEditAnnotationHandled?: (() => void) | null;
+  onFileOpen?: ((filePath: string) => void) | null;
 };
 
 type MarkdownPositionNode = {
@@ -187,12 +190,14 @@ const Heading6 = createHighlightedBlock('h6');
 const ListItem = createHighlightedBlock('li');
 const TableHeaderCell = createHighlightedBlock('th');
 const TableDataCell = createHighlightedBlock('td');
+const FILE_LINK_BUTTON_CLASS_NAME = 'inline-flex max-w-full items-center gap-1 rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs text-neutral-700 no-underline transition hover:border-neutral-300 hover:text-neutral-900 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-300 dark:hover:border-neutral-600 dark:hover:text-neutral-100';
 
 const createMarkdownPreviewComponents = (
   content: string,
   annotations: MarkdownAnnotation[],
   focusedAnnotationId: string | null,
   onActivateAnnotation: ((annotationId: string) => void) | null,
+  onFileOpen: ((filePath: string) => void) | null,
 ): Components => ({
   code: ({ node, inline, className, children, ...props }) => (
     <MarkdownCodeBlock
@@ -234,11 +239,28 @@ const createMarkdownPreviewComponents = (
       {children}
     </blockquote>
   ),
-  a: ({ href, children }) => (
-    <a href={href} className="text-blue-600 hover:underline dark:text-blue-400" target="_blank" rel="noopener noreferrer">
-      {children}
-    </a>
-  ),
+  a: ({ href, children }) => {
+    const fileTarget = resolveMarkdownFileTarget(href);
+    if (fileTarget && onFileOpen) {
+      return (
+        <button
+          type="button"
+          title={fileTarget.filePath}
+          className={FILE_LINK_BUTTON_CLASS_NAME}
+          data-chat-markdown-file-link={fileTarget.filePath}
+          onClick={() => onFileOpen(fileTarget.filePath)}
+        >
+          <span className="truncate">{children || fileTarget.fileName}</span>
+        </button>
+      );
+    }
+
+    return (
+      <a href={href} className="text-blue-600 hover:underline dark:text-blue-400" target="_blank" rel="noopener noreferrer">
+        {children}
+      </a>
+    );
+  },
   table: ({ children }) => (
     <div className="my-2 overflow-x-auto">
       <table className="min-w-full border-collapse border border-gray-200 dark:border-gray-700">{children}</table>
@@ -394,6 +416,7 @@ export default function MarkdownPreview({
   onToolbarStateChange = null,
   requestedEditAnnotationId = null,
   onRequestedEditAnnotationHandled = null,
+  onFileOpen = null,
 }: MarkdownPreviewProps) {
   const remarkPlugins = useMemo(() => [remarkGfm, remarkMath], []);
   const rehypePlugins = useMemo(() => [rehypeKatex], []);
@@ -827,8 +850,8 @@ export default function MarkdownPreview({
   );
 
   const markdownPreviewComponents = useMemo(
-    () => createMarkdownPreviewComponents(content, renderedAnnotations, focusedAnnotationId, handleEditAnnotation),
-    [content, focusedAnnotationId, handleEditAnnotation, renderedAnnotations],
+    () => createMarkdownPreviewComponents(content, renderedAnnotations, focusedAnnotationId, handleEditAnnotation, onFileOpen),
+    [content, focusedAnnotationId, handleEditAnnotation, onFileOpen, renderedAnnotations],
   );
 
   useEffect(() => {
@@ -949,6 +972,7 @@ export default function MarkdownPreview({
         remarkPlugins={remarkPlugins}
         rehypePlugins={rehypePlugins}
         components={markdownPreviewComponents}
+        urlTransform={preserveMarkdownHref}
       >
         {content}
       </ReactMarkdown>

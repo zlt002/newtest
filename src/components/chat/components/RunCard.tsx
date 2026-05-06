@@ -214,11 +214,13 @@ export function RunCard({
   card,
   interactionNode = null,
   onFileOpen = null,
+  onOpenUrl,
   bubbleMaxHeight,
 }: {
   card: RunCardModel;
   interactionNode?: ReactNode;
   onFileOpen?: ((filePath: string, diffInfo?: unknown) => void) | null;
+  onOpenUrl?: ((url: string) => void) | null;
   bubbleMaxHeight?: string;
 }) {
   const [isProcessModalOpen, setIsProcessModalOpen] = useState(false);
@@ -461,7 +463,12 @@ export function RunCard({
                 data-chat-v2-run-card-response-segment={segment.kind}
                 className={''}
               >
-                <RuntimeMarkdown className="max-w-none prose prose-sm dark:prose-invert" maxHeight={bubbleMaxHeight}>
+                <RuntimeMarkdown
+                  className="max-w-none prose prose-sm dark:prose-invert"
+                  onOpenUrl={onOpenUrl}
+                  onFileOpen={onFileOpen}
+                  maxHeight={bubbleMaxHeight}
+                >
                   {segment.body}
                 </RuntimeMarkdown>
               </div>

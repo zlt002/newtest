@@ -218,7 +218,7 @@ function normalizeEventPayloadRecord(input: unknown): Record<string, unknown> {
   return input as Record<string, unknown>;
 }
 
-function getMarkdownFilePathFromToolPayload(payload: unknown) {
+function getAutoOpenFilePathFromToolPayload(payload: unknown) {
   const normalizedPayload = normalizeEventPayloadRecord(payload);
   const toolName = String(normalizedPayload.toolName || '').trim();
   if (toolName !== 'Write' && toolName !== 'Edit') {
@@ -227,7 +227,7 @@ function getMarkdownFilePathFromToolPayload(payload: unknown) {
 
   const input = normalizeEventPayloadRecord(normalizedPayload.input);
   const filePath = String(input.file_path || input.filePath || input.path || '').trim();
-  if (!filePath || !/\.md(?:own)?$/i.test(filePath)) {
+  if (!filePath || !/\.md(?:own)?$|\.html?$/i.test(filePath)) {
     return null;
   }
 
@@ -740,7 +740,7 @@ function ChatInterface({
         continue;
       }
 
-      const markdownWrite = getMarkdownFilePathFromToolPayload(event.payload);
+      const markdownWrite = getAutoOpenFilePathFromToolPayload(event.payload);
       if (!markdownWrite) {
         continue;
       }
