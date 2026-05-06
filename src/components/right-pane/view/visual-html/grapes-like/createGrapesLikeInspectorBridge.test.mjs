@@ -550,7 +550,7 @@ test('createGrapesLikeInspectorBridge keeps selection and layer projection align
   unsubscribe();
 });
 
-test('createGrapesLikeInspectorBridge projects only selected paths until a branch is expanded', () => {
+test('createGrapesLikeInspectorBridge shows siblings on auto-expanded selected paths', () => {
   const { editor } = createEditorFixture();
 
   const bridge = createGrapesLikeInspectorBridge(editor);
@@ -559,7 +559,7 @@ test('createGrapesLikeInspectorBridge projects only selected paths until a branc
 
   assert.equal(heroLayer.id, 'hero');
   assert.equal(heroLayer.expanded, true);
-  assert.deepEqual(heroLayer.children.map((node) => node.id), ['cta']);
+  assert.deepEqual(heroLayer.children.map((node) => node.id), ['cta', 'badge']);
 
   bridge.actions.layers.toggleLayerExpanded('hero');
 
@@ -595,7 +595,7 @@ test('createGrapesLikeInspectorBridge derives selected paths from parents withou
 
   assert.deepEqual(snapshot.layers.selectedLayerIds, ['cta']);
   assert.equal(snapshot.layers.roots[1].id, 'hero');
-  assert.deepEqual(snapshot.layers.roots[1].children.map((node) => node.id), ['cta']);
+  assert.deepEqual(snapshot.layers.roots[1].children.map((node) => node.id), ['cta', 'badge']);
   assert.equal(unrelatedChildReads, 0);
 });
 

@@ -368,27 +368,21 @@ function toProjectedLayerSource(
   const dataChildren = Array.isArray(data?.components) ? data.components : [];
   const nextPathId = selectedPath[pathIndex + 1];
   const isOnSelectedPath = pathIndex >= 0;
-  const includeDirectChildren = expandedIds.has(id);
+  const isAutoExpandedPathAncestor = isOnSelectedPath && Boolean(nextPathId);
+  const includeDirectChildren = expandedIds.has(id) || isAutoExpandedPathAncestor;
 
   let children: LayerNodeViewModel[] = [];
-  if (includeDirectChildren || (isOnSelectedPath && nextPathId)) {
+  if (includeDirectChildren) {
     const childrenComponents = getLayerChildren(editor, component);
 
-    if (includeDirectChildren) {
-      children = childrenComponents.map((child) => toProjectedLayerSource(
-        editor,
-        child,
-        selectedId,
-        expandedIds,
-        selectedPath,
-        readComponentId(child) === nextPathId ? pathIndex + 1 : -1,
-      ));
-    } else {
-      const nextChild = childrenComponents.find((child) => readComponentId(child) === nextPathId);
-      if (nextChild) {
-        children = [toProjectedLayerSource(editor, nextChild, selectedId, expandedIds, selectedPath, pathIndex + 1)];
-      }
-    }
+    children = childrenComponents.map((child) => toProjectedLayerSource(
+      editor,
+      child,
+      selectedId,
+      expandedIds,
+      selectedPath,
+      readComponentId(child) === nextPathId ? pathIndex + 1 : -1,
+    ));
   }
 
   return {
@@ -396,7 +390,7 @@ function toProjectedLayerSource(
     label: id ? `${displayName} #${id}` : displayName,
     visible: data?.visible ?? true,
     selected: id === selectedId,
-    expanded: expandedIds.has(id) || isOnSelectedPath,
+    expanded: expandedIds.has(id) || isAutoExpandedPathAncestor,
     canExpand: dataChildren.length > 0 || children.length > 0,
     children,
   };

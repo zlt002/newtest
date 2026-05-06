@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type grapesjs from 'grapesjs';
@@ -301,7 +301,10 @@ function areSpacingSnapshotsEqual(
   return a.selectedBorderBoxes.every((box, index) => isSameSelectedSpacingBox(box, b.selectedBorderBoxes[index]));
 }
 
-export function getScrollSyncTargets(body: HTMLElement | null | undefined): EventTarget[] {
+export function getScrollSyncTargets(
+  body: HTMLElement | null | undefined,
+  selectedElement: HTMLElement | null | undefined = null,
+): EventTarget[] {
   if (!body) {
     return [];
   }
@@ -319,19 +322,28 @@ export function getScrollSyncTargets(body: HTMLElement | null | undefined): Even
     targets.push(target);
   };
 
-  let current: HTMLElement | null = body;
-  while (current) {
-    const style = current.ownerDocument?.defaultView?.getComputedStyle?.(current);
-    const overflowY = style?.overflowY ?? '';
-    const overflowX = style?.overflowX ?? '';
-    const isScrollable = /(auto|scroll|overlay)/.test(`${overflowX} ${overflowY}`);
+  const collectScrollableAncestors = (start: HTMLElement | null | undefined, stopAt: HTMLElement | null | undefined = null) => {
+    let current: HTMLElement | null = start ?? null;
+    while (current) {
+      const style = current.ownerDocument?.defaultView?.getComputedStyle?.(current);
+      const overflowY = style?.overflowY ?? '';
+      const overflowX = style?.overflowX ?? '';
+      const isScrollable = /(auto|scroll|overlay)/.test(`${overflowX} ${overflowY}`);
 
-    if (isScrollable) {
-      pushTarget(current);
+      if (isScrollable) {
+        pushTarget(current);
+      }
+
+      if (current === stopAt) {
+        break;
+      }
+
+      current = current.parentElement;
     }
+  };
 
-    current = current.parentElement;
-  }
+  collectScrollableAncestors(selectedElement, body);
+  collectScrollableAncestors(body);
 
   pushTarget(body);
   pushTarget(doc);
@@ -2142,6 +2154,28 @@ export default function SpacingOverlay({
   const [spacingHoverActive, setSpacingHoverActive] = useState(false);
   const [hoveredSpacingBoxKey, setHoveredSpacingBoxKey] = useState<string | null>(null);
 
+  const updateSnapshot = useCallback(() => {
+    if (!editor) {
+      setSnapshot(null);
+      return;
+    }
+
+    const nextSnapshot = buildSpacingSnapshot(editor);
+    setSnapshot((previous) => (areSpacingSnapshotsEqual(previous, nextSnapshot) ? previous : nextSnapshot));
+  }, [editor]);
+
+  const scheduleUpdate = useCallback(() => {
+    const win = editor?.Canvas?.getBody?.()?.ownerDocument?.defaultView ?? window;
+    if (rafRef.current !== null) {
+      return;
+    }
+
+    rafRef.current = win.requestAnimationFrame(() => {
+      rafRef.current = null;
+      updateSnapshot();
+    });
+  }, [editor, updateSnapshot]);
+
   const handleSendSelectionToChat = async () => {
     const startedAt = getTimingNow();
     logVisualSendToChat('click', {
@@ -2328,23 +2362,6 @@ export default function SpacingOverlay({
       document.head.appendChild(style);
     }
 
-    const updateSnapshot = () => {
-      const nextSnapshot = buildSpacingSnapshot(editor);
-      setSnapshot((previous) => (areSpacingSnapshotsEqual(previous, nextSnapshot) ? previous : nextSnapshot));
-    };
-
-    const scheduleUpdate = () => {
-      const win = editor.Canvas?.getBody?.()?.ownerDocument?.defaultView ?? window;
-      if (rafRef.current !== null) {
-        return;
-      }
-
-      rafRef.current = win.requestAnimationFrame(() => {
-        rafRef.current = null;
-        updateSnapshot();
-      });
-    };
-
     scheduleUpdate();
 
     const eventNames = [
@@ -2361,22 +2378,11 @@ export default function SpacingOverlay({
       editor.on?.(eventName, scheduleUpdate);
     });
 
-    const scrollTargets = getScrollSyncTargets(editor.Canvas?.getBody?.() as HTMLElement | null | undefined);
-    const win = editor.Canvas?.getBody?.()?.ownerDocument?.defaultView;
-    const scrollListenerOptions = { capture: true, passive: true } as const;
-    scrollTargets.forEach((target) => {
-      target.addEventListener?.('scroll', scheduleUpdate, scrollListenerOptions);
-    });
-    win?.addEventListener('resize', scheduleUpdate);
-
     return () => {
+      const win = editor.Canvas?.getBody?.()?.ownerDocument?.defaultView;
       eventNames.forEach((eventName) => {
         editor.off?.(eventName, scheduleUpdate);
       });
-      scrollTargets.forEach((target) => {
-        target.removeEventListener?.('scroll', scheduleUpdate, scrollListenerOptions);
-      });
-      win?.removeEventListener('resize', scheduleUpdate);
       if (rafRef.current !== null) {
         win?.cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
@@ -2396,7 +2402,31 @@ export default function SpacingOverlay({
       setPositionDragPreview(null);
       setResizeDragPreview(null);
     };
-  }, [editor]);
+  }, [editor, scheduleUpdate]);
+
+  useEffect(() => {
+    if (!editor) {
+      return undefined;
+    }
+
+    const body = editor.Canvas?.getBody?.() as HTMLElement | null | undefined;
+    const selectedElement = getSelectedComponent(editor)?.getEl?.() as HTMLElement | null | undefined;
+    const scrollTargets = getScrollSyncTargets(body, selectedElement ?? null);
+    const win = body?.ownerDocument?.defaultView ?? window;
+    const scrollListenerOptions = { capture: true, passive: true } as const;
+
+    scrollTargets.forEach((target) => {
+      target.addEventListener?.('scroll', scheduleUpdate, scrollListenerOptions);
+    });
+    win.addEventListener?.('resize', scheduleUpdate);
+
+    return () => {
+      scrollTargets.forEach((target) => {
+        target.removeEventListener?.('scroll', scheduleUpdate, scrollListenerOptions);
+      });
+      win.removeEventListener?.('resize', scheduleUpdate);
+    };
+  }, [editor, scheduleUpdate, snapshot?.portalRoot, snapshot?.selectedId]);
 
   useEffect(() => () => {
     const win = snapshot?.portalRoot.ownerDocument.defaultView ?? window;

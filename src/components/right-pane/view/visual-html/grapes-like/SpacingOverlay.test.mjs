@@ -361,6 +361,49 @@ test('getScrollSyncTargets includes document scroll roots, scrollable ancestors,
   assert.deepEqual(getScrollSyncTargets(body), [frame, root, body, doc, html, win]);
 });
 
+test('getScrollSyncTargets also includes scrollable ancestors of the selected element inside body', () => {
+  const win = {
+    getComputedStyle(element) {
+      return {
+        overflowX: element.overflowX ?? 'visible',
+        overflowY: element.overflowY ?? 'visible',
+      };
+    },
+  };
+  const html = {
+    overflowY: 'visible',
+    parentElement: null,
+    ownerDocument: null,
+  };
+  const doc = {
+    defaultView: win,
+    documentElement: html,
+  };
+  const body = {
+    overflowY: 'visible',
+    parentElement: html,
+    ownerDocument: doc,
+  };
+  const scroller = {
+    overflowY: 'auto',
+    parentElement: body,
+    ownerDocument: doc,
+  };
+  const section = {
+    overflowY: 'visible',
+    parentElement: scroller,
+    ownerDocument: doc,
+  };
+  const target = {
+    overflowY: 'visible',
+    parentElement: section,
+    ownerDocument: doc,
+  };
+  html.ownerDocument = doc;
+
+  assert.deepEqual(getScrollSyncTargets(body, target), [scroller, body, doc, html, win]);
+});
+
 test('applyResizeStylesToTarget writes inline width height and promotes inline display', () => {
   const styles = [];
   const target = {
@@ -1444,6 +1487,8 @@ test('SpacingOverlay source keeps a minimal guard for hiding GrapesJS chrome dur
   assert.match(source, /currentEditor\.runCommand\?\.\('tlb-clone'\)/);
   assert.match(source, /currentEditor\.runCommand\?\.\('tlb-delete'\)/);
   assert.match(source, /getSelectedComponents\(editor\)/);
+  assert.match(source, /const selectedElement = getSelectedComponent\(editor\)\?\.getEl\?\.\(\) as HTMLElement \| null \| undefined;/);
+  assert.match(source, /getScrollSyncTargets\(body,\s*selectedElement \?\? null\)/);
   assert.match(source, /border: `1px solid \$\{SELECTED_OVERLAY_BORDER_COLOR\}`/);
   assert.match(source, /setProperty\('display', 'none', 'important'\)/);
   assert.match(source, /removeProperty\('display'\)/);
