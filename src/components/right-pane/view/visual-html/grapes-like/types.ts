@@ -16,6 +16,8 @@ export type InspectorStateOption = {
   label: string;
 };
 
+export type InspectorSyncState = 'pending' | 'ready' | 'idle';
+
 export type InspectorClassViewModel = {
   name: string;
   isPrivate?: boolean;
@@ -40,6 +42,14 @@ export type RadiusValue = {
 export type BorderValue = BoxValue & {
   style: string;
   color: string;
+  topStyle?: string;
+  rightStyle?: string;
+  bottomStyle?: string;
+  leftStyle?: string;
+  topColor?: string;
+  rightColor?: string;
+  bottomColor?: string;
+  leftColor?: string;
 };
 
 export type ShadowLayerType = 'outside' | 'inset';
@@ -95,6 +105,7 @@ export type SelectorSnapshot = {
   canAddClass: boolean;
   canRemoveClass: boolean;
   canSyncStyle: boolean;
+  syncState?: InspectorSyncState;
 };
 
 export type SelectorSource = {
@@ -153,6 +164,7 @@ export type StylePropertyViewModel = {
   value: StyleValueState<unknown>;
   options?: Array<string | StyleOption>;
   units?: string[];
+  keywordOptions?: string[];
   placeholder?: string;
 };
 
@@ -167,6 +179,7 @@ export type StyleSnapshot = {
   sectors: StyleSectorViewModel[];
   hasMixedValues: boolean;
   editable: boolean;
+  syncState?: InspectorSyncState;
 };
 
 export const STYLE_SECTORS = [
@@ -306,6 +319,7 @@ export type LayerSnapshot = {
   selectedLayerIds: string[];
   expandedLayerIds: string[];
   sortable: boolean;
+  syncState?: InspectorSyncState;
 };
 
 export type InspectorSnapshot = {

@@ -3,6 +3,36 @@ import type { BoxValue, BorderValue, RadiusValue, ShadowLayerValue, ShadowValue,
 
 type StyleRecord = Record<string, string>;
 
+function isCssKeywordValue(value: string): boolean {
+  return /^(auto|inherit|initial|unset|revert)$/i.test(value.trim());
+}
+
+function isNumericValue(value: string): boolean {
+  return /^-?\d*\.?\d+$/.test(value.trim());
+}
+
+function formatUnitValue(value: UnitValue): string {
+  const rawValue = String(value.value ?? '').trim();
+  const unit = String(value.unit ?? '').trim();
+  if (!rawValue) {
+    return '';
+  }
+
+  if (isCssKeywordValue(rawValue)) {
+    return rawValue;
+  }
+
+  if (isCssKeywordValue(unit)) {
+    return unit;
+  }
+
+  if (!isNumericValue(rawValue)) {
+    return rawValue;
+  }
+
+  return unit ? `${rawValue}${unit}` : rawValue;
+}
+
 function cloneStyle(style: StyleRecord | null | undefined): StyleRecord {
   return { ...(style ?? {}) };
 }
@@ -11,13 +41,10 @@ function buildStyleRecordFromState(state: StyleState): StyleRecord {
   const style: StyleRecord = {};
 
   const appendUnitValue = (key: string, value: UnitValue) => {
-    const rawValue = String(value.value ?? '').trim();
-    if (!rawValue) {
-      return;
+    const rawValue = formatUnitValue(value);
+    if (rawValue) {
+      style[key] = rawValue;
     }
-
-    const unit = String(value.unit ?? '').trim();
-    style[key] = unit ? `${rawValue}${unit}` : rawValue;
   };
 
   const appendBoxValue = (key: string, value: BoxValue) => {
@@ -141,12 +168,7 @@ function buildUnitValue(value?: Partial<UnitValue> | string, fallback?: UnitValu
     unit: value?.unit ?? fallback?.unit ?? '',
   };
   const rawValue = String(merged.value ?? '').trim();
-  if (!rawValue) {
-    return '';
-  }
-
-  const unit = String(merged.unit ?? '').trim();
-  return unit ? `${rawValue}${unit}` : rawValue;
+  return rawValue ? formatUnitValue(merged) : '';
 }
 
 function buildBoxValue(value?: Partial<BoxValue>, fallback?: BoxValue): string {
@@ -193,6 +215,59 @@ function buildBorderValue(value?: Partial<BorderValue>, fallback?: BorderValue):
 
   const widthPart = width ? `${width}${unit}` : '';
   return [widthPart, style, color].filter(Boolean).join(' ').trim();
+}
+
+function getBorderSideValue(value: Partial<BorderValue>, fallback: BorderValue, side: 'top' | 'right' | 'bottom' | 'left'): string {
+  const width = value[side] ?? fallback[side] ?? '';
+  const unit = value.unit ?? fallback.unit ?? '';
+  const styleKey = `${side}Style` as keyof BorderValue;
+  const colorKey = `${side}Color` as keyof BorderValue;
+  const sideStyle = value[styleKey] ?? fallback[styleKey] ?? value.style ?? fallback.style ?? '';
+  const sideColor = value[colorKey] ?? fallback[colorKey] ?? value.color ?? fallback.color ?? '';
+  const widthPart = formatBoxSideValue(String(width), String(unit));
+
+  return [widthPart, sideStyle, sideColor]
+    .map((entry) => String(entry ?? '').trim())
+    .filter(Boolean)
+    .join(' ');
+}
+
+function hasNonUniformBorderValue(value: Partial<BorderValue>, fallback: BorderValue): boolean {
+  const sides = ['top', 'right', 'bottom', 'left'] as const;
+  const widthValues = sides.map((side) => `${value[side] ?? fallback[side] ?? ''}${value.unit ?? fallback.unit ?? ''}`);
+  const styleValues = sides.map((side) => value[`${side}Style` as keyof BorderValue] ?? fallback[`${side}Style` as keyof BorderValue] ?? value.style ?? fallback.style ?? '');
+  const colorValues = sides.map((side) => value[`${side}Color` as keyof BorderValue] ?? fallback[`${side}Color` as keyof BorderValue] ?? value.color ?? fallback.color ?? '');
+
+  return !widthValues.every((entry) => entry === widthValues[0])
+    || !styleValues.every((entry) => entry === styleValues[0])
+    || !colorValues.every((entry) => entry === colorValues[0]);
+}
+
+function setLonghandBorderValue(style: StyleRecord, value: Partial<BorderValue>, fallback: BorderValue) {
+  const sideKeys = ['border-top', 'border-right', 'border-bottom', 'border-left'] as const;
+  const sides = ['top', 'right', 'bottom', 'left'] as const;
+
+  sides.forEach((side, index) => {
+    setStyleValue(style, sideKeys[index], getBorderSideValue(value, fallback, side));
+  });
+  deleteStyleKeys(style, [
+    'border',
+    'border-width',
+    'border-style',
+    'border-color',
+    'border-top-width',
+    'border-right-width',
+    'border-bottom-width',
+    'border-left-width',
+    'border-top-style',
+    'border-right-style',
+    'border-bottom-style',
+    'border-left-style',
+    'border-top-color',
+    'border-right-color',
+    'border-bottom-color',
+    'border-left-color',
+  ]);
 }
 
 function buildRadiusValue(value?: Partial<RadiusValue>, fallback?: RadiusValue): string {
@@ -544,7 +619,31 @@ export function applyStylePatch(currentStyle: StyleRecord | null | undefined, pa
     delete nextStyle.backgroundColor;
   }
   if ('border' in appearance) {
-    setStyleValue(nextStyle, 'border', buildBorderValue(appearance.border, currentState.appearance.border));
+    const borderKeys = [
+      'border-top',
+      'border-right',
+      'border-bottom',
+      'border-left',
+      'border-top-width',
+      'border-right-width',
+      'border-bottom-width',
+      'border-left-width',
+      'border-top-style',
+      'border-right-style',
+      'border-bottom-style',
+      'border-left-style',
+      'border-top-color',
+      'border-right-color',
+      'border-bottom-color',
+      'border-left-color',
+    ];
+    const borderPatch = appearance.border ?? {};
+    if (hasAnyStyleKey(nextStyle, borderKeys) || hasNonUniformBorderValue(borderPatch, currentState.appearance.border)) {
+      setLonghandBorderValue(nextStyle, borderPatch, currentState.appearance.border);
+    } else {
+      setStyleValue(nextStyle, 'border', buildBorderValue(borderPatch, currentState.appearance.border));
+      deleteStyleKeys(nextStyle, ['border-width', 'border-style', 'border-color']);
+    }
   }
   if ('borderRadius' in appearance) {
     const radiusKeys = [

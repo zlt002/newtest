@@ -506,10 +506,15 @@ test('agent v2 realtime coordinator sends chat_user_message payload through webs
     type: 'chat_user_message',
     sessionId: 'sess-1',
     projectPath: '/workspace/demo',
+    model: 'claude-opus-4-7',
+    effort: 'high',
+    permissionMode: 'bypassPermissions',
+    traceId: 'trace-1',
     message: {
       role: 'user',
       content: '请帮我总结改动',
     },
+    toolsSettings: { allowedTools: ['Read'] },
   }]);
 });
 

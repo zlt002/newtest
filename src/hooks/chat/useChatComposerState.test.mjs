@@ -368,6 +368,108 @@ test('runtime slash commands continue to raw submit instead of using the local b
   assert.equal(submittedPayloads[0].prompt, '/graphify query');
 });
 
+test('local /context renders SDK context usage instead of starting a run', async () => {
+  const submittedPayloads = [];
+  const executedCommands = [];
+  const addedMessages = [];
+  const { exports } = await loadUseChatComposerStateModule({
+    draftInput: '/context',
+    slashCommands: [
+      {
+        name: '/context',
+        sourceType: 'local-ui',
+      },
+    ],
+    authenticatedFetch: async (url, options) => {
+      if (String(url).includes('/api/commands/execute')) {
+        executedCommands.push(JSON.parse(options.body));
+        return {
+          ok: true,
+          json: async () => ({
+            type: 'builtin',
+            action: 'context',
+            data: {
+              used: 70500,
+              total: 200000,
+              percentage: 35.25,
+              status: 'healthy',
+              suggestion: 'Context usage looks comfortable.',
+              source: 'sdk',
+              categories: [
+                { name: 'Messages', tokens: 47000, color: '#5b8def' },
+                { name: 'System tools', tokens: 16800, color: '#8ab4f8' },
+              ],
+            },
+          }),
+        };
+      }
+
+      return { ok: true, json: async () => ({}) };
+    },
+    setTimeout: (fn) => {
+      fn();
+      return 0;
+    },
+  });
+  const useChatComposerState = exports.useChatComposerState;
+
+  const api = useChatComposerState({
+    selectedProject: {
+      name: 'demo',
+      fullPath: '/workspace/demo',
+      path: '/workspace/demo',
+    },
+    selectedSession: {
+      id: 'sess-1',
+      summary: 'demo session',
+    },
+    currentSessionId: 'sess-1',
+    setCurrentSessionId: () => undefined,
+    provider: 'claude',
+    permissionMode: 'bypassPermissions',
+    cyclePermissionMode: () => undefined,
+    claudeModel: 'claude-opus-4-7',
+    isLoading: false,
+    canAbortSession: false,
+    tokenBudget: null,
+    chatMessages: [],
+    sendMessage: () => undefined,
+    onSessionActive: () => undefined,
+    onSessionProcessing: () => undefined,
+    onNavigateToSession: () => undefined,
+    onCompactWorkflowStart: () => undefined,
+    onInputFocusChange: () => undefined,
+    onFileOpen: () => undefined,
+    onShowSettings: () => undefined,
+    pendingViewSessionRef: { current: null },
+    scrollToBottom: () => undefined,
+    addMessage: (message) => addedMessages.push(message),
+    clearMessages: () => undefined,
+    rewindMessages: () => undefined,
+    setIsLoading: () => undefined,
+    setCanAbortSession: () => undefined,
+    setClaudeStatus: () => undefined,
+    setIsUserScrolledUp: () => undefined,
+    pendingDecisionRequests: [],
+    setPendingDecisionRequests: () => undefined,
+    submitAgentRun: async (payload) => {
+      submittedPayloads.push(payload);
+    },
+  });
+
+  await api.handleSubmit({ preventDefault: () => undefined });
+
+  assert.equal(submittedPayloads.length, 0);
+  assert.equal(executedCommands.length, 1);
+  assert.equal(executedCommands[0].commandName, '/context');
+  assert.equal(executedCommands[0].context.sessionId, 'sess-1');
+  assert.equal(addedMessages.length, 1);
+  assert.match(addedMessages[0].content, /Context Usage/);
+  assert.match(addedMessages[0].content, /Messages/);
+  assert.match(addedMessages[0].content, /System tools/);
+  assert.match(addedMessages[0].content, /SDK/);
+});
+
 test('useChatComposerState.ts sends official effort separately instead of prefixing the prompt', async () => {
   const source = await fs.readFile(sourcePath, 'utf8');
 
@@ -618,9 +720,14 @@ test('useChatComposerState runtime fallback sendMessage payload uses transport m
   assert.equal(sentMessages.length, 1);
   assert.equal(sentMessages[0].type, 'chat_user_message');
   assert.equal(sentMessages[0].sessionId, 'sess-1');
+  assert.equal(sentMessages[0].projectPath, '/workspace/demo');
+  assert.equal(sentMessages[0].model, 'claude-opus-4-7');
+  assert.equal(sentMessages[0].permissionMode, 'bypassPermissions');
   assert.equal(sentMessages[0].message?.role, 'user');
   assert.equal(sentMessages[0].message?.content, '请帮我总结改动');
-  assert.equal('toolsSettings' in sentMessages[0], false);
+  assert.deepEqual([...sentMessages[0].toolsSettings.allowedTools], ['Read']);
+  assert.deepEqual([...sentMessages[0].toolsSettings.disallowedTools], []);
+  assert.equal(sentMessages[0].toolsSettings.skipPermissions, false);
   assert.equal('mcpEnabled' in sentMessages[0], false);
 });
 

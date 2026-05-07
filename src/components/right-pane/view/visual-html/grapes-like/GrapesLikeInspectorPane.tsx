@@ -1,22 +1,14 @@
 import { useState } from 'react';
 // @ts-ignore - Local runtime supports the .ts specifier used across this folder.
-import type { InspectorSnapshot, LayerSnapshot, StyleSnapshot, StyleStatePatch } from './types.ts';
+import type { InspectorSnapshot, InspectorSyncState, LayerSnapshot, SelectorSnapshot, StyleSnapshot, StyleStatePatch } from './types.ts';
 import GrapesLikeLayerManager from './layers/GrapesLikeLayerManager';
 import GrapesLikeStyleManager from './style/GrapesLikeStyleManager';
 import { useGrapesLikeInspectorSnapshot } from './useGrapesLikeInspectorSnapshot';
 
-type SyncState = 'pending' | 'ready' | 'idle';
-type StagedStyleSnapshot = StyleSnapshot & { syncState?: SyncState };
-type StagedLayerSnapshot = LayerSnapshot & { syncState?: SyncState };
-type StagedInspectorSnapshot = Omit<InspectorSnapshot, 'style' | 'layers'> & {
-  style: StagedStyleSnapshot;
-  layers: StagedLayerSnapshot;
-};
-
 type GrapesLikeInspectorPaneProps = {
   adapter: {
     subscribe: (listener: () => void) => () => void;
-    getSnapshot: () => StagedInspectorSnapshot;
+    getSnapshot: () => InspectorSnapshot;
   };
   actions: {
     selector: {
@@ -47,8 +39,8 @@ const TABS: Array<{ id: InspectorTab; label: string }> = [
   { id: 'layers', label: '图层' },
 ];
 
-function readSyncState(section: StyleSnapshot | LayerSnapshot | (StagedStyleSnapshot) | (StagedLayerSnapshot)): SyncState | null {
-  return 'syncState' in section ? section.syncState ?? null : null;
+function readSyncState(section: StyleSnapshot | LayerSnapshot | SelectorSnapshot): InspectorSyncState | null {
+  return section.syncState ?? null;
 }
 
 function SyncHint({ visible }: { visible: boolean }) {
@@ -70,8 +62,10 @@ export default function GrapesLikeInspectorPane({ adapter, actions }: GrapesLike
   const snapshot = useGrapesLikeInspectorSnapshot(adapter);
   const [activeTab, setActiveTab] = useState<InspectorTab>('style');
   const stylePending = readSyncState(snapshot.style) === 'pending';
+  const selectorPending = readSyncState(snapshot.selector) === 'pending';
   const layerPending = readSyncState(snapshot.layers) === 'pending';
-  const syncHintVisible = stylePending || layerPending;
+  const styleTabPending = stylePending || selectorPending;
+  const syncHintVisible = styleTabPending || layerPending;
 
   return (
     <section
@@ -108,8 +102,23 @@ export default function GrapesLikeInspectorPane({ adapter, actions }: GrapesLike
       </div>
       <SyncHint visible={syncHintVisible} />
 
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-0.5 py-0.5">
-        {activeTab === 'style' ? (
+      <div
+        className={[
+          'min-h-0 flex-1 overflow-y-auto px-0.5 py-0.5',
+          activeTab === 'layers' ? 'overflow-x-auto' : 'overflow-x-hidden',
+        ].join(' ')}
+      >
+        {activeTab === 'style' && styleTabPending ? (
+          <section
+            data-inspector-style-sync-blocker="true"
+            aria-busy="true"
+            className="m-1 rounded-md border border-border bg-card px-3 py-4 text-xs leading-5 text-muted-foreground"
+          >
+            <div className="font-medium text-foreground">正在同步样式</div>
+            <div>请稍候，样式和选择器刷新完成后再编辑。</div>
+          </section>
+        ) : null}
+        {activeTab === 'style' && !styleTabPending ? (
           <GrapesLikeStyleManager
             selection={snapshot.selection}
             selector={snapshot.selector}

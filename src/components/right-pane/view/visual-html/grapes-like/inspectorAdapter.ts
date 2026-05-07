@@ -8,7 +8,31 @@ type InspectorAdapterParts = {
   layers: () => LayerSnapshot;
 };
 
+type InspectorSnapshotPatch = Partial<Omit<InspectorSnapshot, 'selector' | 'style' | 'layers'>> & {
+  selector?: Partial<SelectorSnapshot>;
+  style?: Partial<StyleSnapshot>;
+  layers?: Partial<LayerSnapshot>;
+};
+
 type InspectorAdapterListener = () => void;
+
+function isPlainSection(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function mergeSnapshotSection<TSection>(
+  current: TSection,
+  patch: Partial<TSection> | undefined,
+): TSection {
+  if (!isPlainSection(current) || !isPlainSection(patch)) {
+    return patch === undefined ? current : patch as TSection;
+  }
+
+  return {
+    ...current,
+    ...patch,
+  } as TSection;
+}
 
 export function createInspectorAdapter(parts: InspectorAdapterParts) {
   const listeners = new Set<InspectorAdapterListener>();
@@ -42,10 +66,14 @@ export function createInspectorAdapter(parts: InspectorAdapterParts) {
         listeners.delete(listener);
       };
     },
-    patchSnapshot(patch: Partial<InspectorSnapshot>) {
+    patchSnapshot(patch: InspectorSnapshotPatch) {
+      const current = ensureSnapshot();
       cachedSnapshot = {
-        ...ensureSnapshot(),
+        ...current,
         ...patch,
+        selector: mergeSnapshotSection(current.selector, patch.selector),
+        style: mergeSnapshotSection(current.style, patch.style),
+        layers: mergeSnapshotSection(current.layers, patch.layers),
       };
       listeners.forEach((listener) => listener());
     },

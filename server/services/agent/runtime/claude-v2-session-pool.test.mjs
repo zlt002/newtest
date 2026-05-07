@@ -1229,6 +1229,52 @@ test('session pool only enables allowDangerouslySkipPermissions for bypassPermis
   assert.equal(captured[1].allowDangerouslySkipPermissions, true);
 });
 
+test('session pool refreshes live session permission mode when resumed', async () => {
+  const captured = [];
+  const fakeSdk = {
+    unstable_v2_createSession(options) {
+      captured.push(options);
+      return {
+        async send() {},
+        async *stream() {
+          yield { type: 'system', subtype: 'init', session_id: 'sess-live-permissions' };
+        },
+        get sessionId() {
+          return 'sess-live-permissions';
+        },
+        close() {},
+      };
+    },
+    unstable_v2_resumeSession() {
+      throw new Error('should reuse live session');
+    },
+  };
+
+  const pool = createClaudeV2SessionPool(fakeSdk);
+  const session = pool.create({
+    model: 'sonnet',
+    cwd: '/Users/demo/html',
+    permissionMode: 'default',
+  });
+  for await (const _message of session.stream()) {
+    // bind session id
+  }
+
+  pool.resume('sess-live-permissions', {
+    permissionMode: 'bypassPermissions',
+  });
+
+  const abortController = new AbortController();
+  abortController.abort();
+  const decision = await captured[0].canUseTool(
+    'Bash',
+    { command: "sed -n '1,5p' /Users/demo/html/survey.html" },
+    { signal: abortController.signal },
+  );
+
+  assert.equal(decision.behavior, 'allow');
+});
+
 test('session pool forwards official effort into native session options', async () => {
   const captured = [];
   const fakeSdk = {

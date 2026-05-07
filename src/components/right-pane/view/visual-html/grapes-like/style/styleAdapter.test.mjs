@@ -393,6 +393,23 @@ test('readStyleState parses keyword border widths', () => {
   assert.equal(result.appearance.border.color, 'red');
 });
 
+test('readStyleState resolves single-side border declarations without leaking style tokens into color', () => {
+  const result = readStyleState({
+    border: '5px solid none none rgb(217, 217, 217)',
+    'border-top': '1px dashed #d9d9d9',
+  });
+
+  assert.equal(result.appearance.border.top, '1');
+  assert.equal(result.appearance.border.right, '5');
+  assert.equal(result.appearance.border.unit, 'px');
+  assert.equal(result.appearance.border.style, '');
+  assert.equal(result.appearance.border.color, '');
+  assert.equal(result.appearance.border.topStyle, 'dashed');
+  assert.equal(result.appearance.border.rightStyle, 'solid');
+  assert.equal(result.appearance.border.topColor, '#d9d9d9');
+  assert.equal(result.appearance.border.rightColor, 'rgb(217, 217, 217)');
+});
+
 test('readStyleState falls back to GrapesJS defaults for display float and position', () => {
   const result = readStyleState({});
 

@@ -133,6 +133,50 @@ test('adapter patchSnapshot preserves untouched sections', () => {
   });
 });
 
+test('adapter patchSnapshot merges staged section metadata without dropping section content', () => {
+  const adapter = createInspectorAdapter({
+    selection: () => ({
+      selectedIds: ['cmp-1'],
+      primarySelectedId: 'cmp-1',
+      selectedLabel: '按钮 #cmp-1',
+      isMultiSelection: false,
+      isDetached: false,
+    }),
+    selector: () => ({
+      availableStates: [{ id: '', label: '默认状态' }],
+      activeState: '',
+      commonClasses: [{ name: 'card' }],
+      canAddClass: true,
+      canRemoveClass: true,
+      canSyncStyle: false,
+    }),
+    style: () => ({
+      targetKind: 'inline',
+      sectors: [{ key: 'layout', title: '布局', properties: [] }],
+      hasMixedValues: false,
+      editable: true,
+    }),
+    layers: () => ({
+      roots: [],
+      selectedLayerIds: ['cmp-1'],
+      expandedLayerIds: [],
+      sortable: false,
+    }),
+  });
+
+  adapter.patchSnapshot({
+    style: { syncState: 'pending' },
+    selector: { syncState: 'pending' },
+  });
+
+  const snapshot = adapter.getSnapshot();
+
+  assert.deepEqual(snapshot.style.sectors, [{ key: 'layout', title: '布局', properties: [] }]);
+  assert.equal(snapshot.style.syncState, 'pending');
+  assert.deepEqual(snapshot.selector.commonClasses, [{ name: 'card' }]);
+  assert.equal(snapshot.selector.syncState, 'pending');
+});
+
 test('adapter patchSnapshot notifies subscribers without dropping cache', () => {
   const adapter = createInspectorAdapter({
     selection: () => ({

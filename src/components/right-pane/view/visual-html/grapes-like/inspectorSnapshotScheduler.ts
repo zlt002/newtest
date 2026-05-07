@@ -18,6 +18,17 @@ type InspectorSnapshotSchedulerOptions = {
   applyPatch: (patch: Record<string, unknown>) => void;
 };
 
+function markSyncState(section: unknown, syncState: 'pending' | 'ready') {
+  if (!section || typeof section !== 'object' || Array.isArray(section)) {
+    return { syncState };
+  }
+
+  return {
+    ...section,
+    syncState,
+  };
+}
+
 export function createInspectorSnapshotScheduler({
   scheduleFrame,
   applyPatch,
@@ -32,6 +43,8 @@ export function createInspectorSnapshotScheduler({
       applyPatch({
         selection: next.immediate.selection,
         layers: next.immediate.layers,
+        style: markSyncState(null, 'pending'),
+        selector: markSyncState(null, 'pending'),
       });
 
       scheduleFrame(() => {
@@ -39,7 +52,11 @@ export function createInspectorSnapshotScheduler({
           return;
         }
 
-        applyPatch(next.deferred());
+        const deferred = next.deferred();
+        applyPatch({
+          style: markSyncState(deferred.style, 'ready'),
+          selector: markSyncState(deferred.selector, 'ready'),
+        });
       });
 
       return scheduledRevision;

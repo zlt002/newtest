@@ -116,6 +116,14 @@ function asBorderValue(value: unknown): BorderValue {
     unit: String(record.unit ?? ''),
     style: String(record.style ?? ''),
     color: String(record.color ?? ''),
+    topStyle: String(record.topStyle ?? record.style ?? ''),
+    rightStyle: String(record.rightStyle ?? record.style ?? ''),
+    bottomStyle: String(record.bottomStyle ?? record.style ?? ''),
+    leftStyle: String(record.leftStyle ?? record.style ?? ''),
+    topColor: String(record.topColor ?? record.color ?? ''),
+    rightColor: String(record.rightColor ?? record.color ?? ''),
+    bottomColor: String(record.bottomColor ?? record.color ?? ''),
+    leftColor: String(record.leftColor ?? record.color ?? ''),
   };
 }
 
@@ -188,6 +196,20 @@ function asTransformValue(value: unknown): TransformValue {
 }
 
 function stringifyUnitValue(value: UnitValue): string {
+  const rawValue = String(value.value ?? '').trim();
+  const unit = String(value.unit ?? '').trim();
+  if (/^(auto|inherit|initial|unset|revert)$/i.test(rawValue)) {
+    return rawValue;
+  }
+
+  if (/^(auto|inherit|initial|unset|revert)$/i.test(unit)) {
+    return unit;
+  }
+
+  if (!/^-?\d*\.?\d+$/.test(rawValue)) {
+    return rawValue;
+  }
+
   return value.value ? `${value.value}${value.unit}` : '';
 }
 
@@ -212,6 +234,23 @@ function stringifyRadiusValue(value: RadiusValue): string {
 function stringifyBorderValue(value: BorderValue): string {
   const width = value.top ? `${value.top}${value.unit}` : '';
   return [width, value.style, value.color].filter(Boolean).join(' ');
+}
+
+function getBorderSideStyle(value: BorderValue, side: 'top' | 'right' | 'bottom' | 'left'): string {
+  return String(value[`${side}Style` as keyof BorderValue] ?? value.style ?? '');
+}
+
+function getBorderSideColor(value: BorderValue, side: 'top' | 'right' | 'bottom' | 'left'): string {
+  return String(value[`${side}Color` as keyof BorderValue] ?? value.color ?? '');
+}
+
+function isUniformBorderValue(value: BorderValue): boolean {
+  const sides = ['top', 'right', 'bottom', 'left'] as const;
+  return value.top === value.right
+    && value.right === value.bottom
+    && value.bottom === value.left
+    && sides.every((side) => getBorderSideStyle(value, side) === getBorderSideStyle(value, 'top'))
+    && sides.every((side) => getBorderSideColor(value, side) === getBorderSideColor(value, 'top'));
 }
 
 function buildDefaultTransitionLayer(): TransitionLayerValue {
@@ -557,6 +596,189 @@ function TransformStackField({
   );
 }
 
+function BorderField({
+  label,
+  value,
+  mixed = false,
+  disabled = false,
+  onCommit,
+}: {
+  label: string;
+  value: BorderValue;
+  mixed?: boolean;
+  disabled?: boolean;
+  onCommit: (value: BorderValue) => void;
+}) {
+  const sideEntries = [
+    ['top', '上'],
+    ['right', '右'],
+    ['bottom', '下'],
+    ['left', '左'],
+  ] as const;
+  const styleOptions = [
+    { value: 'none', label: '无' },
+    { value: 'solid', label: '实线' },
+    { value: 'dashed', label: '虚线' },
+    { value: 'dotted', label: '点线' },
+    { value: 'double', label: '双线' },
+  ];
+  const [mode, setMode] = useState<'split' | 'unified'>(() => (mixed || !isUniformBorderValue(value) ? 'split' : 'unified'));
+
+  useEffect(() => {
+    setMode(mixed || !isUniformBorderValue(value) ? 'split' : 'unified');
+  }, [
+    mixed,
+    value.top,
+    value.right,
+    value.bottom,
+    value.left,
+    value.unit,
+    value.style,
+    value.color,
+    value.topStyle,
+    value.rightStyle,
+    value.bottomStyle,
+    value.leftStyle,
+    value.topColor,
+    value.rightColor,
+    value.bottomColor,
+    value.leftColor,
+  ]);
+
+  const commitUnified = (patch: Partial<BorderValue>) => {
+    const nextValue: BorderValue = {
+      ...value,
+      ...patch,
+      top: patch.top ?? value.top,
+      right: patch.top ?? value.right,
+      bottom: patch.top ?? value.bottom,
+      left: patch.top ?? value.left,
+      topStyle: patch.style ?? value.style,
+      rightStyle: patch.style ?? value.style,
+      bottomStyle: patch.style ?? value.style,
+      leftStyle: patch.style ?? value.style,
+      topColor: patch.color ?? value.color,
+      rightColor: patch.color ?? value.color,
+      bottomColor: patch.color ?? value.color,
+      leftColor: patch.color ?? value.color,
+    };
+    onCommit(nextValue);
+  };
+
+  const commitSide = (side: 'top' | 'right' | 'bottom' | 'left', patch: Partial<BorderValue>) => {
+    onCommit({
+      ...value,
+      ...patch,
+      [`${side}Style`]: patch.style ?? getBorderSideStyle(value, side),
+      [`${side}Color`]: patch.color ?? getBorderSideColor(value, side),
+      [side]: patch[side] ?? value[side],
+      style: isUniformBorderValue(value) ? value.style : '',
+      color: isUniformBorderValue(value) ? value.color : '',
+    } as BorderValue);
+  };
+
+  return (
+    <section data-border-field={label} className="gl-field flex w-full min-w-0 flex-1 flex-col gap-0.5 rounded-md py-1 text-foreground">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] font-medium leading-4 text-muted-foreground">{label}</span>
+        <button
+          type="button"
+          className="inline-flex h-5 shrink-0 items-center justify-center rounded border border-border px-1.5 text-[10px] leading-none text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          aria-label={mode === 'split' ? '切换到统一设置' : '切换到四向设置'}
+          disabled={disabled}
+          onClick={() => {
+            setMode((current) => (current === 'split' ? 'unified' : 'split'));
+          }}
+        >
+          {mode === 'split' ? '统一' : '四向'}
+        </button>
+      </div>
+      {mode === 'unified' ? (
+        <div data-border-field-mode="unified" className="grid grid-cols-2 gap-1">
+          <NumberField
+            label="宽度"
+            value={{ value: value.top, unit: value.unit }}
+            units={['px', '%', 'em', 'rem']}
+            mixed={mixed}
+            disabled={disabled}
+            onCommit={(nextValue) => {
+              commitUnified({
+                top: nextValue.value,
+                right: nextValue.value,
+                bottom: nextValue.value,
+                left: nextValue.value,
+                unit: nextValue.unit,
+              });
+            }}
+          />
+          <SelectField
+            label="样式"
+            value={value.style}
+            options={styleOptions}
+            mixed={mixed}
+            disabled={disabled}
+            onCommit={(nextValue) => {
+              commitUnified({ style: nextValue });
+            }}
+          />
+          <ColorField
+            label="颜色"
+            value={value.color}
+            placeholder="#000000"
+            mixed={mixed}
+            disabled={disabled}
+            onCommit={(nextValue) => {
+              commitUnified({ color: nextValue });
+            }}
+          />
+        </div>
+      ) : (
+        <div data-border-field-mode="split" className="grid grid-cols-1 gap-1">
+          {sideEntries.map(([side, sideLabel]) => (
+            <div key={side} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-1 rounded-md border border-border/60 p-1">
+              <NumberField
+                label={`${sideLabel} 宽度`}
+                value={{ value: value[side], unit: value.unit }}
+                units={['px', '%', 'em', 'rem']}
+                mixed={mixed}
+                disabled={disabled}
+                onCommit={(nextValue) => {
+                  commitSide(side, {
+                    [side]: nextValue.value,
+                    unit: nextValue.unit,
+                  } as Partial<BorderValue>);
+                }}
+              />
+              <SelectField
+                label={`${sideLabel} 样式`}
+                value={getBorderSideStyle(value, side)}
+                options={styleOptions}
+                mixed={mixed}
+                disabled={disabled}
+                onCommit={(nextValue) => {
+                  commitSide(side, { style: nextValue });
+                }}
+              />
+              <div className="col-span-full">
+                <ColorField
+                  label={`${sideLabel} 颜色`}
+                  value={getBorderSideColor(value, side)}
+                  placeholder="#000000"
+                  mixed={mixed}
+                  disabled={disabled}
+                  onCommit={(nextValue) => {
+                    commitSide(side, { color: nextValue });
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function renderCompositeField(property: StylePropertyViewModel, onCommit: GrapesLikePropertyProps['onCommit']) {
   if (property.property === 'inset') {
     const currentValue = asBoxValue(property.value.committed);
@@ -605,43 +827,15 @@ function renderCompositeField(property: StylePropertyViewModel, onCommit: Grapes
 
   const currentValue = asBorderValue(property.value.committed);
   return (
-    <CompositeField label={property.label} description="宽度 样式 颜色">
-      <div className="grid grid-cols-2  gap-1">
-        <NumberField
-          label="宽度"
-          value={{ value: currentValue.top, unit: currentValue.unit }}
-          units={['px', '%', 'em', 'rem']}
-          onCommit={(nextValue) => {
-            const nextBorderValue = { ...currentValue, top: nextValue.value, right: nextValue.value, bottom: nextValue.value, left: nextValue.value, unit: nextValue.unit };
-            onCommit(stringifyBorderValue(nextBorderValue), nextBorderValue);
-          }}
-        />
-        <SelectField
-          label="样式"
-          value={currentValue.style}
-          options={[
-            { value: 'none', label: '无' },
-            { value: 'solid', label: '实线' },
-            { value: 'dashed', label: '虚线' },
-            { value: 'dotted', label: '点线' },
-            { value: 'double', label: '双线' },
-          ]}
-          onCommit={(nextValue) => {
-            const nextBorderValue = { ...currentValue, style: nextValue };
-            onCommit(stringifyBorderValue(nextBorderValue), nextBorderValue);
-          }}
-        />
-        <ColorField
-          label="颜色"
-          value={currentValue.color}
-          placeholder="#000000"
-          onCommit={(nextValue) => {
-            const nextBorderValue = { ...currentValue, color: nextValue };
-            onCommit(stringifyBorderValue(nextBorderValue), nextBorderValue);
-          }}
-        />
-      </div>
-    </CompositeField>
+    <BorderField
+      label={property.label}
+      value={currentValue}
+      mixed={property.value.mixed}
+      disabled={property.value.disabled}
+      onCommit={(nextValue) => {
+        onCommit(stringifyBorderValue(nextValue), nextValue);
+      }}
+    />
   );
 }
 
@@ -672,6 +866,7 @@ export default function GrapesLikeProperty({ property, onCommit }: GrapesLikePro
           label={property.label}
           value={currentValue}
           units={property.units}
+          keywordOptions={property.keywordOptions}
           placeholder={property.value.mixed ? '混合' : property.placeholder}
           mixed={property.value.mixed}
           disabled={property.value.disabled}

@@ -5,12 +5,12 @@ import assert from 'node:assert/strict';
 import { createInMemoryAgentV2Repository } from '../test-support/in-memory-agent-v2-repository.js';
 import { continueConversationRun } from './continue-conversation-run.js';
 
-test('continueConversationRun prefers a live runtime session over resume', async () => {
+test('continueConversationRun refreshes runtime options when reusing a live session', async () => {
   const repo = createInMemoryAgentV2Repository();
   await repo.createSession({ sessionId: 'sess-live', title: '继续会话' });
 
   const liveSession = { sessionId: 'sess-live' };
-  const reconnectCalls = [];
+  const resumeCalls = [];
   const runtime = {
     hasLiveSession(sessionId) {
       return sessionId === 'sess-live';
@@ -18,12 +18,9 @@ test('continueConversationRun prefers a live runtime session over resume', async
     getLiveSession(sessionId) {
       return sessionId === 'sess-live' ? liveSession : null;
     },
-    reconnectSessionWriter(sessionId, writer) {
-      reconnectCalls.push({ sessionId, writer });
-      return true;
-    },
-    resume() {
-      throw new Error('resume should not be called for a live session');
+    resume(sessionId, options) {
+      resumeCalls.push({ sessionId, options });
+      return liveSession;
     },
   };
 
@@ -34,12 +31,15 @@ test('continueConversationRun prefers a live runtime session over resume', async
     sessionId: 'sess-live',
     prompt: 'follow up',
     model: 'claude-opus-4-7',
+    permissionMode: 'bypassPermissions',
     writer,
   });
 
   assert.equal(result.session, liveSession);
   assert.equal(result.sessionId, 'sess-live');
-  assert.deepEqual(reconnectCalls, [{ sessionId: 'sess-live', writer }]);
+  assert.equal(resumeCalls[0].sessionId, 'sess-live');
+  assert.equal(resumeCalls[0].options.permissionMode, 'bypassPermissions');
+  assert.equal(resumeCalls[0].options.writer, writer);
 });
 
 test('continueConversationRun resumes the session and creates a new run', async () => {

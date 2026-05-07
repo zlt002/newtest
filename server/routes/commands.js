@@ -179,6 +179,30 @@ ${body}
 ${suffix ? `User input: ${suffix}` : 'Use the current conversation and repository context to determine the next best step.'}`;
 };
 
+const toFiniteNumber = (value) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+};
+
+async function readLiveSdkContextUsage(sessionId) {
+  const normalizedSessionId = String(sessionId || '').trim();
+  if (!normalizedSessionId || typeof defaultAgentV2Runtime.getLiveSession !== 'function') {
+    return null;
+  }
+
+  const liveSession = defaultAgentV2Runtime.getLiveSession(normalizedSessionId);
+  if (!liveSession || typeof liveSession.getContextUsage !== 'function') {
+    return null;
+  }
+
+  try {
+    return await liveSession.getContextUsage();
+  } catch (error) {
+    console.warn(`Unable to read SDK context usage for session ${normalizedSessionId}:`, error?.message || error);
+    return null;
+  }
+}
+
 /**
  * Built-in command handlers
  * Each handler returns { type: 'builtin', action: string, data: any }
@@ -329,15 +353,20 @@ Use this settings area to manage Claude-related permissions and compatibility se
   }),
 
   '/context': async (args, context) => {
+    const sdkContextUsage = await readLiveSdkContextUsage(context?.sessionId);
     const tokenUsage = context?.tokenUsage || {};
-    const used = Number(tokenUsage.used ?? tokenUsage.totalUsed ?? tokenUsage.total_tokens ?? 0) || 0;
+    const used =
+      toFiniteNumber(sdkContextUsage?.totalTokens)
+      ?? toFiniteNumber(tokenUsage.used ?? tokenUsage.totalUsed ?? tokenUsage.total_tokens)
+      ?? 0;
     const total =
-      Number(
-        tokenUsage.total ??
-          tokenUsage.contextWindow ??
-          parseInt(process.env.CONTEXT_WINDOW || '160000', 10),
-      ) || 160000;
-    const percentage = total > 0 ? Number(((used / total) * 100).toFixed(1)) : 0;
+      toFiniteNumber(sdkContextUsage?.maxTokens)
+      ?? toFiniteNumber(tokenUsage.total ?? tokenUsage.contextWindow)
+      ?? toFiniteNumber(parseInt(process.env.CONTEXT_WINDOW || '160000', 10))
+      ?? 160000;
+    const percentage =
+      toFiniteNumber(sdkContextUsage?.percentage)
+      ?? (total > 0 ? Number(((used / total) * 100).toFixed(1)) : 0);
 
     let status = 'healthy';
     let suggestion = 'Context usage looks comfortable.';
@@ -358,6 +387,9 @@ Use this settings area to manage Claude-related permissions and compatibility se
         percentage,
         status,
         suggestion,
+        source: sdkContextUsage ? 'sdk' : 'fallback',
+        categories: Array.isArray(sdkContextUsage?.categories) ? sdkContextUsage.categories : [],
+        contextUsage: sdkContextUsage || null,
       },
     };
   },

@@ -631,10 +631,12 @@ test('useChatRealtimeHandlers clears loading directly from terminal V2 run event
   const sourcePath = path.join(process.cwd(), 'src/hooks/chat/useChatRealtimeHandlers.ts');
   const source = await fs.readFile(sourcePath, 'utf8');
 
+  assert.match(source, /const clearPendingDecisionRequestsForSession = \(sessionId: string \| null\) => \{/);
   assert.match(source, /if \(shouldConsumeAgentV2Event\(msg\)\) \{/);
   assert.match(source, /msg\.type === 'run\.completed'/);
   assert.match(source, /msg\.type === 'run\.failed'/);
   assert.match(source, /msg\.type === 'run\.aborted'/);
+  assert.match(source, /clearPendingDecisionRequestsForSession\(runtimeSessionId\);/);
   assert.match(source, /setIsLoading\(false\);/);
   assert.match(source, /setCanAbortSession\(false\);/);
   assert.match(source, /setClaudeStatus\(null\);/);

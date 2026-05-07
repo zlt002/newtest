@@ -34,7 +34,6 @@ export const BUILT_IN_COMMANDS = [
   localUi('/clear', 'End the current chat view and start a fresh local conversation', 20, {
     aliases: ['/reset', '/new'],
   }),
-  localUi('/compact', 'Summarize the current conversation into a concise handoff note', 25),
   localUi('/config', 'Open settings and preferences', 30, {
     aliases: ['/settings'],
   }),
@@ -81,4 +80,3 @@ export function findBuiltInCommand(commandName) {
 
   return [...BUILT_IN_COMMANDS, ...BUILT_IN_SKILL_COMMANDS].find((command) => command.name === canonicalName) || null;
 }
-

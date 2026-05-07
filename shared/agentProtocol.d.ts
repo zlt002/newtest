@@ -51,7 +51,13 @@ export type ChatRunStartEvent = {
 export type ChatUserMessageEvent = {
   type: 'chat_user_message';
   sessionId: string;
+  projectPath?: string;
+  model?: string;
+  effort?: string;
+  permissionMode?: PermissionMode;
+  traceId?: string;
   message: UserContent;
+  toolsSettings?: Record<string, unknown>;
   contextFilePaths?: string[];
 };
 

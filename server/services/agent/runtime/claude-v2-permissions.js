@@ -408,12 +408,19 @@ export function createClaudeV2PermissionHandlers({ pool, entry, options }) {
   const disallowedTools = Array.isArray(toolsSettings.disallowedTools) ? [...toolsSettings.disallowedTools] : [];
   const allowDangerouslySkipPermissions = permissionMode === 'bypassPermissions';
 
+  const getPermissionState = () => entry.runtimePermissionState || {
+    permissionMode,
+    allowedTools,
+    disallowedTools,
+    allowDangerouslySkipPermissions,
+  };
+
   const shouldAutoAllowByRule = (toolName, input) => (
-    allowedTools.some((rule) => matchesToolPermission(rule, toolName, input))
+    getPermissionState().allowedTools.some((rule) => matchesToolPermission(rule, toolName, input))
   );
 
   const shouldAutoDenyByRule = (toolName, input) => (
-    disallowedTools.some((rule) => matchesToolPermission(rule, toolName, input))
+    getPermissionState().disallowedTools.some((rule) => matchesToolPermission(rule, toolName, input))
   );
 
   return {
@@ -423,8 +430,9 @@ export function createClaudeV2PermissionHandlers({ pool, entry, options }) {
     async canUseTool(toolName, input, context = {}) {
       const normalizedToolInput = normalizeToolInput(input);
       const currentSessionId = entry.sessionId || null;
+      const currentPermissionState = getPermissionState();
 
-      if (permissionMode === 'bypassPermissions' && !INTERACTIVE_TOOL_NAMES.has(toolName)) {
+      if (currentPermissionState.permissionMode === 'bypassPermissions' && !INTERACTIVE_TOOL_NAMES.has(toolName)) {
         return {
           behavior: 'allow',
           updatedInput: normalizedToolInput,
@@ -560,7 +568,7 @@ export function createClaudeV2PermissionHandlers({ pool, entry, options }) {
       }
 
       if (result.behavior === 'allow' && result.updatedPermissions) {
-        updateLocalAllowedRules(allowedTools, result.updatedPermissions);
+        updateLocalAllowedRules(getPermissionState().allowedTools, result.updatedPermissions);
       }
 
       return result;

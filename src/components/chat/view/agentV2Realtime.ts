@@ -131,7 +131,12 @@ export function createAgentV2RealtimeCoordinator({
           type: CLIENT_EVENT_TYPES.CHAT_USER_MESSAGE,
           sessionId,
           projectPath,
+          model,
+          ...(typeof effort === 'string' ? { effort } : {}),
+          permissionMode,
+          traceId,
           message,
+          ...(toolsSettings && typeof toolsSettings === 'object' ? { toolsSettings } : {}),
           ...(Array.isArray(contextFilePaths) && contextFilePaths.length > 0 ? { contextFilePaths } : {}),
         });
         return;

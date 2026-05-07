@@ -968,6 +968,63 @@ test('commands execute does not locally intercept Claude runtime slash commands 
   }
 });
 
+test('commands execute returns SDK context usage for /context when a session is available', async () => {
+  const originalGetSessionContextUsage = defaultAgentV2Runtime.getLiveSession;
+  defaultAgentV2Runtime.getLiveSession = (sessionId) => {
+    assert.equal(sessionId, 'sess-context');
+    return {
+      async getContextUsage() {
+        return {
+          totalTokens: 70500,
+          maxTokens: 200000,
+          percentage: 35.25,
+          categories: [
+            { name: 'Messages', tokens: 47000, color: '#5b8def' },
+            { name: 'System tools', tokens: 16800, color: '#8ab4f8' },
+          ],
+        };
+      },
+    };
+  };
+  const app = express();
+  app.use(express.json());
+  app.use('/api/commands', commandsRouter);
+  const { server, port } = await listenServer(app);
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/commands/execute`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        commandName: '/context',
+        context: {
+          sessionId: 'sess-context',
+          projectPath: '/tmp/project',
+          tokenUsage: {
+            used: 70500,
+            total: 200000,
+          },
+        },
+      }),
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.type, 'builtin');
+    assert.equal(body.action, 'context');
+    assert.equal(body.data.used, 70500);
+    assert.equal(body.data.total, 200000);
+    assert.equal(body.data.percentage, 35.25);
+    assert.deepEqual(body.data.categories.map((category) => category.name), ['Messages', 'System tools']);
+    assert.equal(body.data.source, 'sdk');
+  } finally {
+    defaultAgentV2Runtime.getLiveSession = originalGetSessionContextUsage;
+    await closeServer(server);
+  }
+});
+
 test('commands execute returns current and available models for /model without arguments', async () => {
   const app = express();
   app.use(express.json());

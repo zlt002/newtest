@@ -260,9 +260,21 @@ function shouldFallbackToProbeCatalog(error) {
   return /No conversation found with session ID/i.test(message);
 }
 
+function updateEntryRuntimePermissionState(entry, runtimeOptions = {}) {
+  const permissionMode = runtimeOptions.permissionMode || 'default';
+  const toolsSettings = runtimeOptions.toolsSettings || {};
+  entry.runtimePermissionState = {
+    permissionMode,
+    allowedTools: Array.isArray(toolsSettings.allowedTools) ? [...toolsSettings.allowedTools] : [],
+    disallowedTools: Array.isArray(toolsSettings.disallowedTools) ? [...toolsSettings.disallowedTools] : [],
+    allowDangerouslySkipPermissions: permissionMode === 'bypassPermissions',
+  };
+}
+
 function buildSessionOptions(options, pool, entry) {
-  const permissionHandlers = createClaudeV2PermissionHandlers({ pool, entry, options });
   const runtimeOptions = buildClaudeV2RuntimeOptions(options);
+  updateEntryRuntimePermissionState(entry, runtimeOptions);
+  const permissionHandlers = createClaudeV2PermissionHandlers({ pool, entry, options: runtimeOptions });
   const permissionMode = runtimeOptions.permissionMode || 'default';
   const {
     model,
@@ -420,6 +432,7 @@ export function createClaudeV2SessionPool(sdk = ClaudeAgentSDK) {
       const normalizedSessionId = normalizeSessionId(sessionId);
       const liveEntry = getEntry(pool, normalizedSessionId);
       if (isLiveSessionEntry(liveEntry)) {
+        updateEntryRuntimePermissionState(liveEntry, buildClaudeV2RuntimeOptions(options));
         if (options.writer) {
           liveEntry.writer = options.writer;
         }

@@ -50,7 +50,7 @@ export default function GrapesLikeLayerItem({
   const canExpand = node.canExpand || node.children.length > 0;
   const hasChildren = node.children.length > 0;
   const rowClassName = [
-    'group/layer-row relative flex min-h-[26px] w-full items-center pr-1 text-[12px] leading-4 transition-colors',
+    'group/layer-row relative flex min-h-[26px] w-full min-w-[220px] items-center pr-1 text-[12px] leading-4 transition-colors',
     dropIndicator === 'before' ? 'before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-primary' : '',
     node.selected ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground',
     isDragging ? 'opacity-50' : '',
@@ -131,11 +131,16 @@ export default function GrapesLikeLayerItem({
         type="button"
         aria-pressed={node.selected}
         className={`w-full min-w-0 text-left leading-4 ${labelClassName} text-[12px]`}
-        onClick={(event) => actions.selectLayer(node.id, {
-          ctrlKey: event.ctrlKey,
-          metaKey: event.metaKey,
-          shiftKey: event.shiftKey,
-        })}
+        onClick={(event) => {
+          actions.selectLayer(node.id, {
+            ctrlKey: event.ctrlKey,
+            metaKey: event.metaKey,
+            shiftKey: event.shiftKey,
+          });
+          if (canExpand && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+            actions.toggleLayerExpanded(node.id);
+          }
+        }}
       >
         <span className={`flex h-4 w-4 shrink-0 items-center justify-center ${node.selected ? 'text-primary' : 'text-muted-foreground'}`}>
           <LayerIcon className="h-3.5 w-3.5" />

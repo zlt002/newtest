@@ -1005,6 +1005,38 @@ test('NumberField preserves usable space for numeric input when a unit select is
   assert.match(markup, /<option value="px" selected="">px<\/option>/);
 });
 
+test('NumberField renders CSS keywords as value choices instead of numeric units', () => {
+  const markup = renderToStaticMarkup(
+    React.createElement(NumberField, {
+      label: '宽度',
+      value: { value: 'auto', unit: '' },
+      units: ['px', '%'],
+      keywordOptions: ['auto'],
+      onCommit: () => {},
+    }),
+  );
+
+  assert.match(markup, /value="auto"/);
+  assert.match(markup, /<option value="auto" selected="">auto<\/option>/);
+  assert.match(markup, /<option value="px">px<\/option>/);
+});
+
+test('NumberField keeps complete CSS values in a custom value mode instead of selecting px', () => {
+  const markup = renderToStaticMarkup(
+    React.createElement(NumberField, {
+      label: '最小高度',
+      value: { value: 'calc(100vh - 48px)', unit: '' },
+      units: ['px', '%'],
+      keywordOptions: ['auto'],
+      onCommit: () => {},
+    }),
+  );
+
+  assert.match(markup, /value="calc\(100vh - 48px\)"/);
+  assert.match(markup, /<option value="" selected="">自定义<\/option>/);
+  assert.doesNotMatch(markup, /<option value="px" selected="">px<\/option>/);
+});
+
 test('applyDragDeltaToNumberField adjusts values with precision modifiers', () => {
   assert.deepEqual(
     applyDragDeltaToNumberField(
@@ -1061,6 +1093,47 @@ test('border width exposes unit choices in the composite border control', () => 
   assert.match(markup, /aria-label="宽度 单位"/);
   assert.match(markup, /<option value="px" selected="">px<\/option>/);
   assert.match(markup, /<option value="%">%<\/option>/);
+});
+
+test('non-uniform border values render split side controls', () => {
+  const markup = renderToStaticMarkup(
+    React.createElement(GrapesLikeProperty, {
+      property: {
+        label: '边框',
+        property: 'border',
+        kind: 'composite',
+        value: {
+          committed: {
+            top: '1',
+            right: '5',
+            bottom: '5',
+            left: '5',
+            unit: 'px',
+            style: '',
+            color: '',
+            topStyle: 'dashed',
+            rightStyle: 'solid',
+            bottomStyle: 'solid',
+            leftStyle: 'solid',
+            topColor: '#d9d9d9',
+            rightColor: 'rgb(217, 217, 217)',
+            bottomColor: 'rgb(217, 217, 217)',
+            leftColor: 'rgb(217, 217, 217)',
+          },
+        },
+      },
+      targetKind: 'inline',
+      onCommit: () => {},
+    }),
+  );
+
+  assert.match(markup, /data-border-field="边框"/);
+  assert.match(markup, /data-border-field-mode="split"/);
+  assert.match(markup, /aria-label="切换到统一设置"/);
+  assert.match(markup, /aria-label="上 宽度"/);
+  assert.match(markup, /aria-label="右 样式"/);
+  assert.match(markup, /aria-label="下 颜色 颜色块"/);
+  assert.match(markup, /value="#d9d9d9"/);
 });
 
 test('color properties render a visual color picker alongside the hex value', () => {

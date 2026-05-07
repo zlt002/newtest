@@ -74,10 +74,15 @@ export async function continueConversationRun({
   });
   const liveSession = getLiveSession(runtime, normalizedSessionId);
   if (liveSession) {
-    reconnectSessionWriter(runtime, normalizedSessionId, writer);
+    const refreshedSession = typeof runtime.resume === 'function'
+      ? runtime.resume(normalizedSessionId, runtimeOptions)
+      : liveSession;
+    if (refreshedSession === liveSession) {
+      reconnectSessionWriter(runtime, normalizedSessionId, writer);
+    }
     return {
       run,
-      session: liveSession,
+      session: refreshedSession || liveSession,
       sessionId: normalizedSessionId,
       sessionRecord: null,
     };

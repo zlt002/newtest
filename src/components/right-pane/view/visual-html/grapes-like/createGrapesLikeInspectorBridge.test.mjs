@@ -940,7 +940,7 @@ test('createGrapesLikeInspectorBridge keeps inspector commits inline even when a
   assert.equal(ruleStyleState.width, '251.46px');
 });
 
-test('createGrapesLikeInspectorBridge ignores blank inline style writes by default', () => {
+test('createGrapesLikeInspectorBridge deletes inline style properties on blank inline writes', () => {
   const { editor, cta } = createEditorFixture();
   const styleState = { width: '120px' };
 
@@ -953,7 +953,41 @@ test('createGrapesLikeInspectorBridge ignores blank inline style writes by defau
   const bridge = createGrapesLikeInspectorBridge(editor);
   bridge.actions.style.updateStyle({ property: 'width', value: '', targetKind: 'inline' });
 
-  assert.equal(styleState.width, '120px');
+  assert.equal(styleState.width, undefined);
+});
+
+test('createGrapesLikeInspectorBridge deletes inline style properties on blank structured patches', () => {
+  const { editor, cta } = createEditorFixture();
+  let styleState = {
+    width: '120px',
+    'font-size': '16px',
+  };
+
+  cta.getStyle = () => ({ ...styleState });
+  cta.addStyle = (patch) => {
+    styleState = { ...styleState, ...patch };
+  };
+  cta.removeStyle = (property) => {
+    delete styleState[property];
+  };
+
+  const bridge = createGrapesLikeInspectorBridge(editor);
+  bridge.actions.style.updateStyle({
+    property: 'width',
+    value: '',
+    targetKind: 'inline',
+    patch: {
+      layout: {
+        width: {
+          value: '',
+          unit: 'px',
+        },
+      },
+    },
+  });
+
+  assert.equal(styleState.width, undefined);
+  assert.equal(styleState['font-size'], '16px');
 });
 
 test('createGrapesLikeInspectorBridge applies structured inline patches through style preservation', () => {

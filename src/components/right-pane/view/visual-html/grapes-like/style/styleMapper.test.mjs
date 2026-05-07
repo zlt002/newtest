@@ -291,6 +291,46 @@ test('applyStylePatch preserves margin longhands when editing one side', () => {
   assert.equal(result.margin, undefined);
 });
 
+test('applyStylePatch writes CSS keywords without appending a unit', () => {
+  const widthResult = applyStylePatch({}, {
+    layout: {
+      width: {
+        value: '100',
+        unit: 'auto',
+      },
+    },
+  });
+  const focusResult = applyStylePatch({}, {
+    layout: {
+      width: {
+        value: 'auto',
+        unit: 'px',
+      },
+    },
+  });
+
+  assert.equal(widthResult.width, 'auto');
+  assert.equal(focusResult.width, 'auto');
+});
+
+test('applyStylePatch preserves complete CSS values without appending the displayed unit', () => {
+  const result = applyStylePatch({}, {
+    layout: {
+      minHeight: {
+        value: 'calc(100vh - 48px)',
+        unit: 'px',
+      },
+      maxWidth: {
+        value: 'none',
+        unit: 'px',
+      },
+    },
+  });
+
+  assert.equal(result['min-height'], 'calc(100vh - 48px)');
+  assert.equal(result['max-width'], 'none');
+});
+
 test('applyStylePatch preserves border radius longhands when present', () => {
   const result = applyStylePatch({
     'border-top-left-radius': '4px',
@@ -311,6 +351,26 @@ test('applyStylePatch preserves border radius longhands when present', () => {
   assert.equal(result['border-bottom-right-radius'], '12px');
   assert.equal(result['border-bottom-left-radius'], '16px');
   assert.equal(result['border-radius'], undefined);
+});
+
+test('applyStylePatch preserves single-side borders and removes conflicting shorthand', () => {
+  const result = applyStylePatch({
+    border: '5px solid none none rgb(217, 217, 217)',
+    'border-top': '1px dashed #d9d9d9',
+  }, {
+    appearance: {
+      border: {
+        top: '2',
+        unit: 'px',
+      },
+    },
+  });
+
+  assert.equal(result.border, undefined);
+  assert.equal(result['border-top'], '2px dashed #d9d9d9');
+  assert.equal(result['border-right'], '5px solid rgb(217, 217, 217)');
+  assert.equal(result['border-bottom'], '5px solid rgb(217, 217, 217)');
+  assert.equal(result['border-left'], '5px solid rgb(217, 217, 217)');
 });
 
 test('applyStylePatch expands shorthand when preserving partial padding longhands', () => {

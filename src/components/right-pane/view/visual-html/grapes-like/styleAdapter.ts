@@ -77,10 +77,10 @@ const STYLE_SCHEMA: Array<{
       ] },
       { property: 'inset', label: '偏移', kind: 'composite' },
       { property: 'zIndex', label: '层级', kind: 'number' },
-      { property: 'width', label: '宽度', kind: 'number', units: ['px', '%', 'vw', 'vh', 'rem', 'em', 'auto'] },
-      { property: 'height', label: '高度', kind: 'number', units: ['px', '%', 'vw', 'vh', 'rem', 'em', 'auto'] },
-      { property: 'maxWidth', label: '最大宽度', kind: 'number', units: ['px', '%', 'vw', 'vh', 'rem', 'em', 'auto'] },
-      { property: 'minHeight', label: '最小高度', kind: 'number', units: ['px', '%', 'vw', 'vh', 'rem', 'em', 'auto'] },
+      { property: 'width', label: '宽度', kind: 'number', units: ['px', '%', 'vw', 'vh', 'rem', 'em'], keywordOptions: ['auto'] },
+      { property: 'height', label: '高度', kind: 'number', units: ['px', '%', 'vw', 'vh', 'rem', 'em'], keywordOptions: ['auto'] },
+      { property: 'maxWidth', label: '最大宽度', kind: 'number', units: ['px', '%', 'vw', 'vh', 'rem', 'em'], keywordOptions: ['auto'] },
+      { property: 'minHeight', label: '最小高度', kind: 'number', units: ['px', '%', 'vw', 'vh', 'rem', 'em'], keywordOptions: ['auto'] },
     ],
   },
   {
@@ -122,7 +122,7 @@ const STYLE_SCHEMA: Array<{
         { value: 'space-around', label: '环绕分布', icon: 'AlignVerticalSpaceAround' },
       ] },
       { property: 'order', label: '顺序', kind: 'number' },
-      { property: 'flexBasis', label: '基准尺寸', kind: 'number', units: ['px', '%', 'vw', 'vh', 'rem', 'em', 'auto'] },
+      { property: 'flexBasis', label: '基准尺寸', kind: 'number', units: ['px', '%', 'vw', 'vh', 'rem', 'em'], keywordOptions: ['auto'] },
       { property: 'flexGrow', label: '增长', kind: 'number' },
       { property: 'flexShrink', label: '收缩', kind: 'number' },
       { property: 'alignSelf', label: '自对齐', kind: 'radio', options: [
@@ -512,41 +512,100 @@ function readRadius(style: Record<string, string>): RadiusValue {
   };
 }
 
-function readBorder(style: Record<string, string>): BorderValue {
-  const shorthand = style.border ?? '';
-  const width = style['border-width'] ?? '';
-  const borderStyle = style['border-style'] ?? '';
-  const color = style['border-color'] ?? '';
-  const source = shorthand || [width, borderStyle, color].filter(Boolean).join(' ');
-  const tokens = source.trim().split(/\s+/).filter(Boolean);
-  const borderStyles = new Set([
-    'none',
-    'hidden',
-    'dotted',
-    'dashed',
-    'solid',
-    'double',
-    'groove',
-    'ridge',
-    'inset',
-    'outset',
-  ]);
-  const borderWidths = new Set(['thin', 'medium', 'thick']);
-  const widthToken = tokens.find((token) => borderWidths.has(token.toLowerCase()) || splitCssValue(token).unit || /^\d/.test(token));
-  const styleToken = tokens.find((token) => borderStyles.has(token.toLowerCase()));
-  const remainingTokens = tokens.filter((token) => token !== widthToken && token !== styleToken);
-  const size = splitCssValue((widthToken ?? width) || '');
-  const parsedStyle = styleToken ?? borderStyle ?? '';
-  const parsedColor = remainingTokens.join(' ') || color || '';
+const BORDER_STYLES = new Set([
+  'none',
+  'hidden',
+  'dotted',
+  'dashed',
+  'solid',
+  'double',
+  'groove',
+  'ridge',
+  'inset',
+  'outset',
+]);
+const BORDER_WIDTHS = new Set(['thin', 'medium', 'thick']);
+
+function isBorderWidthToken(token: string): boolean {
+  return BORDER_WIDTHS.has(token.toLowerCase()) || Boolean(splitCssValue(token).unit) || /^\d/.test(token);
+}
+
+function parseBorderValue(source: string): { width: UnitValue; style: string; color: string } {
+  const tokens = tokenizeTopLevel(source.trim()).filter(Boolean);
+  const widthToken = tokens.find(isBorderWidthToken);
+  const styleToken = tokens.find((token) => BORDER_STYLES.has(token.toLowerCase()));
+  const colorTokens = tokens.filter((token) => token !== widthToken && !BORDER_STYLES.has(token.toLowerCase()));
+  const size = splitCssValue(widthToken ?? '');
 
   return {
-    top: size.value,
-    right: size.value,
-    bottom: size.value,
-    left: size.value,
-    unit: size.unit,
-    style: parsedStyle,
-    color: parsedColor,
+    width: size,
+    style: styleToken ?? '',
+    color: colorTokens.join(' ').trim(),
+  };
+}
+
+function expandBorderSideValues(value: string): [string, string, string, string] {
+  const tokens = tokenizeTopLevel(value.trim()).filter(Boolean);
+  if (tokens.length === 0) {
+    return ['', '', '', ''];
+  }
+
+  if (tokens.length === 1) {
+    return [tokens[0], tokens[0], tokens[0], tokens[0]];
+  }
+
+  if (tokens.length === 2) {
+    return [tokens[0], tokens[1], tokens[0], tokens[1]];
+  }
+
+  if (tokens.length === 3) {
+    return [tokens[0], tokens[1], tokens[2], tokens[1]];
+  }
+
+  return [tokens[0], tokens[1], tokens[2], tokens[3]];
+}
+
+function readBorder(style: Record<string, string>): BorderValue {
+  const shorthand = parseBorderValue(style.border ?? '');
+  const widthValues = expandBorderSideValues(style['border-width'] ?? '');
+  const styleValues = expandBorderSideValues(style['border-style'] ?? '');
+  const colorValues = expandBorderSideValues(style['border-color'] ?? '');
+  const sideNames = ['top', 'right', 'bottom', 'left'] as const;
+  const sideShorthands = sideNames.map((sideName) => parseBorderValue(style[`border-${sideName}`] ?? ''));
+  const sideWidths = sideNames.map((sideName, index) => {
+    const sideWidth = splitCssValue(style[`border-${sideName}-width`] ?? '');
+    return sideWidth.value
+      ? sideWidth
+      : (sideShorthands[index].width.value ? sideShorthands[index].width : splitCssValue(widthValues[index] || shorthand.width.value + shorthand.width.unit));
+  });
+  const sideStyles = sideNames.map((sideName, index) => (
+    style[`border-${sideName}-style`] || sideShorthands[index].style || styleValues[index] || shorthand.style
+  ));
+  const sideColors = sideNames.map((sideName, index) => (
+    style[`border-${sideName}-color`] || sideShorthands[index].color || colorValues[index] || shorthand.color
+  ));
+  const uniformStyle = sideStyles.every((entry) => entry === sideStyles[0]);
+  const uniformColor = sideColors.every((entry) => entry === sideColors[0]);
+  const unit = sideWidths.find((entry) => entry.unit)?.unit ?? shorthand.width.unit;
+  const sharedStyle = uniformStyle ? sideStyles[0] ?? '' : '';
+  const sharedColor = uniformColor ? sideColors[0] ?? '' : '';
+
+  return {
+    top: sideWidths[0]?.value ?? '',
+    right: sideWidths[1]?.value ?? '',
+    bottom: sideWidths[2]?.value ?? '',
+    left: sideWidths[3]?.value ?? '',
+    unit,
+    style: sharedStyle,
+    color: sharedColor,
+    topStyle: sideStyles[0] ?? '',
+    rightStyle: sideStyles[1] ?? '',
+    bottomStyle: sideStyles[2] ?? '',
+    leftStyle: sideStyles[3] ?? '',
+    topColor: sideColors[0] ?? '',
+    rightColor: sideColors[1] ?? '',
+    bottomColor: sideColors[2] ?? '',
+    leftColor: sideColors[3] ?? '',
   };
 }
 

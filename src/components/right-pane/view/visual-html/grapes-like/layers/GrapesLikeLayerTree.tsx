@@ -36,10 +36,12 @@ export default function GrapesLikeLayerTree({
   onOpenContextMenu,
   depth = 0,
 }: GrapesLikeLayerTreeProps) {
+  const incrementalIndentPx = depth > 0 ? 12 : 0;
+
   return (
-    <div className="flex w-full flex-col gap-0">
+    <div className="flex min-w-full w-max flex-col gap-0">
       {nodes.map((node) => (
-        <div key={node.id} className="w-full" style={{ paddingLeft: `${Math.min(depth * 6, 12)}px` }}>
+        <div key={node.id} className="min-w-full w-max" style={{ paddingLeft: `${incrementalIndentPx}px` }}>
           <GrapesLikeLayerItem
             node={node}
             actions={actions}

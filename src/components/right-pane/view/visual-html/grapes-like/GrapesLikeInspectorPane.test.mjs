@@ -193,6 +193,33 @@ test('GrapesLikeInspectorPane keeps sync hint hidden when staged sections are se
   assert.doesNotMatch(markup, />正在同步</);
 });
 
+test('GrapesLikeInspectorPane hides stale style controls while style sections are pending', () => {
+  const markup = renderInspector({
+    selector: {
+      availableStates: [{ id: '', label: '默认状态' }],
+      activeState: '',
+      commonClasses: [{ name: 'old-class' }],
+      canAddClass: true,
+      canRemoveClass: true,
+      canSyncStyle: false,
+      syncState: 'pending',
+    },
+    style: {
+      targetKind: 'inline',
+      sectors: [{ key: 'layout', title: '布局', properties: [] }],
+      hasMixedValues: false,
+      editable: true,
+      syncState: 'pending',
+    },
+  });
+
+  assert.match(markup, /data-inspector-style-sync-blocker="true"/);
+  assert.match(markup, /正在同步样式/);
+  assert.doesNotMatch(markup, /data-selector-manager="true"/);
+  assert.doesNotMatch(markup, /data-style-manager="true"/);
+  assert.doesNotMatch(markup, /old-class/);
+});
+
 test('VisualHtmlEditor source wires GrapesLikeInspectorPane directly to the grapesLikeBridge', async () => {
   const source = await readFile(new URL('../../VisualHtmlEditor.tsx', import.meta.url), 'utf8');
 
@@ -200,6 +227,7 @@ test('VisualHtmlEditor source wires GrapesLikeInspectorPane directly to the grap
     source,
     /<GrapesLikeInspectorPane\s+adapter=\{grapesLikeBridge\.adapter\}\s+actions=\{grapesLikeBridge\.actions\}\s*\/>/s,
   );
-  assert.match(source, /\{grapesLikeBridge \? \(/);
+  assert.match(source, /const showInspectorPane = isActive && !isPreviewActive && grapesLikeBridge;/);
+  assert.match(source, /\{showInspectorPane \? \(/);
   assert.doesNotMatch(source, /inspectorMode/);
 });

@@ -225,6 +225,16 @@ export function useChatRealtimeHandlers({
     }
   };
 
+  const clearPendingDecisionRequestsForSession = (sessionId: string | null) => {
+    setPendingDecisionRequests((previous) => {
+      if (!sessionId) {
+        return previous;
+      }
+
+      return previous.filter((request) => request.sessionId && request.sessionId !== sessionId);
+    });
+  };
+
   const finalizeActiveRun = (sessionId: string | null) => {
     if (streamTimerRef.current) {
       clearTimeout(streamTimerRef.current);
@@ -421,6 +431,7 @@ export function useChatRealtimeHandlers({
           || msg.type === 'run.aborted'
         ) {
           const payload = msg.payload || {};
+          clearPendingDecisionRequestsForSession(runtimeSessionId);
           if (msg.type === 'run.completed' && payload.tokenUsage && typeof payload.tokenUsage === 'object' && !payload.isCompactOperation) {
             setTokenBudget(payload.tokenUsage as Record<string, unknown>);
           }
@@ -530,6 +541,9 @@ export function useChatRealtimeHandlers({
           }
           onSessionInactive?.(statusSessionId);
           onSessionNotProcessing?.(statusSessionId);
+          setPendingDecisionRequests((prev) =>
+            prev.filter((request) => request.sessionId && request.sessionId !== statusSessionId),
+          );
           if (isCurrentSession) {
             setIsLoading(false);
             setCanAbortSession(false);

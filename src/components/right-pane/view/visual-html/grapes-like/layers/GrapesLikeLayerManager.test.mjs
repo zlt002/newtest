@@ -180,7 +180,8 @@ test('GrapesLikeLayerManager renders layer rows with visibility label and drag h
 test('GrapesLikeLayerItem keeps selection bound to the label button only', async () => {
   const source = await readFile(new URL('./GrapesLikeLayerItem.tsx', import.meta.url), 'utf8');
 
-  assert.match(source, /onClick=\{\(event\) => actions\.selectLayer/);
+  assert.match(source, /onClick=\{\(event\) => \{[\s\S]*actions\.selectLayer/);
+  assert.match(source, /if \(canExpand && !event\.ctrlKey && !event\.metaKey && !event\.shiftKey\) \{[\s\S]*actions\.toggleLayerExpanded\(node\.id\);/);
   assert.doesNotMatch(source, /<div[\s\S]*?data-layer-id=\{node\.id\}[^>]*onClick=/);
 });
 
@@ -210,6 +211,7 @@ test('GrapesLikeLayerItem renders a compact full-width row and drop indicator li
   );
 
   assert.match(markup, /w-full/);
+  assert.match(markup, /min-w-\[220px\]/);
   assert.match(markup, /data-layer-row="true"/);
   assert.match(markup, /group\/layer-row/);
   assert.match(markup, /data-drop-indicator="before"/);
@@ -273,7 +275,7 @@ test('GrapesLikeLayerItem keeps action buttons visible when node is selected', (
   assert.match(markup, /opacity-100/);
 });
 
-test('GrapesLikeLayerTree uses compact indentation spacing for nested nodes', () => {
+test('GrapesLikeLayerTree preserves deep hierarchy with horizontal-scroll-friendly indentation', () => {
   const markup = renderToStaticMarkup(
     React.createElement(GrapesLikeLayerTree, {
       nodes: [{
@@ -311,5 +313,6 @@ test('GrapesLikeLayerTree uses compact indentation spacing for nested nodes', ()
   );
 
   assert.match(markup, /style="padding-left:12px"/);
-  assert.doesNotMatch(markup, /style="padding-left:28px"/);
+  assert.equal((markup.match(/style="padding-left:12px"/g) ?? []).length, 2);
+  assert.match(markup, /min-w-full w-max/);
 });

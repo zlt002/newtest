@@ -480,6 +480,7 @@ function updateInlineStyle(editor: GrapesEditor, property: string, value: string
   getSelectedComponents(editor).forEach((component) => {
     const nextValue = String(value ?? '').trim();
     if (!nextValue) {
+      component?.removeStyle?.(property);
       return;
     }
 
@@ -503,10 +504,6 @@ function replaceStyleOnTarget(
 }
 
 function updateInlineStylePatch(editor: GrapesEditor, patch: StyleStatePatch, fallbackProperty: string, fallbackValue: string) {
-  if (!String(fallbackValue ?? '').trim()) {
-    return;
-  }
-
   getSelectedComponents(editor).forEach((component) => {
     const currentStyle = component?.getStyle?.();
     const nextStyle = applyStylePatch(sanitizeStyleRecord(currentStyle) as Record<string, string>, patch);

@@ -6,11 +6,33 @@ type NumberFieldProps = {
   label: string;
   value: UnitValue;
   units?: readonly string[];
+  keywordOptions?: readonly string[];
   placeholder?: string;
   mixed?: boolean;
   disabled?: boolean;
   onCommit: (value: UnitValue) => void;
 };
+
+function isCssKeywordValue(value: string, keywordOptions: readonly string[]): boolean {
+  const normalized = value.trim().toLowerCase();
+  return keywordOptions.some((keyword) => keyword.toLowerCase() === normalized);
+}
+
+function isNumericValue(value: string): boolean {
+  return /^-?\d*\.?\d+$/.test(value.trim());
+}
+
+function isCompleteCssValue(value: string, keywordOptions: readonly string[]): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  return isCssKeywordValue(trimmed, keywordOptions)
+    || /^(auto|none|inherit|initial|unset|revert)$/i.test(trimmed)
+    || /^(calc|min|max|clamp|var)\(/i.test(trimmed)
+    || !isNumericValue(trimmed);
+}
 
 function getDefaultUnit(units: readonly string[], unit: string): string {
   if (unit) {
@@ -29,14 +51,19 @@ export function syncNumberFieldState(
   previousValue: UnitValue,
   value: UnitValue,
   units: readonly string[] = [],
+  keywordOptions: readonly string[] = [],
 ) {
   const prev = {
     draft: String(previousValue.value ?? ''),
-    unit: getDefaultUnit(units, String(previousValue.unit ?? '')),
+    unit: isCompleteCssValue(String(previousValue.value ?? ''), keywordOptions)
+      ? String(previousValue.unit ?? '')
+      : getDefaultUnit(units, String(previousValue.unit ?? '')),
   };
   const next = {
     draft: String(value.value ?? ''),
-    unit: getDefaultUnit(units, String(value.unit ?? '')),
+    unit: isCompleteCssValue(String(value.value ?? ''), keywordOptions)
+      ? String(value.unit ?? '')
+      : getDefaultUnit(units, String(value.unit ?? '')),
   };
 
   if (prev.draft === next.draft && prev.unit === next.unit) {
@@ -68,19 +95,48 @@ export function applyDragDeltaToNumberField(
 
   return {
     value: formatDraggedNumber(parsed + (deltaX * step)),
-    unit: current.unit || 'px',
+    unit: current.unit && current.unit !== 'auto' ? current.unit : 'px',
   };
 }
 
-function readNumberFieldState(value: UnitValue, units: readonly string[]) {
+function normalizeNumberFieldCommit(
+  draft: string,
+  unit: string,
+  units: readonly string[],
+  keywordOptions: readonly string[],
+): UnitValue {
+  const trimmedDraft = draft.trim();
+  if (isCompleteCssValue(trimmedDraft, keywordOptions)) {
+    return { value: trimmedDraft, unit: '' };
+  }
+
+  if (isCssKeywordValue(unit, keywordOptions)) {
+    return { value: unit.trim(), unit: '' };
+  }
+
   return {
-    draft: String(value.value ?? ''),
+    value: trimmedDraft,
+    unit: getDefaultUnit(units, unit),
+  };
+}
+
+function readNumberFieldState(value: UnitValue, units: readonly string[], keywordOptions: readonly string[]) {
+  const draft = String(value.value ?? '');
+  if (isCompleteCssValue(draft, keywordOptions)) {
+    return {
+      draft,
+      unit: isCssKeywordValue(draft, keywordOptions) ? draft.trim() : '',
+    };
+  }
+
+  return {
+    draft,
     unit: getDefaultUnit(units, String(value.unit ?? '')),
   };
 }
 
-function readNumberFieldSignature(value: UnitValue, units: readonly string[]) {
-  const state = readNumberFieldState(value, units);
+function readNumberFieldSignature(value: UnitValue, units: readonly string[], keywordOptions: readonly string[]) {
+  const state = readNumberFieldState(value, units, keywordOptions);
   return `${state.draft}\u0000${state.unit}`;
 }
 
@@ -88,16 +144,18 @@ export default function NumberField({
   label,
   value,
   units = [],
+  keywordOptions = [],
   placeholder,
   mixed = false,
   disabled = false,
   onCommit,
 }: NumberFieldProps) {
-  const [draft, setDraft] = useState(() => readNumberFieldState(value, units).draft);
-  const [unit, setUnit] = useState(() => readNumberFieldState(value, units).unit);
+  const selectOptions = [...units, ...keywordOptions];
+  const [draft, setDraft] = useState(() => readNumberFieldState(value, units, keywordOptions).draft);
+  const [unit, setUnit] = useState(() => readNumberFieldState(value, units, keywordOptions).unit);
   const [isEditing, setIsEditing] = useState(false);
   const previousValueRef = useRef<UnitValue>(value);
-  const previousValueSignatureRef = useRef(readNumberFieldSignature(value, units));
+  const previousValueSignatureRef = useRef(readNumberFieldSignature(value, units, keywordOptions));
   const dragStateRef = useRef<{
     pointerId: number;
     startX: number;
@@ -109,9 +167,9 @@ export default function NumberField({
       return;
     }
 
-    const nextSignature = readNumberFieldSignature(value, units);
+    const nextSignature = readNumberFieldSignature(value, units, keywordOptions);
     if (previousValueSignatureRef.current !== nextSignature) {
-      const next = readNumberFieldState(value, units);
+      const next = readNumberFieldState(value, units, keywordOptions);
       setDraft(next.draft);
       setUnit(next.unit);
       previousValueSignatureRef.current = nextSignature;
@@ -119,12 +177,12 @@ export default function NumberField({
       return;
     }
 
-    const next = syncNumberFieldState({ draft, unit }, previousValueRef.current, value, units);
+    const next = syncNumberFieldState({ draft, unit }, previousValueRef.current, value, units, keywordOptions);
     setDraft(next.draft);
     setUnit(next.unit);
     previousValueSignatureRef.current = nextSignature;
     previousValueRef.current = value;
-  }, [draft, isEditing, unit, units, value, value.unit, value.value]);
+  }, [draft, isEditing, keywordOptions, unit, units, value, value.unit, value.value]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -174,9 +232,11 @@ export default function NumberField({
     backgroundImage: 'none',
     WebkitAppearance: 'none',
   };
-  const syncedState = readNumberFieldState(value, units);
+  const syncedState = readNumberFieldState(value, units, keywordOptions);
   const displayDraft = isEditing ? draft : syncedState.draft;
   const displayUnit = isEditing ? unit : syncedState.unit;
+  const needsCustomUnitOption = displayUnit === '' && isCompleteCssValue(displayDraft, keywordOptions);
+  const resolvedSelectOptions = needsCustomUnitOption ? ['', ...selectOptions] : selectOptions;
 
   return (
     <label className="gl-field flex w-full min-w-0 flex-1 flex-col gap-0.5 rounded-md text-foreground">
@@ -192,7 +252,7 @@ export default function NumberField({
               startX: event.clientX,
               startValue: {
                 value: displayDraft,
-                unit: getDefaultUnit(units, displayUnit),
+                unit: isCompleteCssValue(displayDraft, keywordOptions) ? '' : getDefaultUnit(units, displayUnit),
               },
             };
           }}
@@ -214,23 +274,16 @@ export default function NumberField({
           onChange={(event) => {
             setIsEditing(true);
             setDraft(event.target.value);
+            if (isCompleteCssValue(unit, keywordOptions) && !isCompleteCssValue(event.target.value, keywordOptions)) {
+              setUnit(getDefaultUnit(units, ''));
+            }
           }}
           onBlur={() => {
-            if (!draft.trim()) {
-              setDraft(String(value.value ?? ''));
-              setUnit(getDefaultUnit(units, String(value.unit ?? unit)));
-              setIsEditing(false);
-              return;
-            }
-
-            onCommit({
-              value: draft.trim(),
-              unit: getDefaultUnit(units, unit),
-            });
+            onCommit(normalizeNumberFieldCommit(draft, unit, units, keywordOptions));
             setIsEditing(false);
           }}
         />
-        {units.length > 0 ? (
+        {resolvedSelectOptions.length > 0 ? (
           <div className="relative min-w-0 shrink-0">
             <select
               aria-label={`${label} 单位`}
@@ -240,17 +293,16 @@ export default function NumberField({
               disabled={disabled}
               onChange={(event) => {
                 const nextUnit = event.target.value;
+                const nextValue = isCssKeywordValue(nextUnit, keywordOptions) ? nextUnit : (isCompleteCssValue(displayDraft, keywordOptions) ? '' : displayDraft);
                 setIsEditing(true);
+                setDraft(nextValue);
                 setUnit(nextUnit);
-                onCommit({
-                  value: displayDraft,
-                  unit: getDefaultUnit(units, nextUnit),
-                });
+                onCommit(normalizeNumberFieldCommit(nextValue, nextUnit, units, keywordOptions));
               }}
             >
-              {units.map((unit) => (
+              {resolvedSelectOptions.map((unit) => (
                 <option key={unit} value={unit}>
-                  {unit}
+                  {unit || '自定义'}
                 </option>
               ))}
             </select>

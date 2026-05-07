@@ -155,6 +155,36 @@ function shouldExecuteSlashCommandLocally(command: SlashCommand | undefined) {
   );
 }
 
+function formatContextUsageMessage(data: any) {
+  const used = Number(data?.used || 0);
+  const total = Number(data?.total || 0);
+  const percentage = Number(data?.percentage || 0);
+  const source = data?.source === 'sdk' ? 'Claude SDK' : 'local estimate';
+  const lines = [
+    `**Context Usage**`,
+    '',
+    `- Source: ${source}`,
+    `- Used: ${used.toLocaleString()} / ${total.toLocaleString()} (${percentage}%)`,
+    `- Status: ${data?.status || 'unknown'}`,
+    `- Suggestion: ${data?.suggestion || 'No suggestion available.'}`,
+  ];
+
+  const categories = Array.isArray(data?.categories) ? data.categories : [];
+  if (categories.length > 0) {
+    lines.push('', '**Breakdown**');
+    for (const category of categories.slice(0, 8)) {
+      const name = typeof category?.name === 'string' && category.name.trim()
+        ? category.name.trim()
+        : 'Unknown';
+      const tokens = Number(category?.tokens || 0);
+      const share = used > 0 ? ` (${((tokens / used) * 100).toFixed(1)}%)` : '';
+      lines.push(`- ${name}: ${tokens.toLocaleString()} tokens${share}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
 function isValidClaudeModelName(value: unknown): value is string {
   if (typeof value !== 'string') {
     return false;
@@ -554,7 +584,7 @@ export function useChatComposerState({
         }
 
         case 'context': {
-          const contextMessage = `**Context Usage**\n\n- Used: ${data.used.toLocaleString()} / ${data.total.toLocaleString()} (${data.percentage}%)\n- Status: ${data.status}\n- Suggestion: ${data.suggestion}`;
+          const contextMessage = formatContextUsageMessage(data);
           addMessage({ type: 'assistant', content: contextMessage, timestamp: Date.now() });
           break;
         }
@@ -1177,7 +1207,13 @@ export function useChatComposerState({
           sendMessage({
             type: CLIENT_EVENT_TYPES.CHAT_USER_MESSAGE,
             sessionId: effectiveSessionId,
+            projectPath: resolvedProjectPath,
+            model: claudeModel,
+            ...(typeof effort === 'string' ? { effort } : {}),
+            permissionMode,
+            traceId,
             message: transportMessage,
+            toolsSettings,
             ...(contextFilePaths.length > 0 ? { contextFilePaths } : {}),
           });
         } else {

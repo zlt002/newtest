@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { createAgentV2RealtimeCoordinator } from './agentV2Realtime.ts';
 
-test('submitRun sends chat_user_message for existing sessions', () => {
+test('submitRun sends chat_user_message with runtime options for existing sessions', () => {
   const sent = [];
   const coordinator = createAgentV2RealtimeCoordinator({
     sendMessage(message) {
@@ -30,10 +30,15 @@ test('submitRun sends chat_user_message for existing sessions', () => {
     type: 'chat_user_message',
     sessionId: 'sess-1',
     projectPath: '/workspace/demo',
+    model: 'claude-opus-4-7',
+    effort: 'high',
+    permissionMode: 'bypassPermissions',
+    traceId: 'trace-1',
     message: {
       role: 'user',
       content: '继续总结改动',
     },
+    toolsSettings: { allowedTools: ['Read'] },
     contextFilePaths: ['/workspace/demo/src/App.tsx'],
   }]);
 });

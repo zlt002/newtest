@@ -21,9 +21,41 @@ test('scheduler applies selection and layers immediately and defers style and se
     }),
   });
 
-  assert.deepEqual(applied[0].sort(), ['layers', 'selection']);
+  assert.deepEqual(applied[0].sort(), ['layers', 'selection', 'selector', 'style']);
   await Promise.resolve();
   assert.deepEqual(applied[1].sort(), ['selector', 'style']);
+});
+
+test('scheduler marks deferred inspector sections pending until they refresh', async () => {
+  const applied = [];
+  const scheduler = createInspectorSnapshotScheduler({
+    scheduleFrame: (task) => Promise.resolve().then(task),
+    applyPatch: (patch) => applied.push(patch),
+  });
+
+  scheduler.scheduleSelection({
+    immediate: {
+      selection: { primarySelectedId: 'cell-1' },
+      layers: { roots: [], selectedLayerIds: ['cell-1'] },
+    },
+    deferred: () => ({
+      style: { sectors: [] },
+      selector: { commonClasses: [] },
+    }),
+  });
+
+  assert.deepEqual(applied[0], {
+    selection: { primarySelectedId: 'cell-1' },
+    layers: { roots: [], selectedLayerIds: ['cell-1'] },
+    style: { syncState: 'pending' },
+    selector: { syncState: 'pending' },
+  });
+
+  await Promise.resolve();
+  assert.deepEqual(applied[1], {
+    style: { sectors: [], syncState: 'ready' },
+    selector: { commonClasses: [], syncState: 'ready' },
+  });
 });
 
 test('scheduler ignores stale deferred work after a newer selection', async () => {
@@ -65,14 +97,18 @@ test('scheduler ignores stale deferred work after a newer selection', async () =
     {
       selection: { primarySelectedId: 'first' },
       layers: { roots: [{ id: 'first' }], selectedLayerIds: ['first'] },
+      style: { syncState: 'pending' },
+      selector: { syncState: 'pending' },
     },
     {
       selection: { primarySelectedId: 'second' },
       layers: { roots: [{ id: 'second' }], selectedLayerIds: ['second'] },
+      style: { syncState: 'pending' },
+      selector: { syncState: 'pending' },
     },
     {
-      style: { sectors: [{ key: 'second' }] },
-      selector: { commonClasses: [{ name: 'second' }] },
+      style: { sectors: [{ key: 'second' }], syncState: 'ready' },
+      selector: { commonClasses: [{ name: 'second' }], syncState: 'ready' },
     },
   ]);
 });
