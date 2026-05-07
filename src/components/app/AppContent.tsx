@@ -92,6 +92,7 @@ export default function AppContent() {
     requestBrowserRefresh,
     focusCurrentCodeFile,
     applyDraftPreviewEvent,
+    handleCodeFileOpen,
     handleMarkdownDraftOpen,
     handleMarkdownDraftUpdate,
   } = useEditorSidebar({
@@ -447,6 +448,7 @@ export default function AppContent() {
           codeFollowAlongState={codeFollowAlongState}
           draftPreviewState={draftPreviewState}
           onFileOpen={handleChatFileOpen}
+          onCodeFileOpen={handleCodeFileOpen}
           onMarkdownDraftOpen={handleChatMarkdownDraftOpen}
           onMarkdownDraftUpdate={handleChatMarkdownDraftUpdate}
           onOpenUrl={handleUrlOpen}

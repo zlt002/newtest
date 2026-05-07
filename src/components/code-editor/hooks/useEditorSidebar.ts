@@ -6,7 +6,7 @@ import type { CodeEditorDiffInfo, FileDraftPreviewOperation } from '../types/typ
 import { DEFAULT_EDITOR_WIDTH, readEditorSidebarPreference, writeEditorSidebarPreference } from '../utils/editorSidebarPersistence';
 import type { RightPaneBrowserSource, RightPaneTab, RightPaneTarget } from '../../right-pane/types';
 import { createClosedRightPaneState } from '../../right-pane/types';
-import { createVisualHtmlTarget, resolveRightPaneTargetForFile } from '../../right-pane/utils/rightPaneRouting';
+import { createCodeTarget, createVisualHtmlTarget, resolveRightPaneTargetForFile } from '../../right-pane/utils/rightPaneRouting';
 import { getRightPaneTargetIdentity } from '../../right-pane/utils/rightPaneTargetIdentity';
 import { closeRightPaneTab, upsertRightPaneTab } from '../../right-pane/utils/rightPaneTabs';
 import { subscribeToFileSyncEvents } from '../../../utils/fileSyncEvents';
@@ -124,6 +124,13 @@ export const useEditorSidebar = ({
     },
     [openTarget, selectedProject?.name],
   );
+
+  const handleCodeFileOpen = useCallback((filePath: string, options: OpenTargetOptions = {}) => {
+    openTarget(createCodeTarget({
+      filePath,
+      projectName: selectedProject?.name,
+    }), options);
+  }, [openTarget, selectedProject?.name]);
 
   const handleMarkdownDraftOpen = useCallback((payload: MarkdownDraftPayload, options: OpenTargetOptions = {}) => {
     openTarget({
@@ -466,6 +473,7 @@ export const useEditorSidebar = ({
     draftPreviewState,
     resizeHandleRef,
     handleFileOpen,
+    handleCodeFileOpen,
     handleCommitPreviewOpen,
     handleUrlOpen,
     handleVisualHtmlOpen,

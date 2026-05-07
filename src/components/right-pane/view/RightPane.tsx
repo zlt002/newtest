@@ -33,6 +33,7 @@ type RightPaneProps = {
   onAppendToChatInput?: ((text: string) => void) | null;
   onBrowserDependenciesChange?: ((snapshot: BrowserDependencySnapshot) => void) | null;
   onFileOpen?: ((filePath: string) => void) | null;
+  onCodeFileOpen?: ((filePath: string) => void) | null;
 };
 
 const MIN_LEFT_CONTENT_WIDTH = 200;
@@ -85,6 +86,7 @@ export default function RightPane({
   onAppendToChatInput,
   onBrowserDependenciesChange = null,
   onFileOpen = null,
+  onCodeFileOpen = null,
 }: RightPaneProps) {
   const [poppedOut, setPoppedOut] = useState(false);
   const [effectiveWidth, setEffectiveWidth] = useState(editorWidth);
@@ -449,6 +451,7 @@ export default function RightPane({
           onTogglePaneExpand={onTogglePaneExpand}
           onAppendToChatInput={onAppendToChatInput}
           onFileOpen={onFileOpen}
+          onCodeFileOpen={onCodeFileOpen}
           onPopOut={() => setPoppedOut(true)}
           isExpanded={editorExpanded}
         />
@@ -488,6 +491,7 @@ export default function RightPane({
               onTogglePaneExpand={onTogglePaneExpand}
               onAppendToChatInput={onAppendToChatInput}
               onFileOpen={onFileOpen}
+              onCodeFileOpen={onCodeFileOpen}
               onPopOut={null}
               isExpanded={editorExpanded}
               isSidebar={false}

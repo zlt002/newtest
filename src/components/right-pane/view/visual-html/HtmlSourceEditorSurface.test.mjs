@@ -25,3 +25,18 @@ test('HtmlSourceEditorSurface forwards cursor updates from CodeMirror selection 
   assert.match(source, /column:\s*head - line\.from \+ 1/);
   assert.match(source, /offset:\s*head/);
 });
+
+test('HtmlSourceEditorSurface switches large html documents to lightweight CodeMirror setup', async () => {
+  const source = await readFile(new URL('./HtmlSourceEditorSurface.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /LARGE_HTML_SOURCE_LIGHTWEIGHT_THRESHOLD/);
+  assert.match(source, /const isLargeSource = value\.length >= LARGE_HTML_SOURCE_LIGHTWEIGHT_THRESHOLD/);
+  assert.match(source, /isLargeSource \? \[EditorView\.lineWrapping\] : \[\.\.\.getLanguageExtensions\('index\.html'\), EditorView\.lineWrapping\]/);
+  assert.match(source, /foldGutter: !isLargeSource && showLineNumbers/);
+  assert.match(source, /indentOnInput: !isLargeSource/);
+  assert.match(source, /bracketMatching: !isLargeSource/);
+  assert.match(source, /closeBrackets: !isLargeSource/);
+  assert.match(source, /autocompletion: !isLargeSource/);
+  assert.match(source, /highlightSelectionMatches: !isLargeSource/);
+  assert.match(source, /data-visual-html-source-lightweight=\{isLargeSource \? 'true' : 'false'\}/);
+});

@@ -51,6 +51,7 @@ function MainContent({
   codeFollowAlongState,
   draftPreviewState,
   onFileOpen,
+  onCodeFileOpen = null,
   onMarkdownDraftOpen,
   onMarkdownDraftUpdate,
   onOpenUrl,
@@ -176,6 +177,7 @@ function MainContent({
         onAppendToChatInput={appendToChatInput}
         onBrowserDependenciesChange={onBrowserDependenciesChange}
         onFileOpen={(filePath) => onFileOpen(filePath)}
+        onCodeFileOpen={onCodeFileOpen}
       />
     </div>
   );

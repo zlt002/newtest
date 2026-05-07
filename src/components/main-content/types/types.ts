@@ -51,6 +51,7 @@ export type MainContentProps = {
   codeFollowAlongState?: CodeFollowAlongState | null;
   draftPreviewState?: DraftPreviewState;
   onFileOpen: (filePath: string, diffInfo?: CodeEditorDiffInfo | null) => void;
+  onCodeFileOpen?: ((filePath: string) => void) | null;
   onMarkdownDraftOpen: (payload: {
     filePath: string;
     fileName?: string;

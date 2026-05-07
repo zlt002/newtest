@@ -18,12 +18,47 @@ export const AskUserQuestionPanel: React.FC<InteractivePanelProps> = ({
   const [otherTexts, setOtherTexts] = useState<Map<number, string>>(() => new Map());
   const [otherActive, setOtherActive] = useState<Map<number, boolean>>(() => new Map());
   const [mounted, setMounted] = useState(false);
+  const [panelAnchor, setPanelAnchor] = useState<{ left: number; bottom: number; width: number } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const otherInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     requestAnimationFrame(() => setMounted(true));
+  }, []);
+
+  useEffect(() => {
+    const updatePanelAnchor = () => {
+      const composerDock = document.querySelector<HTMLElement>('[data-chat-v2-composer-dock="true"]');
+      if (!composerDock) {
+        setPanelAnchor(null);
+        return;
+      }
+
+      const rect = composerDock.getBoundingClientRect();
+      setPanelAnchor({
+        left: rect.left + rect.width / 2,
+        bottom: Math.max(16, window.innerHeight - rect.top + 12),
+        width: rect.width,
+      });
+    };
+
+    const frame = requestAnimationFrame(updatePanelAnchor);
+    window.addEventListener('resize', updatePanelAnchor);
+    window.addEventListener('scroll', updatePanelAnchor, true);
+
+    const composerDock = document.querySelector<HTMLElement>('[data-chat-v2-composer-dock="true"]');
+    const resizeObserver = composerDock ? new ResizeObserver(updatePanelAnchor) : null;
+    if (composerDock && resizeObserver) {
+      resizeObserver.observe(composerDock);
+    }
+
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('resize', updatePanelAnchor);
+      window.removeEventListener('scroll', updatePanelAnchor, true);
+      resizeObserver?.disconnect();
+    };
   }, []);
 
   // Focus the container for keyboard events when step changes
@@ -145,20 +180,20 @@ export const AskUserQuestionPanel: React.FC<InteractivePanelProps> = ({
   const isLast = currentStep === total - 1;
   const isFirst = currentStep === 0;
   const hasCurrentSelection = selected.size > 0 || (isOtherOn && (otherTexts.get(currentStep) || '').trim().length > 0);
+  const panelStyle = panelAnchor
+    ? { left: `${panelAnchor.left}px`, bottom: `${panelAnchor.bottom}px`, width: `${panelAnchor.width}px` }
+    : { left: '50%', bottom: '160px', width: 'calc(100vw - 2rem)' };
 
   const panel = (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-        onClick={handleSkip}
-      />
-      {/* Panel */}
+    <div
+      className="fixed z-50 -translate-x-1/2"
+      style={panelStyle}
+    >
       <div
         ref={containerRef}
         tabIndex={-1}
         onKeyDown={handleKeyDown}
-        className={`relative w-full max-w-xl outline-none transition-all duration-500 ease-out ${
+        className={`relative w-full outline-none transition-all duration-500 ease-out ${
           mounted ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'
         }`}
       >

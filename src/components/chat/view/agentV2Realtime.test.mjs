@@ -1232,5 +1232,6 @@ test('ChatComposer exposes a V2 composer dock with explicit blocked state', asyn
   const source = await readFile(new URL('./subcomponents/ChatComposer.tsx', import.meta.url), 'utf8');
 
   assert.match(source, /data-chat-v2-composer-dock/);
-  assert.match(source, /data-chat-v2-composer-blocked/);
+  assert.match(source, /disabled=\{isBlockedOnDecision\}/);
+  assert.doesNotMatch(source, /data-chat-v2-composer-blocked/);
 });

@@ -1,11 +1,11 @@
 {
     "schema_version": 1,
-    "commit": "61a357b430c447349e5a13500538a56d193a271e",
-    "indexed_at": "2026-05-07T06:11:01Z",
+    "commit": "60c6cd17d15d6095090e8562adfc5753e5f7d65b",
+    "indexed_at": "2026-05-07T10:49:06Z",
     "project": "Users-zhanglt21-Desktop-accrnew-cc-ui",
     "nodes": 0,
     "edges": 0,
-    "original_size": 15794176,
-    "compressed_size": 2972980,
+    "original_size": 102400,
+    "compressed_size": 1396,
     "compression_level": 3
 }

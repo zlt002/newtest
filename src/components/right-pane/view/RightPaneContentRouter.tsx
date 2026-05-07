@@ -15,20 +15,20 @@ const VisualHtmlEditor = lazy(() => import('./VisualHtmlEditor'));
 const MemoizedVisualHtmlEditor = React.memo(function MemoizedVisualHtmlEditor({
   target,
   isActive,
-  onClosePane,
   onAppendToChatInput,
+  onOpenSourceTab,
 }: {
   target: RightPaneVisualHtmlTarget;
   isActive: boolean;
-  onClosePane: () => void;
   onAppendToChatInput?: ((text: string) => void) | null;
+  onOpenSourceTab?: ((filePath: string) => void) | null;
 }) {
   return (
     <VisualHtmlEditor
       target={target}
       isActive={isActive}
-      onClosePane={onClosePane}
       onAppendToChatInput={onAppendToChatInput}
+      onOpenSourceTab={onOpenSourceTab}
     />
   );
 }, (previous, next) => (
@@ -36,8 +36,8 @@ const MemoizedVisualHtmlEditor = React.memo(function MemoizedVisualHtmlEditor({
   && previous.target.filePath === next.target.filePath
   && previous.target.fileName === next.target.fileName
   && previous.target.projectName === next.target.projectName
-  && previous.onClosePane === next.onClosePane
   && previous.onAppendToChatInput === next.onAppendToChatInput
+  && previous.onOpenSourceTab === next.onOpenSourceTab
 ));
 
 type RightPaneContentRouterProps = {
@@ -53,6 +53,7 @@ type RightPaneContentRouterProps = {
   onTogglePaneExpand?: (() => void) | null;
   onAppendToChatInput?: ((text: string) => void) | null;
   onFileOpen?: ((filePath: string) => void) | null;
+  onCodeFileOpen?: ((filePath: string) => void) | null;
   onPopOut?: (() => void) | null;
   isExpanded?: boolean;
   isSidebar?: boolean;
@@ -89,6 +90,7 @@ export default function RightPaneContentRouter({
   onTogglePaneExpand = null,
   onAppendToChatInput = null,
   onFileOpen = null,
+  onCodeFileOpen = null,
   onPopOut = null,
   isExpanded = false,
   isSidebar = true,
@@ -184,8 +186,8 @@ export default function RightPaneContentRouter({
                   <MemoizedVisualHtmlEditor
                     target={visualTarget}
                     isActive={isActive}
-                    onClosePane={onClosePane}
                     onAppendToChatInput={onAppendToChatInput}
+                    onOpenSourceTab={onCodeFileOpen}
                   />
                 </div>
               );

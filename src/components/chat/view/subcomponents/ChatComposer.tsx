@@ -187,7 +187,7 @@ export default function ChatComposer({
   };
 
   const hasQuestionPanel = pendingDecisionRequests.some(isPendingQuestionRequest);
-  const isBlockedOnDecision = pendingDecisionRequests.length > 0;
+  const isBlockedOnDecision = hasQuestionPanel || pendingDecisionRequests.length > 0;
   const isFailed = composerStatus === 'failed';
 
   // On mobile, when input is focused, float the input box at the bottom
@@ -228,23 +228,14 @@ export default function ChatComposer({
           </div>
         ) : null}
 
-        {isBlockedOnDecision ? (
-          <div
-            data-chat-v2-composer-blocked="true"
-            className="mb-3 rounded-2xl border border-amber-900/60 bg-amber-950/30 p-3 text-sm text-amber-100"
-          >
-            {hasQuestionPanel ? '需要先回答问题，才能继续当前执行。' : '需要先处理权限请求，才能继续当前执行。'}
-          </div>
-        ) : null}
-
       </div>
 
-      {!hasQuestionPanel && (
-        <form
-          data-chat-v2-composer-dock="true"
-          onSubmit={onSubmit as (event: FormEvent<HTMLFormElement>) => void}
-          className="relative mx-auto max-w-4xl"
-        >
+      <form
+        data-chat-v2-composer-dock="true"
+        onSubmit={onSubmit as (event: FormEvent<HTMLFormElement>) => void}
+        className="relative mx-auto max-w-4xl"
+        aria-disabled={isBlockedOnDecision}
+      >
         {isDragActive && (
           <div className="absolute inset-0 z-50 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary/50 bg-primary/15">
             <div className="rounded-xl border border-border/30 bg-card p-4 shadow-lg">
@@ -338,8 +329,9 @@ export default function ChatComposer({
               onFocus={() => onInputFocusChange?.(true)}
               onBlur={() => onInputFocusChange?.(false)}
               onInput={onTextareaInput}
-              placeholder={placeholder}
-              className="chat-input-placeholder block max-h-[40vh] min-h-[64px] w-full resize-none overflow-y-auto bg-transparent px-4 pb-2.5 pt-3 text-sm leading-6 text-foreground placeholder-muted-foreground/50 transition-all duration-200 focus:outline-none sm:max-h-[300px] sm:min-h-[72px] sm:px-5 sm:pb-3 sm:pt-3.5"
+              placeholder={isBlockedOnDecision ? '' : placeholder}
+              disabled={isBlockedOnDecision}
+              className="chat-input-placeholder block max-h-[40vh] min-h-[64px] w-full resize-none overflow-y-auto bg-transparent px-4 pb-2.5 pt-3 text-sm leading-6 text-foreground placeholder-muted-foreground/50 transition-all duration-200 focus:outline-none disabled:cursor-not-allowed disabled:text-muted-foreground/70 sm:max-h-[300px] sm:min-h-[72px] sm:px-5 sm:pb-3 sm:pt-3.5"
               style={{ height: '64px' }}
             />
 
@@ -442,8 +434,7 @@ export default function ChatComposer({
             </svg>
           </button>
         )}
-        </form>
-      )}
+      </form>
     </div>
   );
 }

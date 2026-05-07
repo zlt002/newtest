@@ -6,6 +6,8 @@ import { useCodeEditorSettings } from '../../../code-editor/hooks/useCodeEditorS
 import { getLanguageExtensions } from '../../../code-editor/utils/editorExtensions';
 import { getEditorStyles } from '../../../code-editor/utils/editorStyles';
 
+export const LARGE_HTML_SOURCE_LIGHTWEIGHT_THRESHOLD = 120_000;
+
 export type HtmlSourceCursorPosition = {
   line: number;
   column: number;
@@ -22,10 +24,18 @@ export default function HtmlSourceEditorSurface({
   onCursorChange?: (position: HtmlSourceCursorPosition) => void;
 }) {
   const { isDarkMode, fontSize, showLineNumbers } = useCodeEditorSettings();
-  const extensions = useMemo(() => [...getLanguageExtensions('index.html'), EditorView.lineWrapping], []);
+  const isLargeSource = value.length >= LARGE_HTML_SOURCE_LIGHTWEIGHT_THRESHOLD;
+  const extensions = useMemo(
+    () => (isLargeSource ? [EditorView.lineWrapping] : [...getLanguageExtensions('index.html'), EditorView.lineWrapping]),
+    [isLargeSource],
+  );
 
   return (
-    <div className="flex h-full min-h-0 flex-col" data-visual-html-mode="source">
+    <div
+      className="flex h-full min-h-0 flex-col"
+      data-visual-html-mode="source"
+      data-visual-html-source-lightweight={isLargeSource ? 'true' : 'false'}
+    >
       <style>{getEditorStyles(isDarkMode)}</style>
       <CodeMirror
         value={value}
@@ -49,14 +59,14 @@ export default function HtmlSourceEditorSurface({
         style={{ fontSize: `${fontSize}px`, height: '100%' }}
         basicSetup={{
           lineNumbers: showLineNumbers,
-          foldGutter: true,
+          foldGutter: !isLargeSource && showLineNumbers,
           dropCursor: false,
           allowMultipleSelections: false,
-          indentOnInput: true,
-          bracketMatching: true,
-          closeBrackets: true,
-          autocompletion: true,
-          highlightSelectionMatches: true,
+          indentOnInput: !isLargeSource,
+          bracketMatching: !isLargeSource,
+          closeBrackets: !isLargeSource,
+          autocompletion: !isLargeSource,
+          highlightSelectionMatches: !isLargeSource,
           searchKeymap: true,
         }}
       />

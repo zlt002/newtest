@@ -43,10 +43,14 @@ test('composer gates the input on interactive_prompt requests instead of permiss
   const source = await fs.readFile(sourcePath, 'utf8');
 
   assert.match(source, /isPendingQuestionRequest/);
+  assert.match(source, /data-chat-v2-composer-dock/);
+  assert.match(source, /disabled=\{isBlockedOnDecision\}/);
+  assert.match(source, /placeholder=\{isBlockedOnDecision \? '' : placeholder\}/);
+  assert.doesNotMatch(source, /!\s*hasQuestionPanel &&/);
   assert.doesNotMatch(source, /toolName === 'AskUserQuestion'/);
   assert.doesNotMatch(source, /InteractiveRequestsBanner/);
   assert.doesNotMatch(source, /PermissionRequestsBanner/);
-  assert.match(source, /data-chat-v2-composer-blocked/);
+  assert.doesNotMatch(source, /data-chat-v2-composer-blocked/);
 });
 
 test('decision banners are compatibility wrappers rather than primary rendering surfaces', async () => {
@@ -122,10 +126,17 @@ test('AskUserQuestion panel reads chrome copy from chat i18n instead of hardcode
   assert.doesNotMatch(source, /Type your answer/);
 });
 
-test('AskUserQuestion panel renders through a portal so the modal is not clipped by the run card container', async () => {
+test('AskUserQuestion panel portal anchors to the composer without a backdrop', async () => {
   const sourcePath = path.join(process.cwd(), 'src/components/chat/tools/components/InteractiveRenderers/AskUserQuestionPanel.tsx');
   const source = await fs.readFile(sourcePath, 'utf8');
 
+  assert.match(source, /data-chat-v2-composer-dock/);
+  assert.match(source, /getBoundingClientRect/);
+  assert.match(source, /panelAnchor/);
+  assert.match(source, /width: rect\.width/);
+  assert.match(source, /width: `\$\{panelAnchor\.width\}px`/);
+  assert.doesNotMatch(source, /bg-black\/40/);
+  assert.doesNotMatch(source, /backdrop-blur-sm/);
   assert.match(source, /createPortal/);
   assert.match(source, /document\.body/);
 });

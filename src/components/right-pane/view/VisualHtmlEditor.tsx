@@ -4,17 +4,14 @@ import {
   Check,
   Code2,
   Eye,
-  LayoutTemplate,
   Maximize2,
   Minimize2,
   Monitor,
   Redo2,
-  RotateCcw,
   Save,
   Smartphone,
   Tablet,
   Undo2,
-  X,
 } from 'lucide-react';
 import type grapesjs from 'grapesjs';
 import { api } from '../../../utils/api';
@@ -23,17 +20,14 @@ import { resolveHtmlPreviewTarget } from '../utils/htmlPreviewTarget';
 import { isHtmlEligibleForVisualEditing } from '../utils/htmlVisualEligibility';
 import type { RightPaneVisualHtmlTarget } from '../types';
 import { buildSavedHtml, buildSavedHtmlPreservingHead, createWorkspaceDocument } from './visual-html/htmlDocumentTransforms';
-import { formatHtmlDocument } from './visual-html/formatHtmlDocument';
 import GrapesLikeInspectorPane from './visual-html/grapes-like/GrapesLikeInspectorPane';
 import { createGrapesLikeInspectorBridge } from './visual-html/grapes-like/createGrapesLikeInspectorBridge';
 import SpacingOverlay from './visual-html/grapes-like/SpacingOverlay';
-import HtmlSourceEditorSurface, { type HtmlSourceCursorPosition } from './visual-html/HtmlSourceEditorSurface';
 import { resolveCanvasDocument } from './visual-html/canvasHeadMarkup';
 import {
   buildSourceLocationDomPathFromElement,
   buildSourceLocationFingerprint,
   buildSourceLocationMap,
-  findNearestSourceLocationEntry,
   type SourceLocationEntry,
   type SourceLocationMap,
 } from './visual-html/sourceLocationMapping';
@@ -43,14 +37,16 @@ import VisualCanvasPane from './visual-html/VisualCanvasPane';
 type VisualHtmlEditorProps = {
   target: RightPaneVisualHtmlTarget;
   isActive?: boolean;
-  onClosePane: () => void;
   onAppendToChatInput?: ((text: string) => void) | null;
+  onOpenSourceTab?: ((filePath: string) => void) | null;
 };
 
 const SAVE_SUCCESS_TIMEOUT_MS = 2000;
-const DESIGN_SYNC_DEBOUNCE_MS = 1000;
-const AUTO_FLUSH_DELAY_MS = 2000;
+const DESIGN_SYNC_DEBOUNCE_MS = 4000;
+const AUTO_FLUSH_DELAY_MS = 6000;
+const LARGE_HTML_SOURCE_LIGHTWEIGHT_THRESHOLD = 120_000;
 const EMPTY_HTML_DOCUMENT = '<!doctype html><html><head></head><body></body></html>';
+const SOURCE_LOCATION_DEFERRED_REASON = '源码位置映射正在后台更新，定位可能稍后可用。';
 
 type ToolbarIcon = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -68,6 +64,7 @@ type ToolbarAction = {
 type CanvasDevice = 'desktop' | 'tablet' | 'mobile';
 type PreviewRuntimeElementStyles = Record<string, string>;
 type PreviewMode = 'srcdoc' | 'route';
+type SourceLocationRebuildMode = 'sync' | 'defer' | 'skip';
 type HiddenLayerReason = 'display-none' | 'visibility-hidden' | 'opacity-zero' | 'zero-size' | 'offscreen' | 'ancestor-hidden';
 type HiddenLayerFilter = {
   reasons: HiddenLayerReason[];
@@ -223,6 +220,20 @@ function getErrorMessage(error: unknown): string {
   return String(error);
 }
 
+function shouldDeferSourceLocationRebuild(markup: string): boolean {
+  return markup.length >= LARGE_HTML_SOURCE_LIGHTWEIGHT_THRESHOLD;
+}
+
+function createDeferredSourceLocationMap(revision: number, reason = SOURCE_LOCATION_DEFERRED_REASON): SourceLocationMap {
+  return {
+    status: 'unavailable',
+    revision,
+    reason,
+    entries: [],
+    parseErrors: [],
+  };
+}
+
 function isVisualHtmlPerfDebugEnabled() {
   return (globalThis as typeof globalThis & { CCUI_DEBUG_VISUAL_CANVAS_PERF?: boolean }).CCUI_DEBUG_VISUAL_CANVAS_PERF === true;
 }
@@ -286,16 +297,16 @@ function exposeVisualHtmlEditorDebugHandle({
 
   debugGlobal.__CCUI_VISUAL_HTML_EDITOR__ = editor;
   debugGlobal.__CCUI_VISUAL_HTML_DEBUG__ = {
-    getCss: () => editor.getCss(),
+    getCss: () => String(editor.getCss() ?? ''),
     getHtml: () => editor.getHtml(),
     getCanvasHtmlSnapshot: () => collectCanvasHtml(),
     getDocumentText,
     getPersistedText,
-    getCssRules: () => readVisualEditorCssRules(editor.getCss()),
-    summarizeCssRules: (limit = 200) => readVisualEditorCssRules(editor.getCss()).slice(0, limit),
+    getCssRules: () => readVisualEditorCssRules(String(editor.getCss() ?? '')),
+    summarizeCssRules: (limit = 200) => readVisualEditorCssRules(String(editor.getCss() ?? '')).slice(0, limit),
     findCssRules: (pattern: string) => {
       const normalizedPattern = pattern.trim().toLowerCase();
-      return readVisualEditorCssRules(editor.getCss()).filter(({ selector, body }) => (
+      return readVisualEditorCssRules(String(editor.getCss() ?? '')).filter(({ selector, body }) => (
         selector.toLowerCase().includes(normalizedPattern)
         || body.toLowerCase().includes(normalizedPattern)
       ));
@@ -611,15 +622,14 @@ function schedulePreviewRuntimeElementStyleRestore(
 export default function VisualHtmlEditor({
   target,
   isActive = true,
-  onClosePane,
   onAppendToChatInput = null,
+  onOpenSourceTab = null,
 }: VisualHtmlEditorProps) {
   const controller = useHtmlDocumentController({
     filePath: target.filePath,
     projectName: target.projectName ?? null,
   });
   const controllerRef = useRef(controller);
-  const [activeMode, setActiveMode] = useState<'design' | 'source'>('design');
   const [canvasDocument, setCanvasDocument] = useState(() =>
     createWorkspaceDocument(EMPTY_HTML_DOCUMENT),
   );
@@ -649,6 +659,12 @@ export default function VisualHtmlEditor({
   const sourceLocationMapRef = useRef(buildSourceLocationMap('', 0));
   const persistedSourceLocationMapRef = useRef(buildSourceLocationMap('', 0));
   const pendingSourceCursorEntryRef = useRef<SourceLocationEntry | null>(null);
+  const pendingSourceLocationRebuildRef = useRef<{
+    html: string;
+    revision: number;
+    handle: number;
+    kind: 'idle' | 'timeout';
+  } | null>(null);
   const pendingDesignSyncTimeoutRef = useRef<number | null>(null);
   const pendingFileFlushTimeoutRef = useRef<number | null>(null);
   const previewModeRef = useRef<PreviewMode>('route');
@@ -659,7 +675,7 @@ export default function VisualHtmlEditor({
   const targetProjectName = target.projectName ?? null;
 
   controllerRef.current = controller;
-  const hasUnsavedChanges = controller.dirtySource || controller.dirtyDesign;
+  const hasUnsavedChanges = controller.dirtyDesign;
   const sourceLocationParseWarning = sourceLocationMapRef.current.parseErrors?.[0] ?? null;
   const persistedSourceLocationMap = persistedSourceLocationMapRef.current;
   const grapesLikeBridge = useMemo(() => createGrapesLikeInspectorBridge(canvasEditor), [canvasEditor]);
@@ -667,7 +683,6 @@ export default function VisualHtmlEditor({
 
   useEffect(() => {
     logVisualHtmlPerf('design-canvas-context', {
-      activeMode,
       isPreviewActive,
       previewRouteUrlLength: previewRouteUrl?.length ?? 0,
       assetBaseUrlLength: canvasAssetBaseUrl?.length ?? 0,
@@ -675,7 +690,7 @@ export default function VisualHtmlEditor({
       hasCanvasAssetBaseUrl: Boolean(canvasAssetBaseUrl),
       targetFilePath: target.filePath,
     });
-  }, [activeMode, canvasAssetBaseUrl, isPreviewActive, previewRouteUrl, target.filePath]);
+  }, [canvasAssetBaseUrl, isPreviewActive, previewRouteUrl, target.filePath]);
 
   const syncCanvasDocumentFromHtml = useCallback((nextHtml: string) => {
     if (canvasDocumentSourceRef.current === nextHtml) {
@@ -747,7 +762,25 @@ export default function VisualHtmlEditor({
     pendingSourceCursorEntryRef.current = null;
   }, []);
 
-  const rebuildSourceLocationMap = useCallback((nextHtml: string, revision: number) => {
+  const cancelPendingSourceLocationMapRebuild = useCallback(() => {
+    const pending = pendingSourceLocationRebuildRef.current;
+    if (!pending) {
+      return;
+    }
+
+    if (pending.kind === 'idle' && typeof window.cancelIdleCallback === 'function') {
+      window.cancelIdleCallback(pending.handle);
+    } else {
+      window.clearTimeout(pending.handle);
+    }
+    pendingSourceLocationRebuildRef.current = null;
+  }, []);
+
+  const rebuildSourceLocationMap = useCallback((nextHtml: string, revision: number, options: { synchronous?: boolean } = {}) => {
+    if (options.synchronous) {
+      cancelPendingSourceLocationMapRebuild();
+    }
+
     const startedAt = getVisualHtmlPerfNow();
     const mapping = buildSourceLocationMap(nextHtml, revision);
     logVisualHtmlPerf('source-location-map', {
@@ -764,13 +797,40 @@ export default function VisualHtmlEditor({
       reason: mapping.status === 'unavailable' ? mapping.reason : null,
     });
     return mapping;
-  }, []);
+  }, [cancelPendingSourceLocationMapRebuild]);
 
-  const applyCurrentEditorDocument = useCallback((nextHtml: string, origin: 'design' | 'source' | 'ai') => {
+  const scheduleSourceLocationMapRebuild = useCallback((nextHtml: string, revision: number) => {
+    cancelPendingSourceLocationMapRebuild();
+
+    const run = () => {
+      pendingSourceLocationRebuildRef.current = null;
+      rebuildSourceLocationMap(nextHtml, revision);
+    };
+
+    if (typeof window.requestIdleCallback === 'function') {
+      const handle = window.requestIdleCallback(run, { timeout: 1500 });
+      pendingSourceLocationRebuildRef.current = { html: nextHtml, revision, handle, kind: 'idle' };
+      return;
+    }
+
+    const handle = window.setTimeout(run, 250);
+    pendingSourceLocationRebuildRef.current = { html: nextHtml, revision, handle, kind: 'timeout' };
+  }, [cancelPendingSourceLocationMapRebuild, rebuildSourceLocationMap]);
+
+  const applyCurrentEditorDocument = useCallback((
+    nextHtml: string,
+    origin: 'design' | 'source' | 'ai',
+    options: { rebuildSourceLocation?: SourceLocationRebuildMode } = { rebuildSourceLocation: 'defer' },
+  ) => {
     const revision = controllerRef.current.updateCurrentDocument(nextHtml, origin);
-    rebuildSourceLocationMap(nextHtml, revision);
+    const rebuildSourceLocation = options.rebuildSourceLocation ?? 'defer';
+    if (rebuildSourceLocation === 'sync') {
+      rebuildSourceLocationMap(nextHtml, revision, { synchronous: true });
+    } else if (rebuildSourceLocation === 'defer') {
+      scheduleSourceLocationMapRebuild(nextHtml, revision);
+    }
     return revision;
-  }, [rebuildSourceLocationMap]);
+  }, [rebuildSourceLocationMap, scheduleSourceLocationMapRebuild]);
 
   const cancelPendingDesignDocumentSync = useCallback(() => {
     if (pendingDesignSyncTimeoutRef.current === null) {
@@ -800,16 +860,6 @@ export default function VisualHtmlEditor({
     applyCurrentEditorDocument(nextHtml, 'design');
   }, [applyCurrentEditorDocument, collectCanvasHtml]);
 
-  const requestDesignDocumentSync = useCallback(() => {
-    if (pendingDesignSyncTimeoutRef.current !== null) {
-      window.clearTimeout(pendingDesignSyncTimeoutRef.current);
-    }
-
-    pendingDesignSyncTimeoutRef.current = window.setTimeout(() => {
-      flushDesignDocumentSync();
-    }, DESIGN_SYNC_DEBOUNCE_MS);
-  }, [flushDesignDocumentSync]);
-
   const ensureFreshSourceLocationMap = useCallback(() => {
     if (pendingDesignSyncTimeoutRef.current !== null) {
       window.clearTimeout(pendingDesignSyncTimeoutRef.current);
@@ -821,16 +871,26 @@ export default function VisualHtmlEditor({
       return sourceLocationMapRef.current;
     }
 
-    const nextHtml = activeMode === 'design' && canvasEditorRef.current
+    const nextHtml = canvasEditorRef.current
       ? collectCanvasHtml()
       : controllerRef.current.documentText;
 
+    if (controllerRef.current.documentText.length >= LARGE_HTML_SOURCE_LIGHTWEIGHT_THRESHOLD) {
+      scheduleSourceLocationMapRebuild(nextHtml, controllerRef.current.editorRevision);
+      return sourceLocationMapRef.current;
+    }
+
     if (nextHtml !== controllerRef.current.documentText) {
       const revision = controllerRef.current.updateCurrentDocument(nextHtml, 'design');
-      return rebuildSourceLocationMap(nextHtml, revision);
+      return rebuildSourceLocationMap(nextHtml, revision, { synchronous: true });
     }
-    return rebuildSourceLocationMap(nextHtml, controllerRef.current.editorRevision);
-  }, [activeMode, collectCanvasHtml, flushDesignDocumentSync, rebuildSourceLocationMap]);
+    return rebuildSourceLocationMap(nextHtml, controllerRef.current.editorRevision, { synchronous: true });
+  }, [
+    collectCanvasHtml,
+    flushDesignDocumentSync,
+    rebuildSourceLocationMap,
+    scheduleSourceLocationMapRebuild,
+  ]);
 
   const flushDocumentToFile = useCallback(async ({
     reason,
@@ -859,17 +919,16 @@ export default function VisualHtmlEditor({
       throw new Error(message);
     }
 
-    const canFlushDesignDocument = activeMode === 'design' && Boolean(canvasEditorRef.current);
-    const hasDirtyDocument = controllerRef.current.dirtyDesign || controllerRef.current.dirtySource;
+    const canFlushDesignDocument = Boolean(canvasEditorRef.current);
+    const hasDirtyDocument = controllerRef.current.dirtyDesign;
     if (!hasDirtyDocument) {
       let discoveredDesignChange = false;
       if (canFlushDesignDocument) {
         cancelPendingDesignDocumentSync();
         const nextHtml = collectCanvasHtml();
         if (nextHtml !== (controllerRef.current.persistedText || controllerRef.current.documentText)) {
-          applyCurrentEditorDocument(nextHtml, 'design');
+          applyCurrentEditorDocument(nextHtml, 'design', { rebuildSourceLocation: 'skip' });
           controllerRef.current.setDirtyDesign(false);
-          controllerRef.current.setDirtySource(true);
           discoveredDesignChange = true;
         }
       }
@@ -902,13 +961,12 @@ export default function VisualHtmlEditor({
     let flushedFromDesign = false;
 
     try {
-      if (activeMode === 'design' && canvasEditorRef.current) {
+      if (canvasEditorRef.current) {
         cancelPendingDesignDocumentSync();
         nextHtml = collectCanvasHtml();
         flushedFromDesign = true;
-        applyCurrentEditorDocument(nextHtml, 'design');
+        applyCurrentEditorDocument(nextHtml, 'design', { rebuildSourceLocation: 'sync' });
         controllerRef.current.setDirtyDesign(false);
-        controllerRef.current.setDirtySource(nextHtml !== controllerRef.current.persistedText);
       }
 
       const response = await api.saveFile(
@@ -937,10 +995,10 @@ export default function VisualHtmlEditor({
       const revision = controllerRef.current.editorRevision + 1;
       clearPendingSourceCursorEntry();
       controllerRef.current.setPersistedDocument({ content: nextHtml, version: data.version ?? null });
-      if (!flushedFromDesign || activeMode !== 'design') {
+      if (!flushedFromDesign) {
         syncCanvasDocumentFromHtml(nextHtml);
       }
-      const mapping = rebuildSourceLocationMap(nextHtml, revision);
+      const mapping = rebuildSourceLocationMap(nextHtml, revision, { synchronous: true });
       persistedSourceLocationMapRef.current = mapping;
       canvasEditorRef.current?.clearDirtyCount();
       broadcastFileSyncEvent({
@@ -969,7 +1027,6 @@ export default function VisualHtmlEditor({
       if (flushedFromDesign) {
         controllerRef.current.setDirtyDesign(true);
       }
-      controllerRef.current.setDirtySource(nextHtml !== controllerRef.current.persistedText);
       setSaveError(getErrorMessage(error));
       throw error;
     } finally {
@@ -981,13 +1038,13 @@ export default function VisualHtmlEditor({
       }
     }
   }, [
-    activeMode,
     applyCurrentEditorDocument,
     cancelPendingDesignDocumentSync,
     cancelPendingFileFlush,
     clearPendingSourceCursorEntry,
     collectCanvasHtml,
     rebuildSourceLocationMap,
+    syncCanvasDocumentFromHtml,
     target.filePath,
     targetProjectName,
   ]);
@@ -1005,7 +1062,7 @@ export default function VisualHtmlEditor({
         indicateSaving: false,
         indicateSuccess: false,
       }).catch(() => {});
-    }, AUTO_FLUSH_DELAY_MS);
+    }, Math.max(AUTO_FLUSH_DELAY_MS, DESIGN_SYNC_DEBOUNCE_MS));
   }, [cancelPendingFileFlush, flushDocumentToFile, targetProjectName]);
 
   const ensureLatestSourceContextForChat = useCallback(async () => {
@@ -1021,48 +1078,29 @@ export default function VisualHtmlEditor({
     };
   }, [persistedSourceLocationMap]);
 
-  const handleSourceCursorChange = useCallback((position: HtmlSourceCursorPosition) => {
-    const mapping = ensureFreshSourceLocationMap();
-    const nextEntry = findNearestSourceLocationEntry(mapping, position);
+  const handleOpenSourceTab = useCallback(() => {
+    const openSourceTab = async () => {
+      if (controllerRef.current.dirtyDesign && canvasEditorRef.current) {
+        try {
+          await flushDocumentToFile({
+            reason: 'manual-save',
+            indicateSaving: true,
+            indicateSuccess: false,
+          });
+        } catch {
+          return;
+        }
+      }
 
-    if (mapping.status !== 'ready' || !nextEntry) {
-      clearPendingSourceCursorEntry();
-      return;
-    }
+      onOpenSourceTab?.(target.filePath);
+    };
 
-    pendingSourceCursorEntryRef.current = nextEntry;
-    if (!selectCanvasComponentForSourceEntry(canvasEditorRef.current, nextEntry)) {
-      clearPendingSourceCursorEntry();
-    }
-  }, [clearPendingSourceCursorEntry, ensureFreshSourceLocationMap]);
-
-  const handleSwitchToSource = useCallback(() => {
-    if (controllerRef.current.dirtyDesign && canvasEditorRef.current) {
-      cancelPendingDesignDocumentSync();
-      const nextHtml = collectCanvasHtml();
-      applyCurrentEditorDocument(nextHtml, 'design');
-      syncCanvasDocumentFromHtml(nextHtml);
-      controllerRef.current.setDirtyDesign(false);
-      controllerRef.current.setDirtySource(false);
-    } else {
-      syncCanvasDocumentFromHtml(controllerRef.current.documentText);
-    }
-
-    setActiveMode('source');
-  }, [applyCurrentEditorDocument, cancelPendingDesignDocumentSync, collectCanvasHtml, syncCanvasDocumentFromHtml]);
-
-  const handleSwitchToDesign = useCallback(() => {
-    if (controllerRef.current.dirtySource) {
-      syncCanvasDocumentFromHtml(controllerRef.current.documentText);
-      controllerRef.current.setDirtyDesign(false);
-      controllerRef.current.setDirtySource(false);
-    }
-
-    setActiveMode('design');
-  }, [syncCanvasDocumentFromHtml]);
+    void openSourceTab();
+  }, [flushDocumentToFile, onOpenSourceTab, target.filePath]);
 
   const togglePreview = useCallback(() => {
     if (isPreviewActive) {
+      applyPreviewRuntimeStateToDesign();
       setIsPreviewActive(false);
       return;
     }
@@ -1082,6 +1120,7 @@ export default function VisualHtmlEditor({
     setIsPreviewActive(true);
   }, [
     applyCurrentEditorDocument,
+    applyPreviewRuntimeStateToDesign,
     cancelPendingDesignDocumentSync,
     collectCanvasHtml,
     isPreviewActive,
@@ -1200,6 +1239,7 @@ export default function VisualHtmlEditor({
     });
     cancelPendingDesignDocumentSync();
     cancelPendingFileFlush();
+    cancelPendingSourceLocationMapRebuild();
 
     if (!targetProjectName) {
       setLoadError('缺少项目标识，无法加载可视化 HTML 编辑器。');
@@ -1242,16 +1282,14 @@ export default function VisualHtmlEditor({
       clearPendingSourceCursorEntry();
       controllerRef.current.setPersistedDocument({ content: fileContent, version: data.version ?? null });
       syncCanvasDocumentFromHtml(fileContent);
-      const mapping = rebuildSourceLocationMap(fileContent, revision);
+      const mapping = rebuildSourceLocationMap(fileContent, revision, { synchronous: true });
       persistedSourceLocationMapRef.current = mapping;
 
       if (!isHtmlEligibleForVisualEditing(fileContent)) {
-        setEligibilityError('当前文件暂不支持可视化编辑，已切换到源码模式。');
-        setActiveMode('source');
+        setEligibilityError('当前文件暂不支持可视化编辑，请点击工具栏源码按钮在独立标签页中查看。');
         return;
       }
 
-      setActiveMode('design');
       logVisualHtmlPerf('load-complete', {
         requestId,
         durationMs: Math.round(getVisualHtmlPerfNow() - loadStartedAt),
@@ -1272,7 +1310,9 @@ export default function VisualHtmlEditor({
     }
   }, [
     cancelPendingDesignDocumentSync,
+    cancelPendingFileFlush,
     clearPendingSourceCursorEntry,
+    cancelPendingSourceLocationMapRebuild,
     rebuildSourceLocationMap,
     syncCanvasDocumentFromHtml,
     target.filePath,
@@ -1284,11 +1324,12 @@ export default function VisualHtmlEditor({
     return () => {
       cancelPendingDesignDocumentSync();
       cancelPendingFileFlush();
+      cancelPendingSourceLocationMapRebuild();
       if (saveSuccessTimeoutRef.current !== null) {
         window.clearTimeout(saveSuccessTimeoutRef.current);
       }
     };
-  }, [cancelPendingDesignDocumentSync, cancelPendingFileFlush, loadFileContent]);
+  }, [cancelPendingDesignDocumentSync, cancelPendingFileFlush, cancelPendingSourceLocationMapRebuild, loadFileContent]);
 
   useEffect(() => {
     if (!targetProjectName) {
@@ -1384,7 +1425,7 @@ export default function VisualHtmlEditor({
   }, [hasUnsavedChanges, isActive, loadFileContent, target.filePath, targetProjectName]);
 
   useEffect(() => {
-    if (!isActive || activeMode !== 'design') {
+    if (!isActive) {
       return;
     }
 
@@ -1404,17 +1445,17 @@ export default function VisualHtmlEditor({
         window.cancelAnimationFrame(refreshFrame);
       }
     };
-  }, [activeMode, isActive, isFullscreen]);
+  }, [isActive, isFullscreen]);
 
   useEffect(() => {
-    if (!isActive || activeMode !== 'design' || !canvasEditor) {
+    if (!isActive || !canvasEditor) {
       return;
     }
 
     if (!selectCanvasComponentForSourceEntry(canvasEditor, pendingSourceCursorEntryRef.current)) {
       clearPendingSourceCursorEntry();
     }
-  }, [activeMode, canvasEditor, clearPendingSourceCursorEntry, isActive]);
+  }, [canvasEditor, clearPendingSourceCursorEntry, isActive]);
 
   const handleSave = useCallback(async () => {
     try {
@@ -1429,41 +1470,6 @@ export default function VisualHtmlEditor({
   }, [flushDocumentToFile]);
 
   const saveTitle = saveSuccess ? '已保存' : saving ? '保存中...' : '保存';
-  const handleFormatSource = useCallback(() => {
-    const currentSource = controllerRef.current.documentText;
-    const formattedSource = formatHtmlDocument(currentSource);
-
-    if (formattedSource === currentSource) {
-      return;
-    }
-
-    applyCurrentEditorDocument(formattedSource, 'source');
-    controllerRef.current.setDirtySource(formattedSource !== controllerRef.current.persistedText);
-  }, [applyCurrentEditorDocument]);
-
-  useEffect(() => {
-    if (!isActive || activeMode !== 'source') {
-      return undefined;
-    }
-
-    const handleFormatShortcut = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || !event.shiftKey) {
-        return;
-      }
-
-      if (event.key.toLowerCase() !== 'f') {
-        return;
-      }
-
-      event.preventDefault();
-      handleFormatSource();
-    };
-
-    document.addEventListener('keydown', handleFormatShortcut);
-    return () => {
-      document.removeEventListener('keydown', handleFormatShortcut);
-    };
-  }, [activeMode, handleFormatSource, isActive]);
 
   const designActions: ToolbarAction[] = [
     {
@@ -1505,6 +1511,14 @@ export default function VisualHtmlEditor({
       disabled: Boolean(eligibilityError) || isPreviewActive,
     },
     {
+      id: 'source-tab',
+      title: '打开源码',
+      icon: Code2,
+      onClick: handleOpenSourceTab,
+      disabled: saving || loading || Boolean(loadError),
+      dataAttribute: { 'data-visual-html-open-source-tab': 'true' },
+    },
+    {
       id: 'save',
       title: saveTitle,
       icon: saveSuccess ? Check : Save,
@@ -1514,53 +1528,8 @@ export default function VisualHtmlEditor({
       disabled: saving || loading || Boolean(loadError) || isPreviewActive,
       tone: saveSuccess ? 'success' : 'primary',
     },
-    {
-      id: 'close',
-      title: '关闭',
-      icon: X,
-      onClick: onClosePane,
-      dataAttribute: { 'data-right-pane-close': 'true' },
-    },
   ];
 
-  const sourceActions: ToolbarAction[] = [
-    {
-      id: 'format',
-      title: '格式化 HTML (Ctrl/Cmd+Shift+F)',
-      icon: Code2,
-      onClick: handleFormatSource,
-      disabled: saving || loading || Boolean(loadError),
-      dataAttribute: { 'data-visual-html-format': 'true' },
-    },
-    {
-      id: 'reload',
-      title: '重新加载',
-      icon: RotateCcw,
-      onClick: () => {
-        void loadFileContent();
-      },
-      disabled: saving || loading,
-    },
-    {
-      id: 'save',
-      title: saveTitle,
-      icon: saveSuccess ? Check : Save,
-      onClick: () => {
-        void handleSave();
-      },
-      disabled: saving || loading || Boolean(loadError),
-      tone: saveSuccess ? 'success' : 'primary',
-    },
-    {
-      id: 'close',
-      title: '关闭',
-      icon: X,
-      onClick: onClosePane,
-      dataAttribute: { 'data-right-pane-close': 'true' },
-    },
-  ];
-
-  const modeActions = activeMode === 'design' ? designActions : sourceActions;
   const designCanvasDocument = buildSavedHtml({
     snapshot: canvasDocument.snapshot,
     bodyHtml: canvasDocument.bodyHtml,
@@ -1570,7 +1539,7 @@ export default function VisualHtmlEditor({
   const activePreviewUrl = previewRouteUrl
     ? `${previewRouteUrl}${previewRouteUrl.includes('?') ? '&' : '?'}ccui-preview=${previewRouteVersion}`
     : 'about:blank';
-  const showSpacingOverlay = isActive && !isPreviewActive && !eligibilityError && activeMode === 'design' && canvasEditor && grapesLikeBridge;
+  const showSpacingOverlay = isActive && !isPreviewActive && !eligibilityError && canvasEditor && grapesLikeBridge;
   const showInspectorPane = isActive && !isPreviewActive && grapesLikeBridge;
 
   return (
@@ -1639,38 +1608,7 @@ export default function VisualHtmlEditor({
             data-visual-html-toolbar="true"
           >
             <div className="flex min-w-0 items-center gap-2">
-              <div
-                className="flex items-center gap-1 rounded-md border border-border/70 bg-muted/40 p-0.5"
-                data-visual-html-mode-switcher="true"
-              >
-                <button
-                  className={`inline-flex h-7 items-center gap-1 rounded-md px-2.5 text-sm font-medium transition-colors ${
-                    activeMode === 'design'
-                      ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
-                      : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
-                  }`}
-                  onClick={handleSwitchToDesign}
-                  type="button"
-                >
-                  <LayoutTemplate className="h-4 w-4" />
-                  设计模式
-                </button>
-                <button
-                  className={`inline-flex h-7 items-center gap-1 rounded-md px-2.5 text-sm font-medium transition-colors ${
-                    activeMode === 'source'
-                      ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
-                      : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
-                  }`}
-                  onClick={handleSwitchToSource}
-                  type="button"
-                  disabled={Boolean(eligibilityError)}
-                >
-                  <Code2 className="h-4 w-4" />
-                  源码模式
-                </button>
-              </div>
-
-              {controller.dirtyDesign || controller.dirtySource ? (
+              {controller.dirtyDesign ? (
                 <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs text-blue-700 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
                   未保存修改
                 </span>
@@ -1678,7 +1616,7 @@ export default function VisualHtmlEditor({
             </div>
 
             <div className="flex items-center gap-1.5">
-              {!eligibilityError && activeMode === 'design' ? (
+              {!eligibilityError ? (
                 <div
                   className="flex items-center gap-0.5 rounded-md border border-border/70 bg-muted/40 p-0.5"
                   data-visual-html-device-switcher="true"
@@ -1729,7 +1667,7 @@ export default function VisualHtmlEditor({
               ) : null}
 
               <div className="flex items-center gap-1.5" data-visual-html-toolbar-actions="true">
-                {modeActions.map((action) => (
+                {designActions.map((action) => (
                   <ToolbarIconButton key={action.id} {...action} />
                 ))}
               </div>
@@ -1748,7 +1686,7 @@ export default function VisualHtmlEditor({
             </div>
           </div>
 
-          {activeMode === 'design' && isHiddenLayerEditing && !isPreviewActive ? (
+          {isHiddenLayerEditing && !isPreviewActive ? (
             <div
               className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/70 bg-amber-50/70 px-3 py-2 text-xs dark:bg-amber-950/20"
               data-visual-html-hidden-layer-filters="true"
@@ -1815,9 +1753,8 @@ export default function VisualHtmlEditor({
           <div className="relative flex min-h-0 flex-1 overflow-hidden">
             {!eligibilityError ? (
             <div
-              className={`absolute inset-0 ${activeMode === 'design' ? 'flex' : 'invisible pointer-events-none'}`}
+              className="absolute inset-0 flex"
               data-visual-html-design-workspace="true"
-              aria-hidden={activeMode !== 'design'}
             >
               <div className="min-h-0 flex-1">
                 {isPreviewActive ? (
@@ -1847,7 +1784,7 @@ export default function VisualHtmlEditor({
                     onDirtyChange={(isDirty, editor) => {
                       canvasEditorRef.current = editor;
                       if (isDirty) {
-                        requestDesignDocumentSync();
+                        controllerRef.current.setDirtyDesign(true);
                         scheduleDocumentFlush();
                       }
                       controller.setDirtyDesign(isDirty);
@@ -1889,7 +1826,7 @@ export default function VisualHtmlEditor({
                     ensureLatestSourceContextForChat={ensureLatestSourceContextForChat}
                     persistedSourceText={controller.persistedText}
                     persistedSourceLocationMap={persistedSourceLocationMap}
-                    preferPersistedLocation={controller.dirtyDesign && !controller.dirtySource}
+                    preferPersistedLocation={controller.dirtyDesign}
                     onAppendToChatInput={onAppendToChatInput}
                   />
                 ) : null}
@@ -1902,29 +1839,6 @@ export default function VisualHtmlEditor({
               ) : null}
             </div>
           ) : null}
-            <div
-              className={`absolute inset-0 flex min-h-0 flex-col ${activeMode === 'source' || Boolean(eligibilityError) ? '' : 'invisible pointer-events-none'}`}
-              data-visual-html-source-workspace="true"
-              aria-hidden={activeMode !== 'source' && !eligibilityError}
-            >
-              <HtmlSourceEditorSurface
-                value={controller.documentText}
-                onChange={(value) => {
-                  applyCurrentEditorDocument(value, 'source');
-                  controller.setDirtySource(value !== controller.persistedText);
-                  scheduleDocumentFlush();
-                }}
-                onCursorChange={handleSourceCursorChange}
-              />
-              <div
-                className="flex flex-shrink-0 items-center justify-between border-t border-border bg-muted px-3 py-1.5 text-xs text-muted-foreground"
-                data-visual-html-shortcuts="true"
-              >
-                <span>Ctrl/Cmd+S 保存</span>
-                <span>Esc 关闭</span>
-                <span>Ctrl/Cmd+Shift+F 格式化 HTML</span>
-              </div>
-            </div>
           </div>
 
           {loading ? (

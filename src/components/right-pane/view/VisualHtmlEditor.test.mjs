@@ -2,20 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-test('VisualHtmlEditor source declares a unified visual-html workspace with toolbar modes', async () => {
+test('VisualHtmlEditor source declares a dedicated design workspace with a source tab toolbar action', async () => {
   const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
 
   assert.match(source, /data-right-pane-view="visual-html"/);
   assert.match(source, /data-visual-html-editor="true"/);
   assert.match(source, /data-visual-html-workspace="true"/);
   assert.match(source, /data-visual-html-toolbar="true"/);
-  assert.match(source, /data-visual-html-mode-switcher="true"/);
+  assert.doesNotMatch(source, /data-visual-html-mode-switcher="true"/);
   assert.match(source, /data-visual-html-device-switcher="true"/);
   assert.match(source, /data-visual-html-toolbar-actions="true"/);
   assert.match(source, /data-visual-html-toolbar-common="true"/);
   assert.match(source, /GrapesLikeInspectorPane/);
   assert.match(source, /editor=\{canvasEditor\}/);
-  assert.match(source, /HtmlSourceEditorSurface/);
+  assert.doesNotMatch(source, /HtmlSourceEditorSurface/);
   assert.match(source, /VisualCanvasPane/);
   assert.match(source, /SpacingOverlay/);
   assert.match(source, /setDevice\(/);
@@ -45,10 +45,14 @@ test('VisualHtmlEditor source declares a unified visual-html workspace with tool
   assert.match(source, /toggleCanvasFullscreen/);
   assert.match(source, /isFullscreen/);
   assert.match(source, /title=\{isFullscreen \? '退出全屏' : '全屏'\}/);
-  assert.match(source, /activeMode === 'design'/);
-  assert.match(source, /setActiveMode\('source'\)/);
-  assert.match(source, /设计模式/);
-  assert.match(source, /源码模式/);
+  assert.match(source, /handleOpenSourceTab/);
+  assert.match(source, /onOpenSourceTab\?\.\(target\.filePath\)/);
+  assert.match(source, /title: '打开源码'/);
+  assert.match(source, /dataAttribute: \{ 'data-visual-html-open-source-tab': 'true' \}/);
+  assert.doesNotMatch(source, /activeMode === 'design'/);
+  assert.doesNotMatch(source, /setActiveMode\('source'\)/);
+  assert.doesNotMatch(source, /设计模式/);
+  assert.doesNotMatch(source, /源码模式/);
   assert.match(source, /void loadFileContent\(\)/);
   assert.match(source, /void handleSave\(\)/);
   assert.match(source, /onEditorReady=\{\(editor\) => \{/);
@@ -63,27 +67,27 @@ test('VisualHtmlEditor source declares a unified visual-html workspace with tool
   assert.doesNotMatch(source, /openLayerManager/);
 });
 
-test('VisualHtmlEditor source keeps unsupported html in the workspace and switches to source mode', async () => {
+test('VisualHtmlEditor source keeps unsupported html out of the design canvas and offers a source tab', async () => {
   const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
 
-  assert.match(source, /当前文件暂不支持可视化编辑，已切换到源码模式/);
-  assert.match(source, /setActiveMode\('source'\)/);
+  assert.match(source, /当前文件暂不支持可视化编辑，请点击工具栏源码按钮在独立标签页中查看。/);
+  assert.match(source, /handleOpenSourceTab/);
   assert.match(source, /isHtmlEligibleForVisualEditing/);
+  assert.doesNotMatch(source, /setActiveMode\('source'\)/);
   assert.doesNotMatch(source, /已回退到源码优先模式，请关闭此视图后继续在源码编辑器中处理。/);
 });
 
-test('VisualHtmlEditor source converges design and source state only on mode switch or save', async () => {
+test('VisualHtmlEditor source keeps source editing in a separate right-pane code tab', async () => {
   const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
 
-  assert.match(source, /handleSwitchToSource/);
   assert.match(source, /dirtyDesign/);
   assert.match(source, /applyCurrentEditorDocument\(nextHtml, 'design'\)/);
   assert.match(source, /syncCanvasDocumentFromHtml\(nextHtml\)/);
-  assert.match(source, /syncCanvasDocumentFromHtml\(controllerRef\.current\.documentText\)/);
-  assert.match(source, /handleSwitchToDesign/);
-  assert.match(source, /dirtySource/);
+  assert.doesNotMatch(source, /handleSwitchToSource/);
+  assert.doesNotMatch(source, /handleSwitchToDesign/);
+  assert.doesNotMatch(source, /dirtySource/);
   assert.doesNotMatch(source, /setCanvasDocument\(createWorkspaceDocument\(controllerRef\.current\.documentText\)\)/);
-  assert.match(source, /activeMode === 'design' && canvasEditorRef\.current/);
+  assert.match(source, /const canFlushDesignDocument = Boolean\(canvasEditorRef\.current\)/);
   assert.match(source, /if \(canvasEditorRef\.current\?\.Canvas\?\.refresh\) \{/);
   assert.match(source, /canvasEditorRef\.current\.refresh\(\{ tools: true \}\)/);
   assert.match(source, /api\.readFile/);
@@ -91,15 +95,27 @@ test('VisualHtmlEditor source converges design and source state only on mode swi
   assert.match(source, /broadcastFileSyncEvent/);
 });
 
-test('VisualHtmlEditor keeps design and source workspaces mounted and switches visibility instead of unmounting', async () => {
+test('VisualHtmlEditor does not mount an internal source workspace', async () => {
   const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
 
+  assert.doesNotMatch(source, /isSourceWorkspaceOpen/);
+  assert.doesNotMatch(source, /setIsSourceWorkspaceOpen\(true\)/);
+  assert.doesNotMatch(source, /setIsSourceWorkspaceOpen\(false\)/);
   assert.match(source, /data-visual-html-design-workspace="true"/);
-  assert.match(source, /data-visual-html-source-workspace="true"/);
-  assert.match(source, /className=\{`absolute inset-0 \$\{activeMode === 'design' \? 'flex' : 'invisible pointer-events-none'\}`\}/);
-  assert.match(source, /className=\{`absolute inset-0 flex min-h-0 flex-col \$\{activeMode === 'source' \|\| Boolean\(eligibilityError\) \? '' : 'invisible pointer-events-none'\}`\}/);
-  assert.match(source, /aria-hidden=\{activeMode !== 'design'\}/);
-  assert.match(source, /aria-hidden=\{activeMode !== 'source' && !eligibilityError\}/);
+  assert.doesNotMatch(source, /data-visual-html-source-workspace="true"/);
+  assert.doesNotMatch(source, /HtmlSourceEditorSurface/);
+});
+
+test('VisualHtmlEditor opens source through a separate right pane tab action', async () => {
+  const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /onOpenSourceTab\?: \(\(filePath: string\) => void\) \| null;/);
+  assert.match(source, /const handleOpenSourceTab = useCallback\(\(\) => \{/);
+  assert.match(source, /onOpenSourceTab\?\.\(target\.filePath\);/);
+  assert.match(source, /id: 'source-tab'/);
+  assert.match(source, /onClick: handleOpenSourceTab/);
+  assert.doesNotMatch(source, /const handleCloseSourceWorkspace = useCallback/);
+  assert.doesNotMatch(source, /onClick: onClosePane,\s*dataAttribute: \{ 'data-visual-html-close-source': 'true' \}/);
 });
 
 test('VisualHtmlEditor quiets hidden tabs and defers design refresh until after activation', async () => {
@@ -108,7 +124,7 @@ test('VisualHtmlEditor quiets hidden tabs and defers design refresh until after 
   assert.match(source, /isActive\?: boolean;/);
   assert.match(source, /isActive = true/);
   assert.match(source, /if \(!isActive\) \{\s*return undefined;\s*\}/);
-  assert.match(source, /if \(!isActive \|\| activeMode !== 'design'\) \{\s*return;\s*\}/);
+  assert.match(source, /if \(!isActive\) \{\s*return;\s*\}/);
   assert.match(source, /refreshFrame = window\.requestAnimationFrame\(\(\) => \{/);
   assert.match(source, /canvasEditorRef\.current\.Canvas\.refresh\(\);/);
   assert.match(source, /const showSpacingOverlay = isActive && !isPreviewActive/);
@@ -192,17 +208,57 @@ test('VisualHtmlEditor initializes and refreshes mapping on load and before savi
 
   assert.match(source, /controllerRef\.current\.setPersistedDocument\(\{ content: fileContent, version: data\.version \?\? null \}\)/);
   assert.match(source, /const revision = controllerRef\.current\.editorRevision \+ 1/);
-  assert.match(source, /rebuildSourceLocationMap\(fileContent, revision\)/);
+  assert.match(source, /rebuildSourceLocationMap\(fileContent, revision, \{ synchronous: true \}\)/);
   assert.match(source, /nextHtml = collectCanvasHtml\(\)/);
   assert.match(source, /flushedFromDesign = true/);
-  assert.match(source, /applyCurrentEditorDocument\(nextHtml, 'design'\)/);
-  assert.match(source, /const canFlushDesignDocument = activeMode === 'design' && Boolean\(canvasEditorRef\.current\)/);
+  assert.match(source, /applyCurrentEditorDocument\(nextHtml, 'design', \{ rebuildSourceLocation: 'sync' \}\)/);
+  assert.match(source, /const canFlushDesignDocument = Boolean\(canvasEditorRef\.current\)/);
   assert.match(source, /let discoveredDesignChange = false/);
   assert.match(source, /discoveredDesignChange = true/);
   assert.match(source, /const flushDocumentToFile = useCallback\(async \(\{/);
   assert.match(source, /reason: 'manual-save'/);
-  assert.match(source, /if \(!flushedFromDesign \|\| activeMode !== 'design'\) \{\s*syncCanvasDocumentFromHtml\(nextHtml\);\s*\}/);
+  assert.doesNotMatch(source, /if \(!flushedFromDesign \|\| activeMode !== 'design'\) \{\s*syncCanvasDocumentFromHtml\(nextHtml\);\s*\}/);
   assert.doesNotMatch(source, /controllerRef\.current\.applyDesignToSource\(nextHtml\);/);
+});
+
+test('VisualHtmlEditor defers expensive source-location mapping for large editor changes', async () => {
+  const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /LARGE_HTML_SOURCE_LIGHTWEIGHT_THRESHOLD/);
+  assert.match(source, /function shouldDeferSourceLocationRebuild/);
+  assert.match(source, /function createDeferredSourceLocationMap/);
+  assert.match(source, /pendingSourceLocationRebuildRef/);
+  assert.match(source, /scheduleSourceLocationMapRebuild/);
+  assert.match(source, /cancelPendingSourceLocationMapRebuild/);
+  assert.match(source, /rebuildSourceLocation: 'defer'/);
+  assert.match(source, /requestIdleCallback/);
+  assert.match(source, /rebuildSourceLocationMap\(nextHtml, revision\)/);
+  assert.match(source, /rebuildSourceLocationMap\(nextHtml, revision, \{ synchronous: true \}\)/);
+  assert.match(source, /if \(shouldDeferSourceLocationRebuild\(nextHtml\)\) \{/);
+  assert.match(source, /sourceLocationMapRef\.current = createDeferredSourceLocationMap\(revision,/);
+  assert.match(source, /controllerRef\.current\.setSourceLocationResult\(\{\s*revision,\s*status: 'unavailable',\s*reason:/);
+  assert.doesNotMatch(source, /if \(controllerRef\.current\.documentText\.length >= LARGE_HTML_SOURCE_LIGHTWEIGHT_THRESHOLD\)/);
+});
+
+test('VisualHtmlEditor avoids synchronous source-location parsing on large load and save paths', async () => {
+  const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /const markSourceLocationRebuildDeferred = useCallback\(/);
+  assert.match(source, /markSourceLocationRebuildDeferred\(nextHtml, revision, '源码位置映射已延后，保存不会阻塞界面。'\)/);
+  assert.match(source, /markSourceLocationRebuildDeferred\(fileContent, revision, '源码位置映射正在后台生成，页面会先进入可视化编辑。'\)/);
+  assert.match(source, /const mapping = shouldDeferSourceLocationRebuild\(nextHtml\)\s*\?\s*markSourceLocationRebuildDeferred/);
+  assert.match(source, /const mapping = shouldDeferSourceLocationRebuild\(fileContent\)\s*\?\s*markSourceLocationRebuildDeferred/);
+  assert.match(source, /源码位置映射正在后台更新，定位可能稍后可用。/);
+});
+
+test('VisualHtmlEditor avoids full design html serialization during routine dirty notifications', async () => {
+  const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /DESIGN_SYNC_DEBOUNCE_MS = 4000/);
+  assert.match(source, /AUTO_FLUSH_DELAY_MS = 6000/);
+  assert.match(source, /controllerRef\.current\.setDirtyDesign\(true\)/);
+  assert.doesNotMatch(source, /if \(controllerRef\.current\.dirtySource\) \{\s*return;\s*\}/);
+  assert.doesNotMatch(source, /requestDesignDocumentSync\(\);\s*scheduleDocumentFlush\(\);/);
 });
 
 test('VisualHtmlEditor exposes live source-location mapping and a freshness helper to SpacingOverlay', async () => {
@@ -217,8 +273,8 @@ test('VisualHtmlEditor exposes live source-location mapping and a freshness help
   assert.match(source, /if \(pendingDesignSyncTimeoutRef\.current !== null\) \{\s*window\.clearTimeout\(pendingDesignSyncTimeoutRef\.current\);\s*flushDesignDocumentSync\(\);\s*return sourceLocationMapRef\.current;\s*\}/);
   assert.match(source, /controllerRef\.current\.sourceLocationState\.isStale/);
   assert.match(source, /sourceLocationMapRef\.current/);
-  assert.match(source, /const nextHtml = activeMode === 'design' && canvasEditorRef\.current/);
-  assert.match(source, /rebuildSourceLocationMap\(nextHtml, controllerRef\.current\.editorRevision\)/);
+  assert.match(source, /const nextHtml = canvasEditorRef\.current/);
+  assert.match(source, /rebuildSourceLocationMap\(nextHtml, controllerRef\.current\.editorRevision, \{ synchronous: true \}\)/);
   assert.match(source, /sourceLocationMap=\{sourceLocationMapRef\.current\}/);
   assert.match(source, /ensureFreshSourceLocationMap=\{ensureFreshSourceLocationMap\}/);
   assert.match(source, /ensureLatestSourceContextForChat=\{ensureLatestSourceContextForChat\}/);
@@ -274,12 +330,12 @@ test('VisualHtmlEditor treats preview as a read-only browser-like canvas state',
   assert.match(source, /src=\{activePreviewUrl\}/);
   assert.doesNotMatch(source, /srcDoc=\{previewDocument\}/);
   assert.match(source, /bodyHtml: extractCanvasBodyHtmlForSave\(canvasEditorRef\.current\.getHtml\(\)\)/);
-  assert.match(source, /const showSpacingOverlay = isActive && !isPreviewActive && !eligibilityError && activeMode === 'design' && canvasEditor && grapesLikeBridge/);
+  assert.match(source, /const showSpacingOverlay = isActive && !isPreviewActive && !eligibilityError && canvasEditor && grapesLikeBridge/);
   assert.match(source, /const previewViewportWidth = canvasDevice === 'desktop'\s*\?\s*'100%'\s*:\s*canvasDevice === 'tablet'\s*\?\s*'770px'\s*:\s*'320px';/);
   assert.match(source, /setCanvasDevice\(device\);/);
   assert.match(source, /if \(!editor\) \{\s*return;\s*\}/);
   assert.match(source, /syncCanvasDocumentFromHtml\(nextHtml\);/);
-  assert.match(source, /if \(isPreviewActive\) \{\s*setIsPreviewActive\(false\);\s*return;\s*\}/);
+  assert.match(source, /if \(isPreviewActive\) \{\s*applyPreviewRuntimeStateToDesign\(\);\s*setIsPreviewActive\(false\);\s*return;\s*\}/);
   assert.match(source, /if \(!editor\) \{\s*return;\s*\}/);
   assert.match(source, /editor\.stopCommand\('preview'\);/);
   assert.doesNotMatch(source, /editor\.select\?\.\(\);/);
@@ -331,19 +387,19 @@ test('VisualHtmlEditor shows an unavailable source-location notice instead of fa
   assert.match(source, /controller\.sourceLocationState\.reason/);
 });
 
-test('VisualHtmlEditor maps source cursor changes to the nearest source-location entry and canvas selection', async () => {
+test('VisualHtmlEditor leaves source cursor handling to the separate code tab', async () => {
   const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
 
-  assert.match(source, /findNearestSourceLocationEntry/);
+  assert.doesNotMatch(source, /findNearestSourceLocationEntry/);
   assert.match(source, /findCanvasComponentForSourceEntry/);
   assert.match(source, /selectCanvasComponentForSourceEntry/);
-  assert.match(source, /const handleSourceCursorChange = useCallback\(/);
-  assert.match(source, /const mapping = ensureFreshSourceLocationMap\(\)/);
-  assert.match(source, /const nextEntry = findNearestSourceLocationEntry\(mapping, position\)/);
-  assert.match(source, /pendingSourceCursorEntryRef\.current = nextEntry/);
+  assert.doesNotMatch(source, /const handleSourceCursorChange = useCallback\(/);
+  assert.doesNotMatch(source, /const mapping = ensureFreshSourceLocationMap\(\)/);
+  assert.doesNotMatch(source, /const nextEntry = findNearestSourceLocationEntry\(mapping, position\)/);
+  assert.doesNotMatch(source, /pendingSourceCursorEntryRef\.current = nextEntry/);
   assert.match(source, /editor\.select\?\.\(nextComponent\)/);
   assert.match(source, /scrollTo\?: \(component: unknown\) => void \}\)\.scrollTo\?\.\(nextComponent\)/);
-  assert.match(source, /onCursorChange=\{handleSourceCursorChange\}/);
+  assert.doesNotMatch(source, /onCursorChange=\{handleSourceCursorChange\}/);
 });
 
 test('VisualHtmlEditor source cursor plumbing rejects weak tagName-only canvas matches', async () => {
@@ -354,34 +410,31 @@ test('VisualHtmlEditor source cursor plumbing rejects weak tagName-only canvas m
   assert.doesNotMatch(source, /return bestScore > 0 \? bestComponent : null;/);
 });
 
-test('VisualHtmlEditor clears pending source cursor entries when loading or invalidating mappings', async () => {
+test('VisualHtmlEditor clears pending source cursor entries when loading or activating the design canvas', async () => {
   const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
 
   assert.match(source, /const clearPendingSourceCursorEntry = useCallback\(\(\) => \{\s*pendingSourceCursorEntryRef\.current = null;\s*\}, \[\]\);/);
   assert.match(source, /clearPendingSourceCursorEntry\(\);\s*controllerRef\.current\.setPersistedDocument\(\{ content: fileContent, version: data\.version \?\? null \}\)/);
   assert.match(source, /clearPendingSourceCursorEntry\(\);\s*controllerRef\.current\.setPersistedDocument\(\{ content: nextHtml, version: data\.version \?\? null \}\)/);
-  assert.match(source, /if \(mapping\.status !== 'ready' \|\| !nextEntry\) \{\s*clearPendingSourceCursorEntry\(\);\s*return;\s*\}/);
+  assert.doesNotMatch(source, /if \(mapping\.status !== 'ready' \|\| !nextEntry\) \{\s*clearPendingSourceCursorEntry\(\);\s*return;\s*\}/);
   assert.match(source, /if \(!selectCanvasComponentForSourceEntry\(canvasEditor, pendingSourceCursorEntryRef\.current\)\) \{\s*clearPendingSourceCursorEntry\(\);\s*\}/);
 });
 
-test('VisualHtmlEditor debounces heavy design sync to keep inspector edits responsive', async () => {
+test('VisualHtmlEditor delays heavy design serialization to keep inspector edits responsive', async () => {
   const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
 
-  assert.match(source, /const DESIGN_SYNC_DEBOUNCE_MS = 1000/);
-  assert.match(source, /const AUTO_FLUSH_DELAY_MS = 2000/);
+  assert.match(source, /const DESIGN_SYNC_DEBOUNCE_MS = 4000/);
+  assert.match(source, /const AUTO_FLUSH_DELAY_MS = 6000/);
   assert.match(source, /const pendingDesignSyncTimeoutRef = useRef<number \| null>\(null\)/);
   assert.match(source, /const flushDesignDocumentSync = useCallback\(/);
   assert.match(source, /const nextHtml = collectCanvasHtml\(\)/);
   assert.match(source, /applyCurrentEditorDocument\(nextHtml, 'design'\)/);
-  assert.match(source, /const requestDesignDocumentSync = useCallback\(/);
-  assert.match(source, /if \(pendingDesignSyncTimeoutRef\.current !== null\) \{\s*window\.clearTimeout\(pendingDesignSyncTimeoutRef\.current\);\s*\}/);
-  assert.match(source, /pendingDesignSyncTimeoutRef\.current = window\.setTimeout\(\(\) => \{\s*flushDesignDocumentSync\(\);\s*\}, DESIGN_SYNC_DEBOUNCE_MS\)/);
   assert.match(source, /pendingDesignSyncTimeoutRef\.current = null/);
   assert.match(source, /onDirtyChange=\{\(isDirty, editor\) => \{/);
-  assert.match(source, /if \(isDirty\) \{\s*requestDesignDocumentSync\(\);\s*scheduleDocumentFlush\(\);\s*\}/);
+  assert.match(source, /if \(isDirty\) \{\s*controllerRef\.current\.setDirtyDesign\(true\);\s*scheduleDocumentFlush\(\);\s*\}/);
   assert.match(source, /const scheduleDocumentFlush = useCallback\(\(\) => \{/);
   assert.match(source, /AUTO_FLUSH_DELAY_MS/);
-  assert.match(source, /requestDesignDocumentSync\(\)/);
+  assert.doesNotMatch(source, /requestDesignDocumentSync\(\)/);
   assert.doesNotMatch(source, /if \(isDirty && !controllerRef\.current\.dirtyDesign\) \{/);
   assert.match(source, /window\.clearTimeout\(pendingDesignSyncTimeoutRef\.current\)/);
   assert.doesNotMatch(source, /pendingDesignSyncFrameRef/);
@@ -411,6 +464,21 @@ test('RightPaneContentRouter source routes visual-html targets to VisualHtmlEdit
   assert.match(source, /data-right-pane-visual-html-tab=/);
   assert.match(source, /renderedVisualHtmlTargets\.map/);
   assert.match(source, /isActive=\{isActive\}/);
+  assert.match(source, /onOpenSourceTab=\{onCodeFileOpen\}/);
   assert.match(source, /<VisualHtmlEditor/);
   assert.match(source, /data-right-pane-view="visual-html"/);
+});
+
+test('RightPane plumbing exposes a forced code-tab opener for visual html source', async () => {
+  const routerSource = await readFile(new URL('./RightPaneContentRouter.tsx', import.meta.url), 'utf8');
+  const paneSource = await readFile(new URL('./RightPane.tsx', import.meta.url), 'utf8');
+  const sidebarSource = await readFile(new URL('../../code-editor/hooks/useEditorSidebar.ts', import.meta.url), 'utf8');
+
+  assert.match(routerSource, /onCodeFileOpen\?: \(\(filePath: string\) => void\) \| null;/);
+  assert.match(routerSource, /onOpenSourceTab=\{onCodeFileOpen\}/);
+  assert.match(paneSource, /onCodeFileOpen\?: \(\(filePath: string\) => void\) \| null;/);
+  assert.match(paneSource, /onCodeFileOpen=\{onCodeFileOpen\}/);
+  assert.match(sidebarSource, /const handleCodeFileOpen = useCallback/);
+  assert.match(sidebarSource, /createCodeTarget\(\{/);
+  assert.match(sidebarSource, /handleCodeFileOpen,/);
 });
