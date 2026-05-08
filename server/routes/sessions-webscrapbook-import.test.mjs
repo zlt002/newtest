@@ -11,8 +11,8 @@ test('sessions route exposes a WebScrapBook import endpoint scoped to the sessio
   assert.match(source, /extractProjectDirectory\(lookup\.projectName\)/);
   assert.match(source, /sanitizeImportedHtmlFilename/);
   assert.match(source, /resolveUniqueImportedHtmlPath/);
-  assert.match(source, /JSZip\.loadAsync/);
-  assert.match(source, /writeZipArchiveToDirectory/);
-  assert.match(source, /content or archiveBase64 is required/);
+  assert.doesNotMatch(source, /JSZip/);
+  assert.doesNotMatch(source, /archiveBase64/);
+  assert.match(source, /content is required/);
   assert.match(source, /fsPromises\.writeFile\(target\.absolutePath, content, 'utf8'\)/);
 });

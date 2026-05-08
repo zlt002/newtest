@@ -2,7 +2,6 @@ import express from 'express';
 import path from 'path';
 import os from 'os';
 import { promises as fsPromises } from 'fs';
-import JSZip from 'jszip';
 
 import {
   getSessions,
@@ -69,85 +68,6 @@ async function resolveUniqueImportedHtmlPath(projectRoot, filename) {
   throw new Error('Unable to allocate import filename');
 }
 
-function sanitizeImportedDirectoryName(input, fallback = 'captured-page') {
-  const safeFilename = sanitizeImportedHtmlFilename(input, `${fallback}.html`);
-  const parsed = path.parse(safeFilename);
-  return parsed.name || fallback;
-}
-
-async function resolveUniqueImportedDirectory(projectRoot, dirname) {
-  const importDir = path.join(projectRoot, WEBSCRAPBOOK_IMPORT_DIR);
-  await fsPromises.mkdir(importDir, { recursive: true });
-
-  const safeDirname = sanitizeImportedDirectoryName(dirname);
-
-  for (let index = 0; index < 1000; index += 1) {
-    const candidateName = index === 0 ? safeDirname : `${safeDirname}-${index}`;
-    const resolved = path.resolve(importDir, candidateName);
-    const relative = path.relative(importDir, resolved);
-    if (relative.startsWith('..') || path.isAbsolute(relative)) {
-      throw new Error('Invalid import directory');
-    }
-
-    try {
-      await fsPromises.mkdir(resolved);
-      return {
-        absolutePath: resolved,
-        relativePath: path.join(WEBSCRAPBOOK_IMPORT_DIR, candidateName),
-      };
-    } catch (error) {
-      if (error.code !== 'EEXIST') {
-        throw error;
-      }
-    }
-  }
-
-  throw new Error('Unable to allocate import directory');
-}
-
-async function writeZipArchiveToDirectory({ projectRoot, filename, archiveBase64 }) {
-  const target = await resolveUniqueImportedDirectory(projectRoot, filename);
-  const zip = await JSZip.loadAsync(Buffer.from(archiveBase64, 'base64'));
-  let indexRelativePath = null;
-
-  const entries = Object.values(zip.files);
-  for (const entry of entries) {
-    if (entry.dir) {
-      continue;
-    }
-
-    const normalizedEntryName = entry.name.replace(/\\/g, '/').replace(/^\/+/, '');
-    if (!normalizedEntryName || normalizedEntryName.split('/').includes('..')) {
-      continue;
-    }
-
-    const absolutePath = path.resolve(target.absolutePath, normalizedEntryName);
-    const relativeToTarget = path.relative(target.absolutePath, absolutePath);
-    if (relativeToTarget.startsWith('..') || path.isAbsolute(relativeToTarget)) {
-      continue;
-    }
-
-    await fsPromises.mkdir(path.dirname(absolutePath), { recursive: true });
-    await fsPromises.writeFile(absolutePath, await entry.async('nodebuffer'));
-
-    const basename = path.basename(normalizedEntryName).toLowerCase();
-    if (!indexRelativePath && (basename === 'index.html' || basename === 'index.htm')) {
-      indexRelativePath = normalizedEntryName;
-    }
-  }
-
-  const importedEntryPath = indexRelativePath
-    ? path.join(target.relativePath, indexRelativePath)
-    : target.relativePath;
-
-  return {
-    absolutePath: indexRelativePath ? path.join(target.absolutePath, indexRelativePath) : target.absolutePath,
-    relativePath: importedEntryPath,
-    directoryPath: target.absolutePath,
-    directoryRelativePath: target.relativePath,
-  };
-}
-
 // Get sessions for a project
 router.get('/projects/:projectName/sessions', authenticateToken, async (req, res) => {
   try {
@@ -176,11 +96,10 @@ router.get('/sessions/:sessionId/lookup', authenticateToken, async (req, res) =>
 
 router.post('/sessions/:sessionId/webscrapbook/import', authenticateToken, async (req, res) => {
   try {
-    const { content, archiveBase64, filename, title, sourceUrl } = req.body ?? {};
+    const { content, filename, title, sourceUrl } = req.body ?? {};
     const hasHtmlContent = typeof content === 'string' && content.trim();
-    const hasArchiveContent = typeof archiveBase64 === 'string' && archiveBase64.trim();
-    if (!hasHtmlContent && !hasArchiveContent) {
-      return res.status(400).json({ error: 'content or archiveBase64 is required' });
+    if (!hasHtmlContent) {
+      return res.status(400).json({ error: 'content is required' });
     }
 
     const lookup = await findSessionLocation(req.params.sessionId);
@@ -198,21 +117,14 @@ router.post('/sessions/:sessionId/webscrapbook/import', authenticateToken, async
       : sourceUrl
         ? `${resolveSourceHostname(sourceUrl) || 'captured-page'}.html`
         : `captured-page-${Date.now()}.html`;
-    const target = hasArchiveContent
-      ? await writeZipArchiveToDirectory({ projectRoot, filename: filename || fallbackName, archiveBase64 })
-      : await resolveUniqueImportedHtmlPath(projectRoot, filename || fallbackName);
-
-    if (hasHtmlContent) {
-      await fsPromises.writeFile(target.absolutePath, content, 'utf8');
-    }
+    const target = await resolveUniqueImportedHtmlPath(projectRoot, filename || fallbackName);
+    await fsPromises.writeFile(target.absolutePath, content, 'utf8');
 
     res.json({
       success: true,
       projectName: lookup.projectName,
       filePath: target.absolutePath,
       relativePath: target.relativePath,
-      directoryPath: target.directoryPath,
-      directoryRelativePath: target.directoryRelativePath,
     });
   } catch (error) {
     console.error('[WebScrapBook Import] Error importing capture:', error);
