@@ -5,6 +5,7 @@ import type grapesjs from 'grapesjs';
 import {
   buildSourceLocationDomPathFromElement,
   buildSourceLocationFingerprint,
+  buildSourceLocationMap,
   findSourceLocationByIdentity,
   type SourceLocationIdentity,
   type SourceLocationMap,
@@ -1821,6 +1822,56 @@ function countLookupCandidates(mapping: SourceLocationMap, identity: SourceLocat
   };
 }
 
+function buildSourceLocationMapForSend(sourceText: string, revision: number): Promise<SourceLocationMap> {
+  if (!sourceText.trim()) {
+    return Promise.resolve(buildSourceLocationMap(sourceText, revision));
+  }
+
+  if (typeof Worker === 'undefined') {
+    return Promise.resolve(buildSourceLocationMap(sourceText, revision));
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (mapping: SourceLocationMap) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      resolve(mapping);
+    };
+
+    try {
+      const worker = new Worker(new URL('../sourceLocationMapping.worker.ts', import.meta.url), { type: 'module' });
+      worker.onmessage = (event: MessageEvent<{
+        type: 'source-location-map-result' | 'source-location-map-error';
+        mapping?: SourceLocationMap;
+      }>) => {
+        const message = event.data;
+        worker.terminate();
+        if (message?.type === 'source-location-map-result' && message.mapping) {
+          finish(message.mapping);
+          return;
+        }
+
+        finish(buildSourceLocationMap(sourceText, revision));
+      };
+      worker.onerror = () => {
+        worker.terminate();
+        finish(buildSourceLocationMap(sourceText, revision));
+      };
+      worker.postMessage({
+        type: 'build-source-location-map',
+        html: sourceText,
+        revision,
+      });
+    } catch {
+      finish(buildSourceLocationMap(sourceText, revision));
+    }
+  });
+}
+
 function findClosestElementSourceLocationWithDiagnostics({
   sourceText,
   element,
@@ -1898,7 +1949,18 @@ export async function buildSendSelectionToChatPayload({
     sourceTextLength: effectiveSourceText.length,
     hasLatestSourceContext: Boolean(latestSourceContext),
   });
-  const resolvedTargets = targets.map((target) => {
+  let onDemandSourceLocationMap: SourceLocationMap | null = null;
+  const getOnDemandSourceLocationMap = async () => {
+    if (onDemandSourceLocationMap) {
+      return onDemandSourceLocationMap;
+    }
+
+    onDemandSourceLocationMap = effectiveSourceText.trim()
+      ? await buildSourceLocationMapForSend(effectiveSourceText, mapping.revision)
+      : mapping;
+    return onDemandSourceLocationMap;
+  };
+  const resolvedTargets = await Promise.all(targets.map(async (target) => {
     const identity = extractComponentIdentity(target);
     const element = target.getEl?.() ?? null;
     const persistedMappingLocation = shouldPreferPersistedLocation && effectivePersistedSourceLocationMap
@@ -1918,7 +1980,10 @@ export async function buildSendSelectionToChatPayload({
         element,
       })
       : { location: null, attempts: [] as Array<{ tagName: string; matched: boolean }> };
-    const location = persistedLocation ?? mappingLocation ?? fallback.location;
+    const onDemandMappingLocation = !persistedLocation && !mappingLocation && !fallback.location
+      ? findSourceLocationByIdentity(await getOnDemandSourceLocationMap(), identity)
+      : null;
+    const location = persistedLocation ?? mappingLocation ?? fallback.location ?? onDemandMappingLocation;
     const shouldLogLookupDiagnostics = isSpacingOverlayDebugEnabled();
     const lookupCounts = shouldLogLookupDiagnostics ? countLookupCandidates(mapping, identity) : null;
     const targetId = String(target.getId?.() ?? target.get?.('id') ?? '').trim();
@@ -1941,6 +2006,8 @@ export async function buildSendSelectionToChatPayload({
             ? 'mapping'
             : fallback.location
               ? 'fallback'
+              : onDemandMappingLocation
+                ? 'on-demand-mapping'
               : 'unresolved',
         persistedFallbackAttempts: persistedFallback.attempts,
         fallbackAttempts: fallback.attempts,
@@ -1956,7 +2023,7 @@ export async function buildSendSelectionToChatPayload({
       location,
       targetId,
     };
-  });
+  }));
   const primaryTarget = resolvedTargets[0];
   const locations = resolvedTargets.map((target) => target.location);
 

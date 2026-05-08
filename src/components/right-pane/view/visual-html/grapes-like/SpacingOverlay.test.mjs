@@ -949,6 +949,117 @@ test('buildSendSelectionToChatPayload falls back to current sourceText outerHTML
   assert.equal(payload?.prompt, '文件路径：`src/pages/fallback.html`\n代码位置：`src/pages/fallback.html:2:3-2:36`');
 });
 
+test('buildSendSelectionToChatPayload builds source mapping on demand when large-page mapping is unavailable', async () => {
+  const sourceText = [
+    '<main>',
+    '  <aside class="menu">',
+    '    <div class="item">接单管理</div>',
+    '    <div class="item active">中单管理</div>',
+    '  </aside>',
+    '</main>',
+  ].join('\n');
+  const htmlElement = {
+    tagName: 'HTML',
+    parentElement: null,
+    children: [],
+  };
+  const bodyElement = {
+    tagName: 'BODY',
+    parentElement: htmlElement,
+    children: [],
+  };
+  const mainElement = {
+    tagName: 'MAIN',
+    parentElement: bodyElement,
+    children: [],
+  };
+  const asideElement = {
+    tagName: 'ASIDE',
+    parentElement: mainElement,
+    children: [],
+  };
+  const selectedElement = {
+    outerHTML: '<div class="item active gjs-selected" data-gjs-type="default"><span>中单管理</span></div>',
+    dataset: {},
+    tagName: 'DIV',
+    parentElement: asideElement,
+    children: [],
+    getAttributeNames() {
+      return ['class', 'data-gjs-type'];
+    },
+    getAttribute(name) {
+      if (name === 'class') return 'item active gjs-selected';
+      if (name === 'data-gjs-type') return 'default';
+      return null;
+    },
+  };
+  htmlElement.children = [bodyElement];
+  bodyElement.children = [mainElement];
+  mainElement.children = [asideElement];
+  asideElement.children = [
+    {
+      tagName: 'DIV',
+      parentElement: asideElement,
+      children: [],
+    },
+    selectedElement,
+  ];
+
+  const payload = await buildSendSelectionToChatPayload({
+    editor: {
+      getSelectedAll() {
+        return [{
+          getId() {
+            return 'runtime-only-id';
+          },
+          getAttributes() {
+            return {};
+          },
+          getEl() {
+            return selectedElement;
+          },
+          get(name) {
+            return name === 'tagName' ? 'div' : null;
+          },
+        }];
+      },
+      getSelected() {
+        return null;
+      },
+    },
+    filePath: 'src/pages/large.html',
+    sourceText,
+    sourceLocationMap: {
+      status: 'unavailable',
+      revision: 8,
+      reason: '按需定位',
+      entries: [],
+      parseErrors: [],
+    },
+    ensureFreshSourceLocationMap: async () => ({
+      status: 'unavailable',
+      revision: 8,
+      reason: '按需定位',
+      entries: [],
+      parseErrors: [],
+    }),
+  });
+
+  assert.equal(payload?.location?.startLine, 4);
+  assert.equal(payload?.location?.startColumn, 5);
+  assert.equal(payload?.prompt, '文件路径：`src/pages/large.html`\n代码位置：`src/pages/large.html:4:5-4:40`');
+});
+
+test('SpacingOverlay source builds on-demand send mapping in a worker when available', async () => {
+  const source = await readFile(new URL('./SpacingOverlay.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /buildSourceLocationMapForSend/);
+  assert.match(source, /new Worker\(new URL\('\.\.\/sourceLocationMapping\.worker\.ts', import\.meta\.url\), \{ type: 'module' \}\)/);
+  assert.match(source, /worker\.postMessage\(\{\s*type: 'build-source-location-map'/);
+  assert.match(source, /buildSourceLocationMap\(sourceText, revision\)/);
+  assert.match(source, /await getOnDemandSourceLocationMap\(\)/);
+});
+
 test('buildSendSelectionToChatPayload falls back to nearest ancestor source location when selected wrapper is not in source', async () => {
   const htmlElement = {
     tagName: 'HTML',
