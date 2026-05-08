@@ -55,6 +55,33 @@ test('overlayWindowsLiteBetterSqlite3 leaves installed dependency untouched when
   await rm(tempRoot, { recursive: true, force: true });
 });
 
+test('overlayWindowsLiteBetterSqlite3 leaves installed dependency untouched when preset has no native binary', async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'windows-lite-better-sqlite3-incomplete-'));
+  const sourceDir = path.join(tempRoot, 'windows-lite', 'better-sqlite3');
+  const releaseDir = path.join(tempRoot, 'release', 'windows-lite');
+  const installedDir = path.join(releaseDir, 'node_modules', 'better-sqlite3');
+
+  await mkdir(sourceDir, { recursive: true });
+  await mkdir(path.join(installedDir, 'build', 'Release'), { recursive: true });
+  await writeFile(path.join(sourceDir, 'package.json'), '{"name":"better-sqlite3","preset":true}\n', 'utf8');
+  await writeFile(path.join(installedDir, 'package.json'), '{"name":"better-sqlite3","preset":false}\n', 'utf8');
+  await writeFile(path.join(installedDir, 'build', 'Release', 'better_sqlite3.node'), 'installed binary', 'utf8');
+
+  const overlaid = await overlayWindowsLiteBetterSqlite3({ projectRoot: tempRoot, releaseDir });
+
+  assert.equal(overlaid, false);
+  assert.equal(
+    await readFile(path.join(installedDir, 'package.json'), 'utf8'),
+    '{"name":"better-sqlite3","preset":false}\n'
+  );
+  assert.equal(
+    await readFile(path.join(installedDir, 'build', 'Release', 'better_sqlite3.node'), 'utf8'),
+    'installed binary'
+  );
+
+  await rm(tempRoot, { recursive: true, force: true });
+});
+
 test('overlayWindowsLiteBetterSqlite3 does not replace better-sqlite3 for Mac Lite', async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'mac-lite-better-sqlite3-skip-'));
   const sourceDir = path.join(tempRoot, 'windows-lite', 'better-sqlite3');

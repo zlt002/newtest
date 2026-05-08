@@ -1,39 +1,43 @@
 import express from 'express';
 import path from 'path';
 import fetch from 'node-fetch';
+import { fileURLToPath } from 'url';
 
 import { searchConversations } from '../projects.js';
 import { authenticateToken } from '../middleware/auth.js';
 import {
-  getWindowsLiteUpdateStatus,
-  launchWindowsLiteUpdater,
-  prepareWindowsLiteUpdate,
+  getLiteUpdateDistribution,
+  getLiteUpdateStatus,
+  launchLiteUpdater,
+  prepareLiteUpdate,
 } from '../windows-lite-update.js';
 
 const router = express.Router();
 
 export function resolveLiteAppDirFromRouteModuleUrl(routeModuleUrl = import.meta.url) {
-  const routeDir = path.dirname(new URL(routeModuleUrl).pathname);
+  const routeDir = path.dirname(fileURLToPath(routeModuleUrl));
   return path.join(routeDir, '..', '..');
 }
 
 // Health check endpoint (no authentication required)
 router.get('/health', (req, res) => {
+  const distribution = getLiteUpdateDistribution();
+
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    distribution: 'windows-lite'
+    distribution: distribution.name
   });
 });
 
-// Windows Lite update information endpoint
+// Lite update information endpoint
 router.get('/api/system/update-info', authenticateToken, async (req, res) => {
   try {
     const appDir = resolveLiteAppDirFromRouteModuleUrl();
-    const updateInfo = await getWindowsLiteUpdateStatus({ appDir });
+    const updateInfo = await getLiteUpdateStatus({ appDir });
     res.json(updateInfo);
   } catch (error) {
-    console.error('Windows Lite update info error:', error);
+    console.error('Lite update info error:', error);
     res.status(500).json({
       updateAvailable: false,
       error: error.message,
@@ -41,22 +45,22 @@ router.get('/api/system/update-info', authenticateToken, async (req, res) => {
   }
 });
 
-// Windows Lite online update endpoint
+// Lite online update endpoint
 router.post('/api/system/update', authenticateToken, async (req, res) => {
   try {
     const appDir = resolveLiteAppDirFromRouteModuleUrl();
-    const preparedUpdate = await prepareWindowsLiteUpdate({ appDir });
+    const preparedUpdate = await prepareLiteUpdate({ appDir });
 
     res.json({
       success: true,
-      message: 'Windows Lite update package downloaded. The application will restart to apply the update.',
+      message: 'Lite update package downloaded. The application will restart to apply the update.',
     });
 
     setTimeout(() => {
-      launchWindowsLiteUpdater(preparedUpdate.updaterScriptPath);
+      launchLiteUpdater(preparedUpdate.updaterScriptPath);
     }, 500);
   } catch (error) {
-    console.error('Windows Lite update error:', error);
+    console.error('Lite update error:', error);
     res.status(500).json({
       success: false,
       error: error.message,

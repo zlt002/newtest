@@ -136,6 +136,31 @@ test('getLiteUpdateDistribution selects Mac Lite metadata on darwin', () => {
   ]);
 });
 
+test('getLiteUpdateDistribution allows environment overrides for local update testing', () => {
+  const previousWindowsUrl = process.env.CC_UI_WINDOWS_LITE_ZIP_URL;
+  const previousProjectUrl = process.env.CC_UI_LITE_PROJECT_URL;
+  process.env.CC_UI_WINDOWS_LITE_ZIP_URL = 'http://127.0.0.1:3001/updates/local-test.zip';
+  process.env.CC_UI_LITE_PROJECT_URL = 'http://127.0.0.1:3001/updates/';
+
+  try {
+    const distribution = getLiteUpdateDistribution({ platform: 'win32' });
+
+    assert.equal(distribution.packageUrl, 'http://127.0.0.1:3001/updates/local-test.zip');
+    assert.equal(distribution.projectUrl, 'http://127.0.0.1:3001/updates/');
+  } finally {
+    if (previousWindowsUrl === undefined) {
+      delete process.env.CC_UI_WINDOWS_LITE_ZIP_URL;
+    } else {
+      process.env.CC_UI_WINDOWS_LITE_ZIP_URL = previousWindowsUrl;
+    }
+    if (previousProjectUrl === undefined) {
+      delete process.env.CC_UI_LITE_PROJECT_URL;
+    } else {
+      process.env.CC_UI_LITE_PROJECT_URL = previousProjectUrl;
+    }
+  }
+});
+
 test('fetchWindowsLiteUpdateInfo reports no update when the package URL is not reachable', async () => {
   const requestedUrls = [];
   const result = await fetchWindowsLiteUpdateInfo(async (url) => {

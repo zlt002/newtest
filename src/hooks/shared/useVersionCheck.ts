@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { version } from '../../../package.json';
 import { ReleaseInfo } from '../../types/sharedTypes';
+import { authenticatedFetch } from '../../utils/api';
 
 type VersionCheckSnapshot = {
   updateAvailable: boolean;
@@ -20,7 +21,7 @@ const versionCheckInflight = new Map<string, Promise<void>>();
 const versionCheckIntervals = new Map<string, number>();
 const versionCheckSubscribers = new Map<string, Set<(snapshot: VersionCheckSnapshot) => void>>();
 
-const WINDOWS_LITE_VERSION_CHECK_KEY = 'windows-lite';
+const LITE_VERSION_CHECK_KEY = 'lite';
 
 const notifyVersionCheckSubscribers = (key: string, snapshot: VersionCheckSnapshot) => {
   const subscribers = versionCheckSubscribers.get(key);
@@ -41,14 +42,14 @@ const updateVersionCheckSnapshot = (key: string, partial: Partial<VersionCheckSn
 };
 
 const runVersionCheck = async () => {
-  const key = WINDOWS_LITE_VERSION_CHECK_KEY;
+  const key = LITE_VERSION_CHECK_KEY;
   if (versionCheckInflight.has(key)) {
     return versionCheckInflight.get(key);
   }
 
   const request = (async () => {
     try {
-      const response = await fetch('/api/system/update-info');
+      const response = await authenticatedFetch('/api/system/update-info');
       const data = await response.json();
 
       if (response.ok && data.updateAvailable) {
@@ -87,7 +88,7 @@ const runVersionCheck = async () => {
 };
 
 export const useVersionCheck = () => {
-  const key = WINDOWS_LITE_VERSION_CHECK_KEY;
+  const key = LITE_VERSION_CHECK_KEY;
   const [snapshot, setSnapshot] = useState<VersionCheckSnapshot>(() => versionCheckStore.get(key) ?? DEFAULT_SNAPSHOT);
 
   useEffect(() => {

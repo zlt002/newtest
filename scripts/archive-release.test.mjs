@@ -41,6 +41,26 @@ test('createReleaseArchive writes a zip file for the release directory', async (
   await rm(tempRoot, { recursive: true, force: true });
 });
 
+test('createReleaseArchive excludes local update packages from dist updates', async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'windows-lite-archive-updates-'));
+  const releaseDir = path.join(tempRoot, 'release', 'windows-lite');
+  const outputFile = path.join(tempRoot, 'cc-ui-windows-lite-x64.zip');
+
+  await mkdir(path.join(releaseDir, 'dist', 'updates'), { recursive: true });
+  await writeFile(path.join(releaseDir, 'package.json'), '{"name":"test"}\n', 'utf8');
+  await writeFile(path.join(releaseDir, 'dist', 'index.html'), '<!doctype html>\n', 'utf8');
+  await writeFile(path.join(releaseDir, 'dist', 'updates', 'cc-ui-windows-lite-test.zip'), 'nested zip should not ship', 'utf8');
+
+  await createReleaseArchive({ releaseDir, outputFile });
+
+  const zip = await JSZip.loadAsync(await readFile(outputFile));
+
+  assert.ok(zip.file('windows-lite/dist/index.html'));
+  assert.equal(zip.file('windows-lite/dist/updates/cc-ui-windows-lite-test.zip'), null);
+
+  await rm(tempRoot, { recursive: true, force: true });
+});
+
 test('createReleaseArchive stores macOS command launchers as executable files', async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'mac-lite-archive-'));
   const releaseDir = path.join(tempRoot, 'release', 'mac-lite');

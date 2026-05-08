@@ -8,6 +8,14 @@ import { LITE_DISTRIBUTION, RELEASE_ROOT } from './release-manifest.mjs';
 const WINDOWS_LITE_BETTER_SQLITE3_SOURCE = 'windows-lite/better-sqlite3';
 const NPM_COMMAND = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
+function hasBetterSqlite3NativeBinary(packageDir) {
+  return [
+    resolve(packageDir, 'build', 'Release', 'better_sqlite3.node'),
+    resolve(packageDir, 'build', 'Debug', 'better_sqlite3.node'),
+    resolve(packageDir, 'build', 'better_sqlite3.node'),
+  ].some((candidatePath) => existsSync(candidatePath));
+}
+
 function runNpm(args, cwd) {
   return new Promise((resolvePromise, rejectPromise) => {
     const child = spawn(NPM_COMMAND, args, {
@@ -42,6 +50,10 @@ async function overlayWindowsLiteBetterSqlite3({
     return false;
   }
 
+  if (!hasBetterSqlite3NativeBinary(sourceDir)) {
+    return false;
+  }
+
   const targetDir = resolve(releaseDir, 'node_modules', 'better-sqlite3');
   await rm(targetDir, { recursive: true, force: true });
   await cp(sourceDir, targetDir, { recursive: true, force: true });
@@ -68,5 +80,6 @@ export {
   LITE_DISTRIBUTION,
   RELEASE_ROOT,
   WINDOWS_LITE_BETTER_SQLITE3_SOURCE,
+  hasBetterSqlite3NativeBinary,
   overlayWindowsLiteBetterSqlite3,
 };

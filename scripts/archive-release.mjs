@@ -5,6 +5,10 @@ import { pathToFileURL } from 'node:url';
 import JSZip from 'jszip';
 import { LITE_DISTRIBUTION, RELEASE_ROOT } from './release-manifest.mjs';
 
+const ARCHIVE_EXCLUDED_PATH_PATTERNS = [
+  /\/dist\/updates\//,
+];
+
 function getDefaultArchiveName(target = 'universal', distribution = LITE_DISTRIBUTION) {
   if (distribution === 'mac') {
     return target === 'arm64'
@@ -23,6 +27,11 @@ async function addDirectoryToZip(zip, sourceDir, zipPrefix) {
   for (const entry of entries) {
     const sourcePath = resolve(sourceDir, entry.name);
     const zipPath = `${zipPrefix}/${entry.name}`;
+    const normalizedZipPath = zipPath.replaceAll('\\', '/');
+
+    if (ARCHIVE_EXCLUDED_PATH_PATTERNS.some((pattern) => pattern.test(normalizedZipPath))) {
+      continue;
+    }
 
     if (entry.isDirectory()) {
       await addDirectoryToZip(zip, sourcePath, zipPath);
@@ -30,10 +39,10 @@ async function addDirectoryToZip(zip, sourceDir, zipPrefix) {
     }
 
     try {
-      const fileOptions = zipPath.endsWith('.command')
+      const fileOptions = normalizedZipPath.endsWith('.command')
         ? { unixPermissions: 0o100755 }
         : {};
-      zip.file(zipPath, await readFile(sourcePath), fileOptions);
+      zip.file(normalizedZipPath, await readFile(sourcePath), fileOptions);
     } catch (error) {
       if (error?.code === 'ENOENT') {
         continue;

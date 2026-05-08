@@ -198,19 +198,19 @@
     }
   },
   "versionUpdate": {
-    "title": "Windows Lite 有可用更新",
-    "newVersionReady": "新的 Windows Lite 更新包已准备就绪",
+    "title": "Lite 有可用更新",
+    "newVersionReady": "新的 Lite 更新包已准备就绪",
     "currentVersion": "当前版本",
     "latestVersion": "更新包标识",
     "whatsNew": "新内容：",
     "viewFullRelease": "查看更新包来源",
     "updateProgress": "更新进度：",
-    "windowsLiteHint": "点击立即更新后，系统会下载 GitLab 上的 Windows Lite 压缩包，校验通过后自动重启本地服务并替换程序文件。",
+    "windowsLiteHint": "点击立即更新后，系统会下载 GitLab 上的 Lite 压缩包，校验通过后自动重启本地服务并替换程序文件。",
     "updateCompleted": "更新程序已启动，页面稍后会随服务重启恢复。",
     "restartServer": "本地服务将自动重启以应用更新。",
     "updateFailed": "更新失败",
     "messages": {
-      "starting": "正在下载 Windows Lite 更新包...",
+      "starting": "正在下载 Lite 更新包...",
       "restarting": "更新包已下载，正在准备重启服务..."
     },
     "buttons": {

@@ -42,7 +42,13 @@ export const LITE_UPDATE_DISTRIBUTIONS = {
   },
 };
 
-export const WINDOWS_LITE_REQUIRED_PATHS = LITE_UPDATE_DISTRIBUTIONS.win32.requiredPaths;
+export const LITE_WINDOWS_REQUIRED_PATHS = LITE_UPDATE_DISTRIBUTIONS.win32.requiredPaths;
+export const WINDOWS_LITE_REQUIRED_PATHS = LITE_WINDOWS_REQUIRED_PATHS;
+
+const LITE_UPDATE_PACKAGE_URL_ENV = {
+  win32: 'CC_UI_WINDOWS_LITE_ZIP_URL',
+  darwin: 'CC_UI_MAC_LITE_ZIP_URL',
+};
 
 function normalizePackageId(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
@@ -53,7 +59,13 @@ export function getLiteUpdateDistribution({ platform = process.platform } = {}) 
   if (!distribution) {
     throw new Error(`Lite online update is not supported on ${platform}.`);
   }
-  return distribution;
+
+  const packageUrlEnvName = LITE_UPDATE_PACKAGE_URL_ENV[platform];
+  return {
+    ...distribution,
+    packageUrl: normalizePackageId(process.env[packageUrlEnvName]) || distribution.packageUrl,
+    projectUrl: normalizePackageId(process.env.CC_UI_LITE_PROJECT_URL) || distribution.projectUrl,
+  };
 }
 
 function toZipPath(value) {
@@ -88,7 +100,7 @@ function normalizeArchiveEntries(zip) {
   });
 }
 
-export async function validateWindowsLiteZip(zipBuffer, { platform = 'win32' } = {}) {
+export async function validateLiteZip(zipBuffer, { platform = 'win32' } = {}) {
   const distribution = getLiteUpdateDistribution({ platform });
   const zip = await JSZip.loadAsync(zipBuffer);
   const entries = new Set(normalizeArchiveEntries(zip));
@@ -100,7 +112,9 @@ export async function validateWindowsLiteZip(zipBuffer, { platform = 'win32' } =
   };
 }
 
-export async function extractWindowsLiteZip(zipBuffer, extractDir) {
+export const validateWindowsLiteZip = validateLiteZip;
+
+export async function extractLiteZip(zipBuffer, extractDir) {
   const zip = await JSZip.loadAsync(zipBuffer);
   const rawEntries = Object.values(zip.files).filter((entry) => !entry.dir);
   const commonRootPrefix = getCommonRootPrefix(rawEntries.map((entry) => toZipPath(entry.name)));
@@ -127,6 +141,8 @@ export async function extractWindowsLiteZip(zipBuffer, extractDir) {
     await writeFile(targetPath, await entry.async('nodebuffer'));
   }
 }
+
+export const extractWindowsLiteZip = extractLiteZip;
 
 export async function readLiteUpdateState(appDir) {
   if (!appDir) {
@@ -201,8 +217,8 @@ function shellSingleQuote(value) {
 export function buildMacLiteUpdaterScript({ appDir, extractDir, serverPid }) {
   const quotedAppDir = shellSingleQuote(appDir);
   const quotedExtractDir = shellSingleQuote(`${extractDir}/`);
-  const quotedStartCommand = shellSingleQuote(path.join(appDir, 'start.command'));
-  const quotedStopCommand = shellSingleQuote(path.join(appDir, 'stop.command'));
+  const quotedStartCommand = shellSingleQuote(path.posix.join(appDir, 'start.command'));
+  const quotedStopCommand = shellSingleQuote(path.posix.join(appDir, 'stop.command'));
 
   return [
     '#!/bin/bash',
@@ -219,7 +235,7 @@ export function buildMacLiteUpdaterScript({ appDir, extractDir, serverPid }) {
   ].join('\n');
 }
 
-export async function fetchWindowsLiteUpdateInfo(fetchImpl = fetch, { platform = process.platform } = {}) {
+export async function fetchLiteUpdateInfo(fetchImpl = fetch, { platform = process.platform } = {}) {
   const distribution = getLiteUpdateDistribution({ platform });
   let response = await fetchImpl(distribution.packageUrl, { method: 'HEAD' });
   if (response.status === 405) {
@@ -239,7 +255,7 @@ export async function fetchWindowsLiteUpdateInfo(fetchImpl = fetch, { platform =
       };
     }
 
-    throw new Error(`Windows Lite update package is not reachable: ${response.status}`);
+    throw new Error(`Lite update package is not reachable: ${response.status}`);
   }
 
   return {
@@ -251,12 +267,14 @@ export async function fetchWindowsLiteUpdateInfo(fetchImpl = fetch, { platform =
   };
 }
 
-export async function getWindowsLiteUpdateStatus({
+export const fetchWindowsLiteUpdateInfo = fetchLiteUpdateInfo;
+
+export async function getLiteUpdateStatus({
   appDir,
   fetchImpl = fetch,
   platform = process.platform,
 } = {}) {
-  const updateInfo = await fetchWindowsLiteUpdateInfo(fetchImpl, { platform });
+  const updateInfo = await fetchLiteUpdateInfo(fetchImpl, { platform });
   const installedState = await readLiteUpdateState(appDir);
   const currentPackageId = normalizePackageId(installedState?.packageId);
   const remotePackageId = normalizePackageId(updateInfo.packageId);
@@ -268,14 +286,16 @@ export async function getWindowsLiteUpdateStatus({
   };
 }
 
-export async function prepareWindowsLiteUpdate({
+export const getWindowsLiteUpdateStatus = getLiteUpdateStatus;
+
+export async function prepareLiteUpdate({
   appDir,
   fetchImpl = fetch,
   platform = process.platform,
   serverPid = process.pid,
 } = {}) {
   const distribution = getLiteUpdateDistribution({ platform });
-  const updateInfo = await fetchWindowsLiteUpdateInfo(fetchImpl, { platform });
+  const updateInfo = await fetchLiteUpdateInfo(fetchImpl, { platform });
 
   if (!updateInfo.updateAvailable) {
     throw new Error('No Lite update package is available.');
@@ -290,22 +310,22 @@ export async function prepareWindowsLiteUpdate({
 
   const response = await fetchImpl(distribution.packageUrl);
   if (!response.ok) {
-    throw new Error(`Failed to download Windows Lite update package: ${response.status}`);
+    throw new Error(`Failed to download Lite update package: ${response.status}`);
   }
 
   const zipBuffer = typeof response.buffer === 'function'
     ? await response.buffer()
     : Buffer.from(await response.arrayBuffer());
-  const validation = await validateWindowsLiteZip(zipBuffer, { platform });
+  const validation = await validateLiteZip(zipBuffer, { platform });
   if (!validation.valid) {
-    throw new Error(`Invalid Windows Lite update package. Missing: ${validation.missingPaths.join(', ')}`);
+    throw new Error(`Invalid Lite update package. Missing: ${validation.missingPaths.join(', ')}`);
   }
 
   const updateRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'cc-ui-windows-lite-update-'));
   const extractDir = path.join(updateRoot, 'package');
   const updaterScriptPath = path.join(updateRoot, platform === 'win32' ? 'apply-update.cmd' : 'apply-update.sh');
 
-  await extractWindowsLiteZip(zipBuffer, extractDir);
+  await extractLiteZip(zipBuffer, extractDir);
   await writeLiteUpdateState(extractDir, { updateInfo, platform });
   await writeFile(
     updaterScriptPath,
@@ -322,7 +342,9 @@ export async function prepareWindowsLiteUpdate({
   };
 }
 
-export function launchWindowsLiteUpdater(updaterScriptPath) {
+export const prepareWindowsLiteUpdate = prepareLiteUpdate;
+
+export function launchLiteUpdater(updaterScriptPath) {
   const isWindowsScript = updaterScriptPath.toLowerCase().endsWith('.cmd');
   const child = spawn(isWindowsScript ? 'cmd.exe' : '/bin/bash', isWindowsScript ? ['/c', updaterScriptPath] : [updaterScriptPath], {
     detached: true,
@@ -331,3 +353,5 @@ export function launchWindowsLiteUpdater(updaterScriptPath) {
   });
   child.unref();
 }
+
+export const launchWindowsLiteUpdater = launchLiteUpdater;

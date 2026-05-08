@@ -112,6 +112,23 @@ test('build-release generates a runtime-only dependency whitelist', async () => 
     );
   }
 
+  const releaseStartVbs = await readFile(path.resolve(process.cwd(), 'release/windows-lite/start.vbs'), 'utf8');
+  assert.match(
+    releaseStartVbs,
+    /shell\.Run command, 0, False/,
+    'Windows Lite start.vbs should keep the server window hidden'
+  );
+  assert.match(
+    releaseStartVbs,
+    /shell\.Run appUrl, 1, False/,
+    'Windows Lite start.vbs should open the browser after the service is ready'
+  );
+  assert.match(
+    releaseStartVbs,
+    /Check logs\\server\.log/,
+    'Windows Lite start.vbs should show a useful error if the service never becomes ready'
+  );
+
   for (const releaseFile of ['start.cmd', 'stop.cmd']) {
     assert.ok(
       !existsSync(path.resolve(process.cwd(), 'release/windows-lite', releaseFile)),
