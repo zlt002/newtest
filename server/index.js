@@ -313,7 +313,7 @@ app.locals.wss = wss;
 
 app.use(cors({ exposedHeaders: ['X-Refreshed-Token'] }));
 app.use(express.json({
-    limit: '50mb',
+    limit: '200mb',
     type: (req) => {
         // Skip multipart/form-data requests (for file uploads like images)
         const contentType = req.headers['content-type'] || '';
@@ -323,7 +323,7 @@ app.use(express.json({
         return contentType.includes('json');
     }
 }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.urlencoded({ limit: '200mb', extended: true }));
 
 // Attach local user to all /api requests
 app.use('/api', authenticateToken);

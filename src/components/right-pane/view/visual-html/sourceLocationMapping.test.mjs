@@ -31,6 +31,34 @@ test('buildSourceLocationMap builds line and column data for nested elements', (
   assert.ok((button?.endColumn ?? 0) > (button?.startColumn ?? 0));
 });
 
+test('buildSourceLocationMap parses only body content while preserving absolute source positions', () => {
+  const html = `<!doctype html>
+<html>
+  <head>
+    <style>
+      .card { color: red; }
+    </style>
+    <script>window.bootstrap = true;</script>
+  </head>
+  <body>
+    <main id="app">
+      <button class="primary">Run</button>
+    </main>
+  </body>
+</html>`;
+
+  const mapping = buildSourceLocationMap(html, 9);
+  const button = mapping.entries.find((entry) => entry.tagName === 'button');
+
+  assert.equal(mapping.status, 'ready');
+  assert.equal(mapping.revision, 9);
+  assert.equal(mapping.entries.some((entry) => entry.tagName === 'style'), false);
+  assert.equal(mapping.entries.some((entry) => entry.tagName === 'script'), false);
+  assert.equal(button?.domPath, 'html > body > main > button');
+  assert.equal(button?.startLine, 11);
+  assert.equal(button?.startColumn, 7);
+});
+
 test('findSourceLocationByIdentity falls back from componentId to fingerprint and domPath', () => {
   const html = `<!doctype html>
 <html>

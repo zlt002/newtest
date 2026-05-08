@@ -1,4 +1,4 @@
-import { parse } from 'parse5';
+import { parse, parseFragment } from 'parse5';
 
 export type SourceLocationIdentity = {
   componentId: string | null;
@@ -43,6 +43,17 @@ type DomPathElement = {
   tagName: string;
   parentElement: DomPathElement | null;
   children: ArrayLike<DomPathElement>;
+};
+
+type SourceLocationOffset = {
+  line: number;
+  column: number;
+};
+
+type BodyFragmentSource = {
+  html: string;
+  parentPath: string;
+  offset: SourceLocationOffset;
 };
 
 const COMPONENT_ID_ATTRIBUTES = ['data-ccui-component-id', 'data-gjs-id'];
@@ -168,7 +179,48 @@ function buildDomPath(tagName: string, parentPath: string, siblingIndex: number)
   return parentPath ? `${parentPath} > ${segment}` : segment;
 }
 
-function buildLocationFromNode(node: any): SourceLocationEntry | null {
+function translateSourceLine(line: number, offset: SourceLocationOffset): number {
+  return line + offset.line - 1;
+}
+
+function translateSourceColumn(line: number, column: number, offset: SourceLocationOffset): number {
+  return line === 1 ? column + offset.column - 1 : column;
+}
+
+function getLineAndColumnAtOffset(source: string, offset: number): SourceLocationOffset {
+  let line = 1;
+  let column = 1;
+
+  for (let index = 0; index < offset; index += 1) {
+    if (source[index] === '\n') {
+      line += 1;
+      column = 1;
+    } else {
+      column += 1;
+    }
+  }
+
+  return { line, column };
+}
+
+function extractBodyFragmentSource(html: string): BodyFragmentSource | null {
+  const bodyStartMatch = /<body\b[^>]*>/i.exec(html);
+  if (!bodyStartMatch || bodyStartMatch.index < 0) {
+    return null;
+  }
+
+  const contentStart = bodyStartMatch.index + bodyStartMatch[0].length;
+  const bodyEndIndex = html.toLowerCase().indexOf('</body>', contentStart);
+  const contentEnd = bodyEndIndex >= 0 ? bodyEndIndex : html.length;
+
+  return {
+    html: html.slice(contentStart, contentEnd),
+    parentPath: 'html > body',
+    offset: getLineAndColumnAtOffset(html, contentStart),
+  };
+}
+
+function buildLocationFromNode(node: any, offset: SourceLocationOffset): SourceLocationEntry | null {
   const sourceCodeLocation = node?.sourceCodeLocation;
   if (!sourceCodeLocation) {
     return null;
@@ -184,10 +236,10 @@ function buildLocationFromNode(node: any): SourceLocationEntry | null {
     domPath,
     tagName: String(node.tagName ?? '').toLowerCase(),
     attributes,
-    startLine: sourceCodeLocation.startLine,
-    startColumn: sourceCodeLocation.startCol,
-    endLine: sourceCodeLocation.endLine,
-    endColumn: sourceCodeLocation.endCol,
+    startLine: translateSourceLine(sourceCodeLocation.startLine, offset),
+    startColumn: translateSourceColumn(sourceCodeLocation.startLine, sourceCodeLocation.startCol, offset),
+    endLine: translateSourceLine(sourceCodeLocation.endLine, offset),
+    endColumn: translateSourceColumn(sourceCodeLocation.endLine, sourceCodeLocation.endCol, offset),
   };
 }
 
@@ -385,7 +437,12 @@ function findLooseFingerprintMatch(
   return chooseBestLooseFingerprintMatch(candidates, identity);
 }
 
-function collectEntries(node: any, parentPath = '', entries: SourceLocationEntry[] = []): SourceLocationEntry[] {
+function collectEntries(
+  node: any,
+  parentPath = '',
+  entries: SourceLocationEntry[] = [],
+  offset: SourceLocationOffset = { line: 1, column: 1 },
+): SourceLocationEntry[] {
   const childNodes = (Array.isArray(node?.childNodes) ? node.childNodes : []) as any[];
   const siblingTotals = childNodes.reduce((counts: Map<string, number>, childNode: any) => {
     if (childNode && typeof childNode === 'object' && typeof childNode.tagName === 'string') {
@@ -409,7 +466,7 @@ function collectEntries(node: any, parentPath = '', entries: SourceLocationEntry
       const totalCount = siblingTotals.get(tagName) ?? 0;
 
       const nextPath = buildDomPath(tagName, parentPath, totalCount > 1 ? siblingIndex : -1);
-      const entry = buildLocationFromNode(childNode);
+      const entry = buildLocationFromNode(childNode, offset);
 
       if (entry) {
         entries.push({
@@ -419,9 +476,9 @@ function collectEntries(node: any, parentPath = '', entries: SourceLocationEntry
       }
 
       if (tagName === 'template' && childNode.content) {
-        collectEntries(childNode.content, nextPath, entries);
+        collectEntries(childNode.content, nextPath, entries, offset);
       } else {
-        collectEntries(childNode, nextPath, entries);
+        collectEntries(childNode, nextPath, entries, offset);
       }
     }
   }
@@ -441,14 +498,27 @@ export function buildSourceLocationMap(html: string, revision = 0): SourceLocati
   }
 
   const parseErrors: string[] = [];
-  const document = parse(html, {
+  const bodyFragment = extractBodyFragmentSource(html);
+  const document = bodyFragment
+    ? parseFragment(bodyFragment.html, {
+      sourceCodeLocationInfo: true,
+      onParseError: (error) => {
+        parseErrors.push(String(error?.code ?? 'parse-error'));
+      },
+    })
+    : parse(html, {
     sourceCodeLocationInfo: true,
     onParseError: (error) => {
       parseErrors.push(String(error?.code ?? 'parse-error'));
     },
   });
 
-  const entries = collectEntries(document);
+  const entries = collectEntries(
+    document,
+    bodyFragment?.parentPath ?? '',
+    [],
+    bodyFragment?.offset ?? { line: 1, column: 1 },
+  );
 
   if (entries.length === 0) {
     return {
