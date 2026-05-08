@@ -2,8 +2,6 @@ import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { authenticatedFetch } from "../../../utils/api";
 import { ReleaseInfo } from "../../../types/sharedTypes";
-import { copyTextToClipboard } from "../../../utils/clipboard";
-import type { InstallMode } from "../../../hooks/shared/useVersionCheck";
 
 interface VersionUpgradeModalProps {
     isOpen: boolean;
@@ -11,7 +9,6 @@ interface VersionUpgradeModalProps {
     releaseInfo: ReleaseInfo | null;
     currentVersion: string;
     latestVersion: string | null;
-    installMode: InstallMode;
 }
 
 export function VersionUpgradeModal({
@@ -20,23 +17,18 @@ export function VersionUpgradeModal({
     releaseInfo,
     currentVersion,
     latestVersion,
-    installMode
 }: VersionUpgradeModalProps) {
     const { t } = useTranslation('common');
-    const upgradeCommand = installMode === 'npm'
-        ? t('versionUpdate.npmUpgradeCommand')
-        : 'git checkout main && git pull && npm install';
     const [isUpdating, setIsUpdating] = useState(false);
     const [updateOutput, setUpdateOutput] = useState('');
     const [updateError, setUpdateError] = useState('');
 
     const handleUpdateNow = useCallback(async () => {
         setIsUpdating(true);
-        setUpdateOutput('Starting update...\n');
+        setUpdateOutput(`${t('versionUpdate.messages.starting')}\n`);
         setUpdateError('');
 
         try {
-            // Call the backend API to run the update command
             const response = await authenticatedFetch('/api/system/update', {
                 method: 'POST',
             });
@@ -44,20 +36,19 @@ export function VersionUpgradeModal({
             const data = await response.json();
 
             if (response.ok) {
-                setUpdateOutput(prev => prev + data.output + '\n');
-                setUpdateOutput(prev => prev + '\n✅ Update completed successfully!\n');
-                setUpdateOutput(prev => prev + 'Please restart the server to apply changes.\n');
+                setUpdateOutput(prev => prev + (data.message || t('versionUpdate.messages.restarting')) + '\n');
+                setUpdateOutput(prev => prev + `\n${t('versionUpdate.updateCompleted')}\n`);
             } else {
                 setUpdateError(data.error || 'Update failed');
-                setUpdateOutput(prev => prev + '\n❌ Update failed: ' + (data.error || 'Unknown error') + '\n');
+                setUpdateOutput(prev => prev + '\n' + t('versionUpdate.updateFailed') + ': ' + (data.error || 'Unknown error') + '\n');
             }
         } catch (error: any) {
             setUpdateError(error.message);
-            setUpdateOutput(prev => prev + '\n❌ Update failed: ' + error.message + '\n');
+            setUpdateOutput(prev => prev + '\n' + t('versionUpdate.updateFailed') + ': ' + error.message + '\n');
         } finally {
             setIsUpdating(false);
         }
-    }, []);
+    }, [t]);
 
     if (!isOpen) return null;
 
@@ -151,19 +142,10 @@ export function VersionUpgradeModal({
                     </div>
                 )}
 
-                {/* Upgrade Instructions */}
                 {!isUpdating && !updateOutput && (
-                    <div className="space-y-3">
-                        <h3 className="text-sm font-medium text-gray-900 dark:text-white">{t('versionUpdate.manualUpgrade')}</h3>
-                        <div className="rounded-lg border bg-gray-100 p-3 dark:bg-gray-800">
-                            <code className="font-mono text-sm text-gray-800 dark:text-gray-200">
-                                {upgradeCommand}
-                            </code>
-                        </div>
-                        <p className="text-xs text-gray-600 dark:text-gray-400">
-                            {t('versionUpdate.manualUpgradeHint')}
-                        </p>
-                    </div>
+                    <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-200">
+                        {t('versionUpdate.windowsLiteHint')}
+                    </p>
                 )}
 
                 {/* Actions */}
@@ -176,12 +158,6 @@ export function VersionUpgradeModal({
                     </button>
                     {!updateOutput && (
                         <>
-                            <button
-                                onClick={() => copyTextToClipboard(upgradeCommand)}
-                                className="flex-1 rounded-md bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
-                            >
-                                {t('versionUpdate.buttons.copyCommand')}
-                            </button>
                             <button
                                 onClick={handleUpdateNow}
                                 disabled={isUpdating}

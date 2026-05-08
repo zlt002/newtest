@@ -18,19 +18,21 @@
 
 - `http://127.0.0.1:3001`
 
-如果启动失败，`start.vbs` 会弹出提示框，引导你改用 `start.cmd` 查看详细错误。
-
-如果你希望看到控制台日志，也可以直接双击：
-
-- `start.cmd`
+如果启动失败，`start.vbs` 会弹出提示框，并把服务日志写入 `logs\server.log`。
 
 如果你想手动停止本地服务，可以双击：
 
-- `stop.cmd`
-
-如果你希望静默停止服务，也可以双击：
-
 - `stop.vbs`
+
+## 在线更新
+
+Windows Lite 会检查 `cc-ui-windows-lite-x64.zip` 是否可用。
+
+如果更新按钮没有出现，通常说明：
+
+- 当前更新包地址不可访问
+- 或当前已经是最新可用包
+- 或你正在源码开发模式下运行，而不是运行 `Windows Lite` 发布包
 
 ## 不支持的启动方式
 
@@ -60,12 +62,12 @@
 ### 打开了浏览器但无法对话
 
 - 确认本机已经安装并登录 `Claude Code`
-- 确认是通过 `start.vbs` 或 `start.cmd` 启动，而不是直接打开 `dist/index.html`
+- 确认是通过 `start.vbs` 启动，而不是直接打开 `dist/index.html`
 
 ### 关闭浏览器后，3001 端口还在
 
 - 这是正常现象，浏览器关闭不会自动停止本地 Node 服务
-- 如需停止服务，请运行 `stop.cmd`
+- 如需停止服务，请运行 `stop.vbs`
 
 ## 当前验证版精简内容
 
@@ -100,5 +102,8 @@
    npm run release:windows-lite:x64:zip
    ```
 
-3. 压缩整个 `release/windows-lite/` 目录。
-4. 将生成的 zip 文件发送给 Windows 用户。
+3. 将生成的 zip 文件发送给 Windows 用户：
+
+   ```text
+   release/cc-ui-windows-lite-x64.zip
+   ```

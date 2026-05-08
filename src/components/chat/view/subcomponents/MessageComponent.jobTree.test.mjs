@@ -278,8 +278,8 @@ test('MessageComponent renders user image attachments as real images when data i
   assert.match(markup, /<img/);
   assert.match(markup, /src="data:image\/png;base64,ZmFrZS1pbWFnZQ=="/);
   assert.match(markup, /alt="image-1.png"/);
-  assert.match(markup, /class="h-20 w-20 overflow-hidden rounded-lg border border-blue-300\/40 bg-blue-500\/30 transition-opacity hover:opacity-90"/);
-  assert.match(markup, /class="h-full w-full object-cover"/);
+  assert.match(markup, /class="h-24 w-32 max-w-none flex-none overflow-hidden rounded-lg border border-blue-300\/40 bg-blue-500\/30 transition-opacity hover:opacity-90"/);
+  assert.match(markup, /class="block h-full w-full max-w-none object-cover"/);
 });
 
 test('MessageComponent renders user image placeholders when image data is unavailable', () => {

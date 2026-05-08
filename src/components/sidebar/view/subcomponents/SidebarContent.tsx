@@ -60,6 +60,8 @@ type SidebarContentProps = {
   isRefreshing: boolean;
   onCreateProject: () => void;
   onOpenHooksOverview: () => void;
+  updateAvailable: boolean;
+  onShowVersionUpdate: () => void;
   onCreateProjectFromDroppedFolder: (folder: DroppedFolder) => void;
   onCollapseSidebar: () => void;
   onShowSettings: () => void;
@@ -91,6 +93,8 @@ export default function SidebarContent({
   isRefreshing,
   onCreateProject,
   onOpenHooksOverview,
+  updateAvailable,
+  onShowVersionUpdate,
   onCreateProjectFromDroppedFolder,
   onCollapseSidebar,
   onShowSettings,
@@ -184,6 +188,8 @@ export default function SidebarContent({
         isRefreshing={isRefreshing}
         onCreateProject={onCreateProject}
         onOpenHooksOverview={onOpenHooksOverview}
+        updateAvailable={updateAvailable}
+        onShowVersionUpdate={onShowVersionUpdate}
         onCollapseSidebar={onCollapseSidebar}
         onShowSettings={onShowSettings}
         t={t}

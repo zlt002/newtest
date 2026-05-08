@@ -77,6 +77,7 @@ const MessageComponent = memo(({ messageKey, message, prevMessage, createDiff, o
     assistantCopyContent.trim().length > 0 &&
     !isCommandOrFileEditToolResponse;
   const userImages = Array.isArray(message.images) ? message.images : [];
+  const hasUserImages = userImages.length > 0;
   const shouldRenderUserText = userCopyContent.trim().length > 0;
   const activeImage = activeImageIndex != null ? userImages[activeImageIndex] || null : null;
 
@@ -154,7 +155,7 @@ const MessageComponent = memo(({ messageKey, message, prevMessage, createDiff, o
         /* User message bubble on the right */
         <>
           <div className="flex w-full items-end space-x-0 sm:w-auto sm:max-w-[85%] sm:space-x-3 md:max-w-md lg:max-w-lg xl:max-w-xl">
-            <div className="group flex-1 rounded-2xl rounded-br-md bg-blue-600 px-3 py-2 text-white shadow-sm sm:flex-initial sm:px-4">
+            <div className={`group flex-1 rounded-2xl rounded-br-md bg-blue-600 px-3 py-2 text-white shadow-sm sm:flex-initial sm:px-4 ${hasUserImages ? 'min-w-32' : ''}`}>
               {shouldRenderUserText && (
                 <div
                   className={`whitespace-pre-wrap break-words text-sm ${userMessageCollapseState.shouldClamp ? 'line-clamp-5' : ''}`}
@@ -177,26 +178,26 @@ const MessageComponent = memo(({ messageKey, message, prevMessage, createDiff, o
                   {userMessageCollapseState.toggleLabel}
                 </button>
               )}
-              {userImages.length > 0 && (
-                <div className="mt-2 grid grid-cols-2 gap-2">
+              {hasUserImages && (
+                <div className="mt-2 flex flex-wrap justify-end gap-2">
                   {userImages.map((img, idx) => (
-                    img.data ? (
+                    typeof img.data === 'string' && img.data ? (
                       <button
                         key={img.name || idx}
                         type="button"
-                        className="h-20 w-20 overflow-hidden rounded-lg border border-blue-300/40 bg-blue-500/30 transition-opacity hover:opacity-90"
+                        className="h-24 w-32 max-w-none flex-none overflow-hidden rounded-lg border border-blue-300/40 bg-blue-500/30 transition-opacity hover:opacity-90"
                         onClick={() => setActiveImageIndex(idx)}
                       >
                         <img
                           src={img.data}
                           alt={img.name}
-                          className="h-full w-full object-cover"
+                          className="block h-full w-full max-w-none object-cover"
                         />
                       </button>
                     ) : (
                       <div
                         key={img.name || idx}
-                        className="flex h-20 w-20 items-center justify-center rounded-lg border border-blue-300/60 bg-blue-500/40 px-2 py-2 text-center text-xs text-blue-50"
+                        className="flex h-24 w-32 max-w-none flex-none items-center justify-center rounded-lg border border-blue-300/60 bg-blue-500/40 px-2 py-2 text-center text-xs text-blue-50"
                       >
                         {img.placeholderLabel || '已发送图片'}
                       </div>

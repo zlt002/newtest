@@ -61,6 +61,7 @@ export default function AgentsSettingsTab({
         loading: false,
         error: payload?.error || null,
         method: payload?.method,
+        cliInstalled: Boolean(payload?.cliInstalled),
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -69,6 +70,7 @@ export default function AgentsSettingsTab({
         email: null,
         loading: false,
         error: message,
+        cliInstalled: false,
       });
     }
   }, []);
@@ -121,7 +123,12 @@ export default function AgentsSettingsTab({
       />
 
       {selectedCategory === 'account' && (
-        <AccountContent agent="claude" authStatus={authStatus} onLogin={handleClaudeLogin} />
+        <AccountContent
+          agent="claude"
+          authStatus={authStatus}
+          onLogin={handleClaudeLogin}
+          onConfigured={() => { void loadClaudeAuthStatus(); }}
+        />
       )}
 
       {selectedCategory === 'permissions' && (

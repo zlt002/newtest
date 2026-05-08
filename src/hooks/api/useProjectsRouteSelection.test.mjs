@@ -89,8 +89,8 @@ test('resolves a draft session route back to its project without selecting a rea
 
 test('parses the project name from a draft session route id', () => {
   assert.equal(
-    resolveDraftProjectNameFromSessionRoute(createDraftSessionRouteId('cloudcli demo', 456)),
-    'cloudcli demo',
+    resolveDraftProjectNameFromSessionRoute(createDraftSessionRouteId('cc-ui demo', 456)),
+    'cc-ui demo',
   );
 });
 

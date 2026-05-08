@@ -8,7 +8,7 @@ import VersionInfoSection from './sections/VersionInfoSection';
 
 export default function CredentialsSettingsTab() {
   const { t } = useTranslation('settings');
-  const { updateAvailable, latestVersion, currentVersion, releaseInfo } = useVersionCheck('siteboon', 'claudecodeui');
+  const { updateAvailable, latestVersion, currentVersion, releaseInfo } = useVersionCheck();
   const {
     apiKeys,
     githubCredentials,

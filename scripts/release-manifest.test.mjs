@@ -9,3 +9,10 @@ test('windows lite runtime dependency whitelist includes better-sqlite3', () => 
     'expected better-sqlite3 to be shipped in the Windows Lite runtime dependency whitelist'
   );
 });
+
+test('windows lite runtime dependency whitelist includes jszip', () => {
+  assert.ok(
+    RELEASE_RUNTIME_DEPENDENCIES.includes('jszip'),
+    'expected jszip to be shipped because server/windows-lite-update.js imports it at runtime'
+  );
+});

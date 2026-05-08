@@ -11,8 +11,8 @@ test('切换项目时需要清掉旧的 agent conversation', () => {
   assert.equal(
     shouldResetAgentConversationId({
       previousSelection: {
-        projectKey: '/workspace/cloudcli',
-        sessionId: 'session-cloudcli',
+        projectKey: '/workspace/cc-ui',
+        sessionId: 'session-cc-ui',
       },
       nextSelection: {
         projectKey: '/workspace/html',

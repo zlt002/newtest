@@ -1,92 +1,65 @@
 import express from 'express';
 import path from 'path';
-import os from 'os';
-import { spawn } from 'child_process';
-import fs from 'fs';
 import fetch from 'node-fetch';
 
 import { searchConversations } from '../projects.js';
 import { authenticateToken } from '../middleware/auth.js';
+import {
+  getWindowsLiteUpdateStatus,
+  launchWindowsLiteUpdater,
+  prepareWindowsLiteUpdate,
+} from '../windows-lite-update.js';
 
 const router = express.Router();
 
+export function resolveLiteAppDirFromRouteModuleUrl(routeModuleUrl = import.meta.url) {
+  const routeDir = path.dirname(new URL(routeModuleUrl).pathname);
+  return path.join(routeDir, '..', '..');
+}
+
 // Health check endpoint (no authentication required)
 router.get('/health', (req, res) => {
-  const installMode = fs.existsSync(path.join(new URL('.', import.meta.url).pathname, '..', '..', '.git')) ? 'git' : 'npm';
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    installMode
+    distribution: 'windows-lite'
   });
 });
 
-// System update endpoint
-router.post('/system/update', authenticateToken, async (req, res) => {
+// Windows Lite update information endpoint
+router.get('/api/system/update-info', authenticateToken, async (req, res) => {
   try {
-    // Get the project root directory (parent of server directory)
-    const __dirname = path.dirname(new URL(import.meta.url).pathname);
-    const projectRoot = path.join(__dirname, '..', '..');
-
-    // Determine install mode
-    const installMode = fs.existsSync(path.join(projectRoot, '.git')) ? 'git' : 'npm';
-
-    console.log('Starting system update from directory:', projectRoot);
-
-    // Run the update command based on install mode
-    const updateCommand = installMode === 'git'
-      ? 'git checkout main && git pull && npm install'
-      : 'npm install -g @cloudcli-ai/cloudcli@latest';
-
-    const child = spawn('sh', ['-c', updateCommand], {
-      cwd: installMode === 'git' ? projectRoot : os.homedir(),
-      env: process.env
-    });
-
-    let output = '';
-    let errorOutput = '';
-
-    child.stdout.on('data', (data) => {
-      const text = data.toString();
-      output += text;
-      console.log('Update output:', text);
-    });
-
-    child.stderr.on('data', (data) => {
-      const text = data.toString();
-      errorOutput += text;
-      console.error('Update error:', text);
-    });
-
-    child.on('close', (code) => {
-      if (code === 0) {
-        res.json({
-          success: true,
-          output: output || 'Update completed successfully',
-          message: 'Update completed. Please restart the server to apply changes.'
-        });
-      } else {
-        res.status(500).json({
-          success: false,
-          error: 'Update command failed',
-          output: output,
-          errorOutput: errorOutput
-        });
-      }
-    });
-
-    child.on('error', (error) => {
-      console.error('Update process error:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message
-      });
-    });
-
+    const appDir = resolveLiteAppDirFromRouteModuleUrl();
+    const updateInfo = await getWindowsLiteUpdateStatus({ appDir });
+    res.json(updateInfo);
   } catch (error) {
-    console.error('System update error:', error);
+    console.error('Windows Lite update info error:', error);
+    res.status(500).json({
+      updateAvailable: false,
+      error: error.message,
+    });
+  }
+});
+
+// Windows Lite online update endpoint
+router.post('/api/system/update', authenticateToken, async (req, res) => {
+  try {
+    const appDir = resolveLiteAppDirFromRouteModuleUrl();
+    const preparedUpdate = await prepareWindowsLiteUpdate({ appDir });
+
+    res.json({
+      success: true,
+      message: 'Windows Lite update package downloaded. The application will restart to apply the update.',
+    });
+
+    setTimeout(() => {
+      launchWindowsLiteUpdater(preparedUpdate.updaterScriptPath);
+    }, 500);
+  } catch (error) {
+    console.error('Windows Lite update error:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });

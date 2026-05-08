@@ -1,6 +1,8 @@
 import { LogIn } from 'lucide-react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Badge, Button } from '../../../../../../../shared/view/ui';
+import { authenticatedFetch } from '../../../../../../../utils/api';
 import SessionProviderLogo from '../../../../../../llm-logo-provider/SessionProviderLogo';
 import type { AuthStatus } from '../../../../../types/types';
 import type { AgentProvider } from '../../types';
@@ -9,6 +11,7 @@ type AccountContentProps = {
   agent: AgentProvider;
   authStatus: AuthStatus;
   onLogin: () => void;
+  onConfigured?: () => void;
 };
 
 type AgentVisualConfig = {
@@ -57,9 +60,51 @@ const agentConfig: Record<AgentProvider, AgentVisualConfig> = {
   },
 };
 
-export default function AccountContent({ agent, authStatus, onLogin }: AccountContentProps) {
+export default function AccountContent({ agent, authStatus, onLogin, onConfigured }: AccountContentProps) {
   const { t } = useTranslation('settings');
   const config = agentConfig[agent];
+  const [apiKey, setApiKey] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [model, setModel] = useState('');
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+
+  const handleSaveClaudeSettings = async () => {
+    setIsSavingSettings(true);
+    setSettingsMessage(null);
+    setSettingsError(null);
+
+    try {
+      const env: Record<string, string> = {};
+      if (apiKey.trim()) env.ANTHROPIC_API_KEY = apiKey.trim();
+      if (baseUrl.trim()) env.ANTHROPIC_BASE_URL = baseUrl.trim();
+      if (model.trim()) {
+        env.ANTHROPIC_MODEL = model.trim();
+        env.ANTHROPIC_DEFAULT_HAIKU_MODEL = model.trim();
+        env.ANTHROPIC_DEFAULT_OPUS_MODEL = model.trim();
+        env.ANTHROPIC_DEFAULT_SONNET_MODEL = model.trim();
+      }
+
+      const response = await authenticatedFetch('/api/cli/claude/settings', {
+        method: 'POST',
+        body: JSON.stringify({ env }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.error || 'Failed to save Claude settings');
+      }
+
+      setApiKey('');
+      setSettingsMessage(`已写入 ${payload.configuredKeys?.length || 0} 项配置到 ~/.claude/settings.json`);
+      onConfigured?.();
+    } catch (error) {
+      setSettingsError(error instanceof Error ? error.message : 'Unknown error');
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -106,6 +151,71 @@ export default function AccountContent({ agent, authStatus, onLogin }: AccountCo
               )}
             </div>
           </div>
+
+          {!authStatus.authenticated && agent === 'claude' && (
+            <div className="border-t border-border/50 pt-4">
+              <div className="space-y-3">
+                <div>
+                  <div className={`font-medium ${config.textClass}`}>
+                    直接配置 Claude 运行环境
+                  </div>
+                  <div className={`text-sm ${config.subtextClass}`}>
+                    {authStatus.cliInstalled === false
+                      ? '未检测到 Claude Code CLI，可写入 API 配置后直接使用 Lite 包。'
+                      : '也可以使用 API 配置连接 Claude。'}
+                  </div>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  <label className="space-y-1 text-xs font-medium text-muted-foreground">
+                    API Key
+                    <input
+                      type="password"
+                      value={apiKey}
+                      onChange={(event) => setApiKey(event.target.value)}
+                      placeholder="sk-ant-..."
+                      className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-blue-400"
+                    />
+                  </label>
+                  <label className="space-y-1 text-xs font-medium text-muted-foreground">
+                    Base URL
+                    <input
+                      type="url"
+                      value={baseUrl}
+                      onChange={(event) => setBaseUrl(event.target.value)}
+                      placeholder="https://api.anthropic.com"
+                      className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-blue-400"
+                    />
+                  </label>
+                  <label className="space-y-1 text-xs font-medium text-muted-foreground">
+                    Model
+                    <input
+                      type="text"
+                      value={model}
+                      onChange={(event) => setModel(event.target.value)}
+                      placeholder="sonnet"
+                      className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-blue-400"
+                    />
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-h-5 text-xs">
+                    {settingsMessage && <span className="text-green-700 dark:text-green-300">{settingsMessage}</span>}
+                    {settingsError && <span className="text-red-600 dark:text-red-400">{settingsError}</span>}
+                  </div>
+                  <Button
+                    onClick={handleSaveClaudeSettings}
+                    disabled={isSavingSettings || (!apiKey.trim() && !baseUrl.trim() && !model.trim())}
+                    className={`${config.buttonClass} text-white`}
+                    size="sm"
+                  >
+                    {isSavingSettings ? '保存中...' : '保存配置'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {authStatus.method !== 'api_key' && (
             <div className="border-t border-border/50 pt-4">

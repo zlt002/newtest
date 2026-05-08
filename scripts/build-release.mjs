@@ -1,34 +1,46 @@
 import { existsSync } from 'node:fs';
-import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { RELEASE_ROOT, RELEASE_RUNTIME_DEPENDENCIES } from './release-manifest.mjs';
+import { LITE_DISTRIBUTION, RELEASE_ROOT, RELEASE_RUNTIME_DEPENDENCIES } from './release-manifest.mjs';
 import { removeDirectoryWithRetry } from './release-fs.mjs';
 import { WINDOWS_LITE_PUBLIC_ITEMS } from './windows-lite-optimization.mjs';
 
 const WINDOWS_LITE_SOURCE_CANDIDATES = ['windows-lite', 'windows-lite2'];
+const MAC_LITE_SOURCE_CANDIDATES = ['mac-lite'];
 const COPY_ITEMS = ['dist', 'server', 'shared', 'package.json', 'package-lock.json'];
+const WINDOWS_LITE_SOURCE_EXCLUDED_ENTRIES = new Set(['better-sqlite3', 'start.cmd', 'stop.cmd']);
 const EXCLUDED_ROOT_NAMES = new Set(['src', 'docs', '.git', '.github', 'tests', 'test', '__tests__', 'coverage', 'tmp', 'logs']);
 
+function getLiteSourceCandidates() {
+  return LITE_DISTRIBUTION === 'mac' ? MAC_LITE_SOURCE_CANDIDATES : WINDOWS_LITE_SOURCE_CANDIDATES;
+}
+
+function getRequiredLauncherFiles() {
+  return LITE_DISTRIBUTION === 'mac' ? ['start.command', 'stop.command'] : ['start.vbs', 'stop.vbs'];
+}
+
 function resolveWindowsLiteSourceDir() {
-  for (const candidate of WINDOWS_LITE_SOURCE_CANDIDATES) {
+  const candidates = getLiteSourceCandidates();
+  const requiredLauncherFiles = getRequiredLauncherFiles();
+
+  for (const candidate of candidates) {
     const candidatePath = resolve(process.cwd(), candidate);
     if (
       existsSync(candidatePath) &&
-      existsSync(resolve(candidatePath, 'start.cmd')) &&
-      existsSync(resolve(candidatePath, 'start.vbs'))
+      requiredLauncherFiles.every((fileName) => existsSync(resolve(candidatePath, fileName)))
     ) {
       return candidate;
     }
   }
 
-  throw new Error(`Missing Windows Lite source directory. Expected one of: ${WINDOWS_LITE_SOURCE_CANDIDATES.join(', ')}`);
+  throw new Error(`Missing ${LITE_DISTRIBUTION} Lite source directory. Expected one of: ${candidates.join(', ')}`);
 }
 
 async function main() {
   const releaseDir = resolve(process.cwd(), RELEASE_ROOT);
   const rootPackageJsonPath = resolve(process.cwd(), 'package.json');
-  const windowsLiteSourceDir = resolveWindowsLiteSourceDir();
-  const sourceWindowsLiteDir = resolve(process.cwd(), windowsLiteSourceDir);
+  const liteSourceDir = resolveWindowsLiteSourceDir();
+  const sourceLiteDir = resolve(process.cwd(), liteSourceDir);
 
   await removeDirectoryWithRetry(releaseDir);
   await mkdir(releaseDir, { recursive: true });
@@ -39,13 +51,23 @@ async function main() {
     await cp(sourcePath, targetPath, { recursive: true, force: true });
   }
 
-  const windowsLiteEntries = await readdir(sourceWindowsLiteDir);
-  for (const entry of windowsLiteEntries) {
+  const liteEntries = await readdir(sourceLiteDir);
+  for (const entry of liteEntries) {
+    if (WINDOWS_LITE_SOURCE_EXCLUDED_ENTRIES.has(entry)) {
+      continue;
+    }
+
     await cp(
-      resolve(sourceWindowsLiteDir, entry),
+      resolve(sourceLiteDir, entry),
       resolve(releaseDir, entry),
       { recursive: true, force: true }
     );
+  }
+
+  if (LITE_DISTRIBUTION === 'mac') {
+    for (const launcherFile of getRequiredLauncherFiles()) {
+      await chmod(resolve(releaseDir, launcherFile), 0o755);
+    }
   }
 
   const publicDir = resolve(releaseDir, 'public');
@@ -71,7 +93,7 @@ async function main() {
     })
   );
   const releasePackageJson = {
-    name: '@cloudcli-ai/cloudcli-windows-lite',
+    name: LITE_DISTRIBUTION === 'mac' ? 'cc-ui-mac-lite' : 'cc-ui-windows-lite',
     private: true,
     type: 'module',
     main: 'server/index.js',
@@ -93,8 +115,11 @@ await main();
 export {
   COPY_ITEMS,
   EXCLUDED_ROOT_NAMES,
+  LITE_DISTRIBUTION,
+  MAC_LITE_SOURCE_CANDIDATES,
   RELEASE_ROOT,
   RELEASE_RUNTIME_DEPENDENCIES,
+  WINDOWS_LITE_SOURCE_EXCLUDED_ENTRIES,
   WINDOWS_LITE_SOURCE_CANDIDATES,
   resolveWindowsLiteSourceDir,
 };

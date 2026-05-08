@@ -72,7 +72,7 @@ test('未选中会话时，不应复用旧的真实 session id', () => {
   assert.deepEqual(
     resolveComposerSubmitTarget({
       selectedSessionId: null,
-      currentSessionId: 'real-session-from-cloudcli',
+      currentSessionId: 'real-session-from-cc-ui',
     }),
     {
       mode: 'new-conversation',

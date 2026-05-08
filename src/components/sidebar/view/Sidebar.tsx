@@ -41,10 +41,7 @@ function Sidebar({
 }: SidebarProps) {
   const { t } = useTranslation(['sidebar', 'common']);
   const { isPWA } = useDeviceSettings({ trackMobile: false });
-  const { latestVersion, currentVersion, releaseInfo, installMode } = useVersionCheck(
-    'siteboon',
-    'claudecodeui',
-  );
+  const { updateAvailable, latestVersion, currentVersion, releaseInfo } = useVersionCheck();
   const { preferences, setPreference } = useUiPreferences();
   const { sidebarVisible } = preferences;
   const [newProjectLaunchContext, setNewProjectLaunchContext] = useState<ProjectWizardLaunchContext | null>(null);
@@ -230,7 +227,6 @@ function Sidebar({
         releaseInfo={releaseInfo}
         currentVersion={currentVersion}
         latestVersion={latestVersion}
-        installMode={installMode}
         t={t}
       />
 
@@ -302,6 +298,8 @@ function Sidebar({
               setShowNewProject(true);
             }}
             onOpenHooksOverview={() => setShowHooksOverview(true)}
+            updateAvailable={updateAvailable}
+            onShowVersionUpdate={() => setShowVersionModal(true)}
             onCreateProjectFromDroppedFolder={(folder: DroppedFolder) => {
               setNewProjectLaunchContext({
                 initialStep: 1,

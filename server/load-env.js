@@ -21,7 +21,9 @@ try {
     }
   });
 } catch (e) {
-  console.log('No .env file found or error reading it:', e.message);
+  if (e.code !== 'ENOENT') {
+    console.warn('Error reading .env file:', e.message);
+  }
 }
 
 if (!process.env.DATABASE_PATH) {

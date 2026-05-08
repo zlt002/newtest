@@ -2,10 +2,45 @@ import express from 'express';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 
 import { loadClaudeSettingsEnvSync } from '../utils/claude-settings-env.js';
 
 const router = express.Router();
+
+const CLAUDE_SETTINGS_ENV_KEYS = new Set([
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_BASE_URL',
+  'ANTHROPIC_MODEL',
+  'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+  'ANTHROPIC_DEFAULT_OPUS_MODEL',
+  'ANTHROPIC_DEFAULT_SONNET_MODEL',
+  'ANTHROPIC_REASONING_MODEL',
+  'API_TIMEOUT_MS',
+]);
+
+function getClaudeSettingsPath(homeDir = os.homedir()) {
+  return path.join(homeDir, '.claude', 'settings.json');
+}
+
+export async function detectClaudeCli({
+  spawnImpl = spawn,
+} = {}) {
+  return new Promise((resolve) => {
+    const child = spawnImpl('claude', ['--version'], {
+      stdio: 'ignore',
+      shell: false,
+    });
+
+    child.on('error', () => {
+      resolve(false);
+    });
+    child.on('close', (code) => {
+      resolve(code === 0);
+    });
+  });
+}
 
 export async function checkClaudeCredentials({
   env = process.env,
@@ -69,15 +104,97 @@ export async function checkClaudeCredentials({
   };
 }
 
+function normalizeSettingsEnv(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(input)
+      .filter(([key, value]) => CLAUDE_SETTINGS_ENV_KEYS.has(key) && typeof value === 'string' && value.trim())
+      .map(([key, value]) => [key, value.trim()]),
+  );
+}
+
+export async function updateClaudeSettingsEnv({
+  env,
+  homeDir = os.homedir(),
+  readFile = fs.readFile,
+  writeFile = fs.writeFile,
+  mkdir = fs.mkdir,
+} = {}) {
+  const normalizedEnv = normalizeSettingsEnv(env);
+
+  if (Object.keys(normalizedEnv).length === 0) {
+    const error = new Error('No supported Claude settings were provided.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const settingsPath = getClaudeSettingsPath(homeDir);
+  let existingSettings = {};
+
+  try {
+    existingSettings = JSON.parse(await readFile(settingsPath, 'utf8'));
+    if (!existingSettings || typeof existingSettings !== 'object' || Array.isArray(existingSettings)) {
+      existingSettings = {};
+    }
+  } catch {
+    existingSettings = {};
+  }
+
+  const nextSettings = {
+    ...existingSettings,
+    env: {
+      ...(existingSettings.env && typeof existingSettings.env === 'object' && !Array.isArray(existingSettings.env)
+        ? existingSettings.env
+        : {}),
+      ...normalizedEnv,
+    },
+  };
+
+  await mkdir(path.dirname(settingsPath), { recursive: true });
+  await writeFile(settingsPath, `${JSON.stringify(nextSettings, null, 2)}\n`, 'utf8');
+
+  return {
+    success: true,
+    settingsPath,
+    configuredKeys: Object.keys(normalizedEnv),
+  };
+}
+
 router.get('/claude/status', async (_req, res) => {
   try {
-    const result = await checkClaudeCredentials();
-    res.json(result);
+    const [credentials, cliInstalled] = await Promise.all([
+      checkClaudeCredentials(),
+      detectClaudeCli(),
+    ]);
+    res.json({
+      ...credentials,
+      cliInstalled,
+    });
   } catch (error) {
     res.status(500).json({
       authenticated: false,
       email: null,
       method: null,
+      cliInstalled: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+router.post('/claude/settings', async (req, res) => {
+  try {
+    const result = await updateClaudeSettingsEnv({ env: req.body?.env });
+    const status = await checkClaudeCredentials();
+    res.json({
+      ...result,
+      authStatus: status,
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
     });
   }

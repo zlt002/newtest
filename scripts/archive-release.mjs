@@ -3,13 +3,18 @@ import { readFile, readdir } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import JSZip from 'jszip';
+import { LITE_DISTRIBUTION, RELEASE_ROOT } from './release-manifest.mjs';
 
-const RELEASE_ROOT = 'release/windows-lite';
+function getDefaultArchiveName(target = 'universal', distribution = LITE_DISTRIBUTION) {
+  if (distribution === 'mac') {
+    return target === 'arm64'
+      ? 'cc-ui-mac-lite-arm64.zip'
+      : 'cc-ui-mac-lite.zip';
+  }
 
-function getDefaultArchiveName(target = 'universal') {
   return target === 'x64'
-    ? 'cloudcli-windows-lite-x64.zip'
-    : 'cloudcli-windows-lite.zip';
+    ? 'cc-ui-windows-lite-x64.zip'
+    : 'cc-ui-windows-lite.zip';
 }
 
 async function addDirectoryToZip(zip, sourceDir, zipPrefix) {
@@ -25,7 +30,10 @@ async function addDirectoryToZip(zip, sourceDir, zipPrefix) {
     }
 
     try {
-      zip.file(zipPath, await readFile(sourcePath));
+      const fileOptions = zipPath.endsWith('.command')
+        ? { unixPermissions: 0o100755 }
+        : {};
+      zip.file(zipPath, await readFile(sourcePath), fileOptions);
     } catch (error) {
       if (error?.code === 'ENOENT') {
         continue;
@@ -48,6 +56,7 @@ async function createReleaseArchive({
   const zipStream = zip.generateNodeStream({
     compression: 'DEFLATE',
     compressionOptions: { level: 9 },
+    platform: 'UNIX',
     streamFiles: true,
   });
 

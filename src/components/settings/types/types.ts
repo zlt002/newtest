@@ -24,6 +24,7 @@ export type AuthStatus = {
   loading: boolean;
   error: string | null;
   method?: string;
+  cliInstalled?: boolean;
 };
 
 export type KeyValueMap = Record<string, string>;

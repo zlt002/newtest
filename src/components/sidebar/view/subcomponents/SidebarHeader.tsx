@@ -1,8 +1,8 @@
 import * as React from 'react';
-import { FolderPlus, PanelLeftClose, RefreshCw, Search, Settings, Webhook, X } from 'lucide-react';
+import { DownloadCloud, FolderPlus, PanelLeftClose, RefreshCw, Search, Settings, Webhook, X } from 'lucide-react';
 import type { TFunction } from 'i18next';
-import { Button, Input, Select } from '../../../../shared/view/ui';
 import { IS_PLATFORM } from '@constants/keys';
+import { Button, Input, Select } from '../../../../shared/view/ui';
 import { getSidebarSearchPlaceholderKey, type SidebarSearchMode } from './SidebarSearchMode.shared';
 import { getDesktopSidebarActionSlots } from './sidebarDesktopActions';
 import SidebarWorkspaceTabs from './SidebarWorkspaceTabs';
@@ -24,6 +24,8 @@ type SidebarHeaderProps = {
   isRefreshing: boolean;
   onCreateProject: () => void;
   onOpenHooksOverview: () => void;
+  updateAvailable: boolean;
+  onShowVersionUpdate: () => void;
   onCollapseSidebar: () => void;
   onShowSettings: () => void;
   t: TFunction;
@@ -45,6 +47,8 @@ export default function SidebarHeader({
   isRefreshing,
   onCreateProject,
   onOpenHooksOverview,
+  updateAvailable,
+  onShowVersionUpdate,
   onCollapseSidebar,
   onShowSettings,
   t,
@@ -95,6 +99,19 @@ export default function SidebarHeader({
             <LogoBlock />
           )}
           <div className="flex h-full items-center gap-2">
+            {updateAvailable && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9 rounded-xl px-3 text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
+                onClick={onShowVersionUpdate}
+                title={t('common:versionUpdate.ariaLabels.updateAvailable')}
+                aria-label={t('common:versionUpdate.ariaLabels.updateAvailable')}
+              >
+                <DownloadCloud className="h-4 w-4" />
+                <span className="ml-1.5 text-xs font-medium">更新</span>
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="sm"
