@@ -46,7 +46,7 @@ const DESIGN_SYNC_DEBOUNCE_MS = 4000;
 const AUTO_FLUSH_DELAY_MS = 6000;
 const LARGE_HTML_SOURCE_LIGHTWEIGHT_THRESHOLD = 120_000;
 const EMPTY_HTML_DOCUMENT = '<!doctype html><html><head></head><body></body></html>';
-const SOURCE_LOCATION_DEFERRED_REASON = '源码位置映射正在后台计算，不影响可视化编辑。';
+const SOURCE_LOCATION_DEFERRED_REASON = '源码位置将在发送到聊天时按需定位，不影响可视化编辑。';
 
 type ToolbarIcon = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -65,7 +65,7 @@ type CanvasDevice = 'desktop' | 'tablet' | 'mobile';
 type PreviewRuntimeElementStyles = Record<string, string>;
 type PreviewMode = 'srcdoc' | 'route';
 type SourceLocationRebuildMode = 'sync' | 'defer' | 'skip';
-type SourceLocationScheduleMode = boolean | 'worker';
+type SourceLocationScheduleMode = boolean;
 type HiddenLayerReason = 'display-none' | 'visibility-hidden' | 'opacity-zero' | 'zero-size' | 'offscreen' | 'ancestor-hidden';
 type HiddenLayerFilter = {
   reasons: HiddenLayerReason[];
@@ -666,11 +666,6 @@ export default function VisualHtmlEditor({
     handle: number;
     kind: 'idle' | 'timeout';
   } | null>(null);
-  const sourceLocationWorkerRef = useRef<Worker | null>(null);
-  const pendingSourceLocationWorkerRequestRef = useRef<{
-    revision: number;
-    htmlLength: number;
-  } | null>(null);
   const pendingDesignSyncTimeoutRef = useRef<number | null>(null);
   const pendingFileFlushTimeoutRef = useRef<number | null>(null);
   const previewModeRef = useRef<PreviewMode>('route');
@@ -782,16 +777,9 @@ export default function VisualHtmlEditor({
     pendingSourceLocationRebuildRef.current = null;
   }, []);
 
-  const cancelPendingSourceLocationMapWorkerRebuild = useCallback(() => {
-    sourceLocationWorkerRef.current?.terminate();
-    sourceLocationWorkerRef.current = null;
-    pendingSourceLocationWorkerRequestRef.current = null;
-  }, []);
-
   const rebuildSourceLocationMap = useCallback((nextHtml: string, revision: number, options: { synchronous?: boolean } = {}) => {
     if (options.synchronous) {
       cancelPendingSourceLocationMapRebuild();
-      cancelPendingSourceLocationMapWorkerRebuild();
     }
 
     const startedAt = getVisualHtmlPerfNow();
@@ -810,11 +798,10 @@ export default function VisualHtmlEditor({
       reason: mapping.status === 'unavailable' ? mapping.reason : null,
     });
     return mapping;
-  }, [cancelPendingSourceLocationMapRebuild, cancelPendingSourceLocationMapWorkerRebuild]);
+  }, [cancelPendingSourceLocationMapRebuild]);
 
   const scheduleSourceLocationMapRebuild = useCallback((nextHtml: string, revision: number) => {
     cancelPendingSourceLocationMapRebuild();
-    cancelPendingSourceLocationMapWorkerRebuild();
 
     const run = () => {
       pendingSourceLocationRebuildRef.current = null;
@@ -829,112 +816,7 @@ export default function VisualHtmlEditor({
 
     const handle = window.setTimeout(run, 250);
     pendingSourceLocationRebuildRef.current = { html: nextHtml, revision, handle, kind: 'timeout' };
-  }, [cancelPendingSourceLocationMapRebuild, cancelPendingSourceLocationMapWorkerRebuild, rebuildSourceLocationMap]);
-
-  const scheduleSourceLocationMapWorkerRebuild = useCallback((nextHtml: string, revision: number) => {
-    cancelPendingSourceLocationMapRebuild();
-    cancelPendingSourceLocationMapWorkerRebuild();
-
-    if (typeof Worker === 'undefined') {
-      logVisualHtmlPerf('source-location-map-worker-unavailable', {
-        htmlLength: nextHtml.length,
-        revision,
-      });
-      return;
-    }
-
-    try {
-      const worker = new Worker(new URL('./visual-html/sourceLocationMapping.worker.ts', import.meta.url), { type: 'module' });
-      sourceLocationWorkerRef.current = worker;
-      pendingSourceLocationWorkerRequestRef.current = {
-        revision,
-        htmlLength: nextHtml.length,
-      };
-
-      const startedAt = getVisualHtmlPerfNow();
-      worker.onmessage = (event: MessageEvent<{
-        type: 'source-location-map-result' | 'source-location-map-error';
-        revision: number;
-        mapping?: SourceLocationMap;
-        reason?: string;
-      }>) => {
-        const message = event.data;
-        if (message.revision !== controllerRef.current.editorRevision) {
-          logVisualHtmlPerf('source-location-map-worker-stale', {
-            messageRevision: message.revision,
-            currentRevision: controllerRef.current.editorRevision,
-          });
-          if (sourceLocationWorkerRef.current === worker) {
-            cancelPendingSourceLocationMapWorkerRebuild();
-          } else {
-            worker.terminate();
-          }
-          return;
-        }
-
-        if (sourceLocationWorkerRef.current === worker) {
-          sourceLocationWorkerRef.current = null;
-          pendingSourceLocationWorkerRequestRef.current = null;
-        }
-        worker.terminate();
-
-        if (message.type === 'source-location-map-error' || !message.mapping) {
-          const reason = message.reason || '源码位置映射后台计算失败。';
-          sourceLocationMapRef.current = createDeferredSourceLocationMap(message.revision, reason);
-          controllerRef.current.setSourceLocationResult({
-            revision: message.revision,
-            status: 'unavailable',
-            reason,
-          });
-          return;
-        }
-
-        sourceLocationMapRef.current = message.mapping;
-        controllerRef.current.setSourceLocationResult({
-          revision: message.mapping.revision,
-          status: message.mapping.status,
-          reason: message.mapping.status === 'unavailable' ? message.mapping.reason : null,
-        });
-        logVisualHtmlPerf('source-location-map-worker', {
-          durationMs: Math.round(getVisualHtmlPerfNow() - startedAt),
-          htmlLength: nextHtml.length,
-          revision: message.mapping.revision,
-          status: message.mapping.status,
-          entries: message.mapping.entries.length,
-        });
-      };
-
-      worker.onerror = () => {
-        if (sourceLocationWorkerRef.current === worker) {
-          cancelPendingSourceLocationMapWorkerRebuild();
-          const reason = '源码位置映射后台计算失败。';
-          sourceLocationMapRef.current = createDeferredSourceLocationMap(revision, reason);
-          controllerRef.current.setSourceLocationResult({
-            revision,
-            status: 'unavailable',
-            reason,
-          });
-        } else {
-          worker.terminate();
-        }
-      };
-
-      worker.postMessage({
-        type: 'build-source-location-map',
-        html: nextHtml,
-        revision,
-      });
-    } catch (error) {
-      logVisualHtmlPerf('source-location-map-worker-create-failed', {
-        htmlLength: nextHtml.length,
-        revision,
-        error: getErrorMessage(error),
-      });
-    }
-  }, [
-    cancelPendingSourceLocationMapRebuild,
-    cancelPendingSourceLocationMapWorkerRebuild,
-  ]);
+  }, [cancelPendingSourceLocationMapRebuild, rebuildSourceLocationMap]);
 
   const markSourceLocationRebuildDeferred = useCallback((
     nextHtml: string,
@@ -950,24 +832,18 @@ export default function VisualHtmlEditor({
     });
     if (options.scheduleSourceLocation === false) {
       cancelPendingSourceLocationMapRebuild();
-      cancelPendingSourceLocationMapWorkerRebuild();
-    } else if (options.scheduleSourceLocation === 'worker') {
-      scheduleSourceLocationMapWorkerRebuild(nextHtml, revision);
     } else {
       scheduleSourceLocationMapRebuild(nextHtml, revision);
     }
     return sourceLocationMapRef.current;
   }, [
     cancelPendingSourceLocationMapRebuild,
-    cancelPendingSourceLocationMapWorkerRebuild,
     scheduleSourceLocationMapRebuild,
-    scheduleSourceLocationMapWorkerRebuild,
   ]);
 
   useEffect(() => () => {
     cancelPendingSourceLocationMapRebuild();
-    cancelPendingSourceLocationMapWorkerRebuild();
-  }, [cancelPendingSourceLocationMapRebuild, cancelPendingSourceLocationMapWorkerRebuild]);
+  }, [cancelPendingSourceLocationMapRebuild]);
 
   const applyCurrentEditorDocument = useCallback((
     nextHtml: string,
@@ -978,13 +854,13 @@ export default function VisualHtmlEditor({
     const rebuildSourceLocation = options.rebuildSourceLocation ?? 'defer';
     if (rebuildSourceLocation === 'sync') {
       if (shouldDeferSourceLocationRebuild(nextHtml)) {
-        markSourceLocationRebuildDeferred(nextHtml, revision, SOURCE_LOCATION_DEFERRED_REASON, { scheduleSourceLocation: 'worker' });
+        markSourceLocationRebuildDeferred(nextHtml, revision, SOURCE_LOCATION_DEFERRED_REASON, { scheduleSourceLocation: false });
       } else {
         rebuildSourceLocationMap(nextHtml, revision, { synchronous: true });
       }
     } else if (rebuildSourceLocation === 'defer') {
       if (shouldDeferSourceLocationRebuild(nextHtml)) {
-        markSourceLocationRebuildDeferred(nextHtml, revision, SOURCE_LOCATION_DEFERRED_REASON, { scheduleSourceLocation: 'worker' });
+        markSourceLocationRebuildDeferred(nextHtml, revision, SOURCE_LOCATION_DEFERRED_REASON, { scheduleSourceLocation: false });
       } else {
         scheduleSourceLocationMapRebuild(nextHtml, revision);
       }
@@ -1037,7 +913,7 @@ export default function VisualHtmlEditor({
         currentDocumentText,
         controllerRef.current.editorRevision,
         SOURCE_LOCATION_DEFERRED_REASON,
-        { scheduleSourceLocation: 'worker' },
+        { scheduleSourceLocation: false },
       );
       return sourceLocationMapRef.current;
     }
@@ -1047,7 +923,7 @@ export default function VisualHtmlEditor({
       : currentDocumentText;
 
     if (shouldDeferSourceLocationRebuild(nextHtml)) {
-      markSourceLocationRebuildDeferred(nextHtml, controllerRef.current.editorRevision, SOURCE_LOCATION_DEFERRED_REASON, { scheduleSourceLocation: 'worker' });
+      markSourceLocationRebuildDeferred(nextHtml, controllerRef.current.editorRevision, SOURCE_LOCATION_DEFERRED_REASON, { scheduleSourceLocation: false });
       return sourceLocationMapRef.current;
     }
 
@@ -1171,7 +1047,7 @@ export default function VisualHtmlEditor({
         syncCanvasDocumentFromHtml(nextHtml);
       }
       const mapping = shouldDeferSourceLocationRebuild(nextHtml)
-        ? markSourceLocationRebuildDeferred(nextHtml, revision, '源码位置映射已延后，保存不会阻塞界面。', { scheduleSourceLocation: 'worker' })
+        ? markSourceLocationRebuildDeferred(nextHtml, revision, '大页面已启用按需源码定位，保存不会阻塞界面。', { scheduleSourceLocation: false })
         : rebuildSourceLocationMap(nextHtml, revision, { synchronous: true });
       persistedSourceLocationMapRef.current = mapping;
       canvasEditorRef.current?.clearDirtyCount();
@@ -1458,7 +1334,7 @@ export default function VisualHtmlEditor({
       controllerRef.current.setPersistedDocument({ content: fileContent, version: data.version ?? null });
       syncCanvasDocumentFromHtml(fileContent);
       const mapping = shouldDeferSourceLocationRebuild(fileContent)
-        ? markSourceLocationRebuildDeferred(fileContent, revision, '源码位置映射已延后，页面会先进入可视化编辑。', { scheduleSourceLocation: 'worker' })
+        ? markSourceLocationRebuildDeferred(fileContent, revision, '大页面已启用按需源码定位，页面会先进入可视化编辑。', { scheduleSourceLocation: false })
         : rebuildSourceLocationMap(fileContent, revision, { synchronous: true });
       persistedSourceLocationMapRef.current = mapping;
 

@@ -237,7 +237,7 @@ test('VisualHtmlEditor defers expensive source-location mapping for large editor
   assert.match(source, /if \(shouldDeferSourceLocationRebuild\(nextHtml\)\) \{/);
   assert.match(source, /sourceLocationMapRef\.current = createDeferredSourceLocationMap\(revision,/);
   assert.match(source, /controllerRef\.current\.setSourceLocationResult\(\{\s*revision,\s*status: 'unavailable',\s*reason,/);
-  assert.match(source, /scheduleSourceLocation:\s*'worker'/);
+  assert.match(source, /scheduleSourceLocation:\s*false/);
   assert.doesNotMatch(source, /if \(controllerRef\.current\.documentText\.length >= LARGE_HTML_SOURCE_LIGHTWEIGHT_THRESHOLD\)/);
 });
 
@@ -245,27 +245,20 @@ test('VisualHtmlEditor avoids synchronous source-location parsing on large load 
   const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
 
   assert.match(source, /const markSourceLocationRebuildDeferred = useCallback\(/);
-  assert.match(source, /markSourceLocationRebuildDeferred\(nextHtml, revision, '源码位置映射已延后，保存不会阻塞界面。', \{ scheduleSourceLocation: 'worker' \}\)/);
-  assert.match(source, /markSourceLocationRebuildDeferred\(fileContent, revision, '源码位置映射已延后，页面会先进入可视化编辑。', \{ scheduleSourceLocation: 'worker' \}\)/);
+  assert.match(source, /markSourceLocationRebuildDeferred\(nextHtml, revision, '大页面已启用按需源码定位，保存不会阻塞界面。', \{ scheduleSourceLocation: false \}\)/);
+  assert.match(source, /markSourceLocationRebuildDeferred\(fileContent, revision, '大页面已启用按需源码定位，页面会先进入可视化编辑。', \{ scheduleSourceLocation: false \}\)/);
   assert.match(source, /const mapping = shouldDeferSourceLocationRebuild\(nextHtml\)\s*\?\s*markSourceLocationRebuildDeferred/);
   assert.match(source, /const mapping = shouldDeferSourceLocationRebuild\(fileContent\)\s*\?\s*markSourceLocationRebuildDeferred/);
-  assert.match(source, /源码位置映射正在后台计算，不影响可视化编辑。/);
+  assert.match(source, /源码位置将在发送到聊天时按需定位，不影响可视化编辑。/);
 });
 
-test('VisualHtmlEditor maps large html in a worker without blocking the design canvas', async () => {
+test('VisualHtmlEditor does not start a full source-location worker for large html by default', async () => {
   const source = await readFile(new URL('./VisualHtmlEditor.tsx', import.meta.url), 'utf8');
-  const workerSource = await readFile(new URL('./visual-html/sourceLocationMapping.worker.ts', import.meta.url), 'utf8');
 
-  assert.match(source, /sourceLocationWorkerRef/);
-  assert.match(source, /new Worker\(new URL\('\.\/visual-html\/sourceLocationMapping\.worker\.ts', import\.meta\.url\), \{ type: 'module' \}\)/);
-  assert.match(source, /scheduleSourceLocationMapWorkerRebuild\(nextHtml, revision\)/);
-  assert.match(source, /message\.revision !== controllerRef\.current\.editorRevision/);
-  assert.match(source, /sourceLocationMapRef\.current = message\.mapping/);
-  assert.match(source, /cancelPendingSourceLocationMapWorkerRebuild/);
-  assert.match(source, /markSourceLocationRebuildDeferred\(nextHtml, revision, SOURCE_LOCATION_DEFERRED_REASON, \{ scheduleSourceLocation: 'worker' \}\)/);
-  assert.doesNotMatch(source, /markSourceLocationRebuildDeferred\(nextHtml, revision, SOURCE_LOCATION_DEFERRED_REASON, \{ scheduleSourceLocation: false \}\)/);
-  assert.match(workerSource, /buildSourceLocationMap/);
-  assert.match(workerSource, /workerScope\.postMessage\(\{\s*type: 'source-location-map-result'/);
+  assert.doesNotMatch(source, /new Worker\(new URL\('\.\/visual-html\/sourceLocationMapping\.worker\.ts'/);
+  assert.doesNotMatch(source, /scheduleSourceLocationMapWorkerRebuild\(nextHtml, revision\)/);
+  assert.doesNotMatch(source, /scheduleSourceLocation:\s*'worker'/);
+  assert.match(source, /markSourceLocationRebuildDeferred\(nextHtml, revision, SOURCE_LOCATION_DEFERRED_REASON, \{ scheduleSourceLocation: false \}\)/);
 });
 
 test('VisualHtmlEditor avoids full design html serialization during routine dirty notifications', async () => {
@@ -291,7 +284,7 @@ test('VisualHtmlEditor exposes live source-location mapping and a freshness help
   assert.match(source, /controllerRef\.current\.sourceLocationState\.isStale/);
   assert.match(source, /sourceLocationMapRef\.current/);
   assert.match(source, /const nextHtml = canvasEditorRef\.current/);
-  assert.match(source, /markSourceLocationRebuildDeferred\(nextHtml, controllerRef\.current\.editorRevision, SOURCE_LOCATION_DEFERRED_REASON, \{ scheduleSourceLocation: 'worker' \}\)/);
+  assert.match(source, /markSourceLocationRebuildDeferred\(nextHtml, controllerRef\.current\.editorRevision, SOURCE_LOCATION_DEFERRED_REASON, \{ scheduleSourceLocation: false \}\)/);
   assert.doesNotMatch(source, /rebuildSourceLocationMap\(nextHtml, controllerRef\.current\.editorRevision, \{ synchronous: true \}\)/);
   assert.match(source, /sourceLocationMap=\{sourceLocationMapRef\.current\}/);
   assert.match(source, /ensureFreshSourceLocationMap=\{ensureFreshSourceLocationMap\}/);
