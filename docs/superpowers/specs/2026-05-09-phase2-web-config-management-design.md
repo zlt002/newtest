@@ -1,63 +1,63 @@
-# Phase 2 Web Config Management For Claude Runtime
+# 第二阶段：Claude 运行配置的网页管理台
 
-## Goal
+## 目标
 
-CC UI should let users maintain the local Claude Code runtime configuration from the web UI without requiring Claude Code CLI for daily configuration work.
+CC UI 应该让用户可以直接在网页里维护本地 Claude Code 运行配置，日常配置工作不再依赖 Claude Code CLI。
 
-Phase 2 builds on Lite CLI-independent Phase 1. Phase 1 proved that CC UI can read and write JSON config files, resolve Lite and Claude CLI plugins into Claude Agent SDK options, and show MCP/plugins in settings. Phase 2 turns those backend capabilities into a real web management surface.
+第二阶段建立在第一阶段的 Lite 非 CLI 依赖能力之上。第一阶段已经证明 CC UI 可以读写 JSON 配置文件，可以把 Lite 插件和 Claude CLI 插件解析成 Claude Agent SDK 可用的参数，也可以在设置页展示 MCP 和插件。第二阶段要把这些后端能力变成真正可用的网页管理入口。
 
-The product goal is:
+产品目标是：
 
-- Web UI is the primary management surface.
-- Claude Agent SDK remains the runtime.
-- Claude-compatible config files remain the interoperability layer.
-- Claude Code CLI remains compatible, but optional.
+- 网页 UI 是主要管理入口。
+- Claude Agent SDK 继续作为运行时。
+- Claude 兼容配置文件继续作为和 Claude Code CLI 打通的桥梁。
+- Claude Code CLI 保持兼容，但不是必需依赖。
 
-## Non-Goals
+## 不做的范围
 
-Phase 2 does not implement remote marketplace installation yet.
+第二阶段暂不做远程插件市场安装。
 
-Specifically, this phase will not:
+这一阶段不会做：
 
-- Install plugins from remote marketplaces.
-- Publish plugins.
-- Auto-update plugins from marketplace sources.
-- Replace every Claude Code interactive diagnostic screen.
-- Delete Claude CLI plugin cache directories that CC UI did not create.
-- Expose secret values in clear text after they are saved.
+- 从远程 marketplace 安装插件。
+- 发布插件。
+- 从 marketplace 自动更新插件。
+- 完整复刻 Claude Code CLI 的所有交互诊断界面。
+- 删除不是 CC UI 创建的 Claude CLI 插件缓存目录。
+- 保存后在网页明文回显密钥。
 
-Marketplace install, plugin update, and remote source trust controls should be a later phase after local configuration management is stable.
+远程插件安装、插件更新、远程来源信任控制，应该放到本地配置管理稳定之后的后续阶段。
 
-## User Outcomes
+## 用户结果
 
-After Phase 2, a user can:
+第二阶段完成后，用户可以：
 
-- Add, edit, and delete MCP servers from the web UI.
-- Manage user, project, and local MCP scopes without `claude mcp`.
-- View CLI-installed plugins and Lite-managed plugins in one list.
-- Import a local plugin directory through the web UI.
-- Enable or disable plugins through the web UI where the source is writable.
-- Remove Lite-managed plugins through the web UI.
-- View skills and commands from user, project, and plugin sources.
-- Create, edit, and delete user/project skills and commands.
-- View plugin-provided skills and commands as read-only.
-- Reach hooks management from the same Claude settings area.
-- Configure Claude runtime env/model/permission settings from the web UI.
-- Understand which config file each item comes from.
+- 在网页里新增、编辑、删除 MCP 服务器。
+- 不通过 `claude mcp` 管理 user、project、local 作用域的 MCP。
+- 在一个列表里查看 Claude CLI 已安装插件和 Lite 管理插件。
+- 通过网页导入本地插件目录。
+- 在来源可写时，通过网页启用或停用插件。
+- 通过网页移除 Lite 管理的插件。
+- 查看来自 user、project、plugin 来源的 skills 和 commands。
+- 创建、编辑、删除 user/project 级别的 skills 和 commands。
+- 以只读方式查看插件提供的 skills 和 commands。
+- 从同一个 Claude 设置区域进入 hooks 管理。
+- 在网页里配置 Claude 运行时的环境变量、模型和权限设置。
+- 看清楚每个配置项来自哪个文件。
 
-## Information Architecture
+## 信息架构
 
-The Claude/Agent settings area should become a runtime management console with these sections:
+Claude / 智能体设置区域应该升级成运行配置管理台，包含这些部分：
 
-1. Account and Runtime
-2. Permissions
+1. 账号与运行配置
+2. 权限
 3. MCP
-4. Plugins
+4. 插件
 5. Skills
 6. Commands
 7. Hooks
 
-The current compact `AgentsSettingsTab.tsx` should not keep growing indefinitely. Phase 2 should split the settings surface into focused sections and shared hooks:
+当前的 `AgentsSettingsTab.tsx` 不应该继续无限变大。第二阶段需要把设置页拆成更小的区块和共享 hooks：
 
 - `ClaudeRuntimeSettingsSection`
 - `McpManagementSection`
@@ -66,13 +66,13 @@ The current compact `AgentsSettingsTab.tsx` should not keep growing indefinitely
 - `CommandManagementSection`
 - `HooksEntrySection`
 
-The existing hooks pages can stay as detailed editors. The Claude settings surface should link into them and show a compact effective summary.
+现有 hooks 页面可以继续作为详细编辑器。Claude 设置页只需要展示一个简洁的生效摘要，并跳转到已有 hooks 编辑页面。
 
-## Data Model
+## 数据模型
 
-### Managed Source
+### 来源信息
 
-Every item returned to the UI should include source metadata:
+返回给 UI 的每个条目都应该带来源信息：
 
 ```ts
 type ManagedSource = {
@@ -83,9 +83,9 @@ type ManagedSource = {
 };
 ```
 
-`writable` means CC UI can safely mutate the item through its JSON/file service. Plugin-provided entries are normally read-only.
+`writable` 表示 CC UI 可以安全地通过 JSON 或文件服务修改这个条目。插件提供的条目通常是只读的。
 
-### MCP Item
+### MCP 条目
 
 ```ts
 type ManagedMcpServer = {
@@ -105,7 +105,7 @@ type ManagedMcpServer = {
 };
 ```
 
-### Plugin Item
+### 插件条目
 
 ```ts
 type ManagedPlugin = {
@@ -120,11 +120,11 @@ type ManagedPlugin = {
 };
 ```
 
-CLI plugins are writable for enable/disable when the setting lives in `~/.claude/settings.json`. CLI cache deletion is not part of Phase 2.
+CLI 插件只有在启用状态写在 `~/.claude/settings.json` 时，才允许通过网页启用或停用。第二阶段不删除 CLI 管理的插件缓存目录。
 
-Lite plugins are writable and removable through `~/.ccui/lite-registry.json`.
+Lite 插件通过 `~/.ccui/lite-registry.json` 管理，可以启停，也可以移除 registry 条目。
 
-### Skill And Command Item
+### Skill 和 Command 条目
 
 ```ts
 type ManagedCapability = {
@@ -140,18 +140,18 @@ type ManagedCapability = {
 };
 ```
 
-User/project skills and commands are editable Markdown files. Plugin-provided skills and commands are read-only.
+user/project 级别的 skills 和 commands 是可编辑的 Markdown 文件。插件提供的 skills 和 commands 是只读的。
 
-## Backend Architecture
+## 后端架构
 
-Phase 2 should add a unified management layer rather than wiring the UI directly to unrelated route modules.
+第二阶段应该增加统一的管理层，而不是让 UI 直接拼接多个互不相关的路由。
 
 ### ClaudeRuntimeConfigService
 
-Responsibilities:
+职责：
 
-- Read and write `~/.claude/settings.json`.
-- Manage env keys:
+- 读取和写入 `~/.claude/settings.json`。
+- 管理这些运行时环境变量：
   - `ANTHROPIC_AUTH_TOKEN`
   - `ANTHROPIC_API_KEY`
   - `ANTHROPIC_BASE_URL`
@@ -160,75 +160,75 @@ Responsibilities:
   - `ANTHROPIC_DEFAULT_SONNET_MODEL`
   - `ANTHROPIC_DEFAULT_OPUS_MODEL`
   - `ANTHROPIC_REASONING_MODEL`
-- Manage permission defaults where this project already supports them.
-- Return secret status as `configured: true`, not secret values.
-- Preserve unknown settings fields.
+- 管理当前项目已支持的权限默认值。
+- 密钥只返回是否已配置，例如 `configured: true`，不返回明文。
+- 保留 settings 文件里的未知字段。
 
 ### McpConfigService
 
-Phase 1 already created the core service. Phase 2 should add:
+第一阶段已经创建核心服务。第二阶段需要继续补齐：
 
-- Validation endpoint for proposed config.
-- UI-oriented list response with source metadata and `writable`.
-- Add/edit/delete routes that are stable for UI use.
-- Duplicate-name detection across scopes.
-- Safer env/header editors with structured key/value arrays in the UI.
+- 校验待保存 MCP 配置的接口。
+- 面向 UI 的列表结构，带来源信息和 `writable` 字段。
+- 稳定给 UI 使用的新增、编辑、删除接口。
+- 跨作用域重名检测。
+- env 和 headers 使用结构化键值对编辑器，减少手写 JSON 出错。
 
 ### PluginManagementService
 
-Responsibilities:
+职责：
 
-- List Lite-managed plugins from `~/.ccui/lite-registry.json`.
-- List CLI-installed plugins from `~/.claude/plugins/installed_plugins.json`.
-- Read enabled state from `~/.claude/settings.json.enabledPlugins`.
-- Merge both into `ManagedPlugin[]`.
-- Import a local plugin directory into Lite registry.
-- Enable/disable Lite plugins.
-- Enable/disable CLI plugins by updating `enabledPlugins`.
-- Remove Lite-managed plugins from Lite registry.
-- Produce SDK plugin options.
+- 从 `~/.ccui/lite-registry.json` 列出 Lite 管理插件。
+- 从 `~/.claude/plugins/installed_plugins.json` 列出 CLI 已安装插件。
+- 从 `~/.claude/settings.json.enabledPlugins` 读取启用状态。
+- 合并成统一的 `ManagedPlugin[]`。
+- 把本地插件目录导入 Lite registry。
+- 启用或停用 Lite 插件。
+- 通过更新 `enabledPlugins` 启用或停用 CLI 插件。
+- 从 Lite registry 移除 Lite 插件。
+- 生成 Claude Agent SDK 可用的插件参数。
 
-Deletion rule:
+删除规则：
 
-- Removing a Lite plugin removes the Lite registry entry.
-- Removing a CLI plugin only disables it in Phase 2. It must not delete CLI-managed cache folders.
+- 删除 Lite 插件时，移除 Lite registry 条目。
+- 删除 CLI 插件时，第二阶段只做停用，并返回 `removed: false, disabled: true`。不删除 CLI 管理的缓存目录。
 
 ### CapabilityCatalogService
 
-Responsibilities:
+职责：
 
-- Scan user skills and commands.
-- Scan project skills and commands.
-- Scan enabled plugin directories for skills and commands.
-- Parse `SKILL.md` frontmatter or first heading/description where available.
-- Parse command Markdown metadata where available.
-- Return normalized `ManagedCapability[]`.
-- Create/edit/delete user/project skills and commands.
+- 扫描 user 级 skills 和 commands。
+- 扫描 project 级 skills 和 commands。
+- 扫描已启用插件目录里的 skills 和 commands。
+- 解析 `SKILL.md` 的 frontmatter，或解析标题、描述。
+- 解析 command Markdown 元数据。
+- 返回统一的 `ManagedCapability[]`。
+- 创建、编辑、删除 user/project 来源的 skills 和 commands。
 
-Initial source paths:
+初始扫描路径：
 
-- User commands: `~/.claude/commands/**/*.md`
-- Project commands: `<project>/.claude/commands/**/*.md`
-- User skills: `~/.claude/skills/**/SKILL.md`
-- Project skills: `<project>/.claude/skills/**/SKILL.md`
-- Plugin skills/commands: enabled plugin paths resolved by `PluginManagementService`
+- 用户 commands：`~/.claude/commands/**/*.md`
+- 项目 commands：`<project>/.claude/commands/**/*.md`
+- 用户 skills：`~/.claude/skills/**/SKILL.md`
+- 项目 skills：`<project>/.claude/skills/**/SKILL.md`
+- 插件 skills/commands：由 `PluginManagementService` 解析出的已启用插件路径
 
-The service should avoid assuming only one ecosystem directory. If existing project conventions include `.codex/skills` or `.agents/skills`, Phase 2 may show them as read-only or separately labeled external sources, but the primary write targets should remain Claude-compatible paths.
+服务不要假设只有一个生态目录。如果当前项目里也有 `.codex/skills` 或 `.agents/skills`，第二阶段可以把它们显示为只读或外部来源，但主要写入目标应保持 Claude 兼容路径。
 
-### Hooks Integration
+### Hooks 整合
 
-The repo already has hooks discovery, overview, effective view, source detail, mutation routes, and hook pages. Phase 2 should integrate rather than rewrite.
+仓库里已经有 hooks 发现、总览、生效视图、来源详情、修改路由和 hooks 页面。第二阶段应该整合，而不是重写。
 
-Required work:
+需要做：
 
-- Add a compact Hooks section to Claude settings.
-- Show effective hook sources and writable/read-only status.
-- Link to existing hooks editor/source pages.
-- Keep plugin-provided hooks read-only.
+- 在 Claude 设置里增加简洁的 Hooks 区块。
+- 展示生效 hook 来源，以及可写/只读状态。
+- 跳转到现有 hooks 编辑和来源详情页面。
+- 插件提供的 hooks 保持只读。
 
-## API Shape
+## API 形状
 
-### Runtime Config
+### 运行配置
 
 ```text
 GET   /api/claude-config/runtime
@@ -237,7 +237,7 @@ PATCH /api/claude-config/runtime
 
 ### MCP
 
-Use and refine Phase 1 routes:
+复用并完善第一阶段路由：
 
 ```text
 GET    /api/mcp/config/read
@@ -247,9 +247,9 @@ DELETE /api/mcp/config/:name
 POST   /api/mcp/config/validate
 ```
 
-### Plugins
+### 插件
 
-Extend Phase 1 routes:
+扩展第一阶段路由：
 
 ```text
 GET    /api/plugins
@@ -259,12 +259,12 @@ DELETE /api/plugins/:id
 POST   /api/plugins/reload
 ```
 
-`DELETE /api/plugins/:id` should:
+`DELETE /api/plugins/:id` 的行为：
 
-- Remove Lite plugins.
-- Disable CLI plugins and return `removed: false, disabled: true` unless the plugin is Lite-managed.
+- Lite 插件：移除 registry 条目。
+- CLI 插件：只停用，返回 `removed: false, disabled: true`，除非这个插件同时是 Lite 管理插件。
 
-### Capabilities
+### 能力目录
 
 ```text
 GET    /api/capabilities?type=skill|command&projectPath=...
@@ -274,158 +274,157 @@ PATCH  /api/capabilities/:id
 DELETE /api/capabilities/:id
 ```
 
-IDs should be stable, URL-safe, and include source kind plus relative path.
+ID 应该稳定、URL 安全，并包含来源类型和相对路径。
 
-## UI Design
+## UI 设计
 
-### MCP Section
+### MCP 区块
 
-The MCP section should move from read-only cards to a management table/list:
+MCP 区块从只读卡片升级成管理列表：
 
-- Add MCP button.
-- Edit and delete actions for writable entries.
-- Scope badge.
-- Type badge.
-- Source path disclosure.
-- Duplicate-name warning when the same MCP name appears across scopes.
-- Form modes:
-  - stdio: command, args, env
-  - http/sse: url, headers
+- 新增 MCP 按钮。
+- 可写条目显示编辑和删除操作。
+- 作用域标签。
+- 类型标签。
+- 来源路径展开显示。
+- 同名 MCP 跨作用域重复时显示提醒。
+- 表单模式：
+  - stdio：command、args、env
+  - http/sse：url、headers
 
-### Plugins Section
+### 插件区块
 
-The plugin section should show two groups in one list:
+插件区块在一个列表里展示两类插件：
 
-- Lite-managed plugins.
-- CLI-discovered plugins.
+- Lite 管理插件。
+- CLI 发现插件。
 
-Each row shows:
+每行展示：
 
-- Name/id
-- Version
-- Source badge: Lite or CLI
-- SDK loaded status
-- Path
-- Enable/disable action if writable
-- Remove action if Lite-managed
+- 名称或 ID。
+- 版本。
+- 来源标签：Lite 或 CLI。
+- SDK 是否已加载。
+- 路径。
+- 来源可写时显示启用/停用操作。
+- Lite 管理插件显示移除操作。
 
-Actions:
+操作：
 
-- Import local directory.
-- Enable/disable.
-- Remove Lite plugin.
-- Reload active sessions, with skipped sessions shown as informational.
+- 导入本地目录。
+- 启用/停用。
+- 移除 Lite 插件。
+- 重载活跃会话；不支持重载的会话显示为信息提示，不作为错误。
 
-### Skills Section
+### Skills 区块
 
-The skills section should show:
+Skills 区块展示：
 
-- Search/filter.
-- Source filter: user/project/plugin/external.
-- New skill button.
-- Read-only badge for plugin skills.
-- Description preview.
-- View/edit drawer.
+- 搜索和过滤。
+- 来源过滤：user、project、plugin、external。
+- 新建 skill 按钮。
+- 插件 skill 显示只读标签。
+- 描述预览。
+- 查看/编辑抽屉。
 
-Creation target:
+新建默认目标：
 
-- User skill by default.
-- Project skill when a project is selected.
+- 默认新建到用户级 skill。
+- 选中项目时可以新建到项目级 skill。
 
-### Commands Section
+### Commands 区块
 
-The commands section mirrors skills, but creates command Markdown files.
+Commands 区块和 Skills 区块类似，但创建的是 command Markdown 文件。
 
-Command names should normalize to slash-command style in display, but filenames should remain safe and predictable.
+命令名称展示时规范成 slash-command 风格，文件名要保持安全、可预测。
 
-### Runtime Config Section
+### 运行配置区块
 
-The runtime section should include:
+运行配置区块包含：
 
-- API auth token/key configured status.
-- Base URL.
-- Model fields.
-- Permission mode.
-- Save button.
-- Clear secret button for configured secrets.
+- API auth token / API key 是否已配置。
+- Base URL。
+- 模型字段。
+- 权限模式。
+- 保存按钮。
+- 已配置密钥的清除按钮。
 
-Secret inputs should not prefill saved secret values.
+密钥输入框不回填已保存的明文密钥。
 
-## Error Handling
+## 错误处理
 
-All mutation routes should return:
+所有修改接口都应该返回统一结构：
 
 ```json
 {
   "success": false,
-  "message": "Human readable message",
-  "error": "Machine/debug detail when useful"
+  "message": "给用户看的错误信息",
+  "error": "需要时给调试用的细节"
 }
 ```
 
-The UI should distinguish:
+UI 应该区分：
 
-- Validation error.
-- Read-only source.
-- File parse error.
-- Runtime reload unsupported.
-- Saved but not active until new session.
+- 校验错误。
+- 只读来源。
+- 文件解析错误。
+- 运行时不支持重载。
+- 已保存，但需要新会话才生效。
 
-Plugin reload unsupported is informational, not a hard error.
+插件重载不支持是信息提示，不是硬错误。
 
-## Testing Strategy
+## 测试策略
 
-Backend tests:
+后端测试：
 
-- Runtime config read/write with secret masking.
-- MCP create/edit/delete per scope.
-- Plugin list merge from Lite + CLI.
-- Plugin enable/disable for Lite and CLI.
-- Lite plugin removal.
-- Capability catalog scanning for user/project/plugin skills and commands.
-- Capability create/edit/delete for user/project sources.
-- Read-only rejection for plugin sources.
+- 运行配置读写和密钥遮罩。
+- MCP 按作用域新增、编辑、删除。
+- 插件列表合并 Lite 和 CLI 来源。
+- Lite 和 CLI 插件启用/停用。
+- Lite 插件移除。
+- user/project/plugin 来源的 skills 和 commands 扫描。
+- user/project 来源的能力创建、编辑、删除。
+- 插件来源只读修改拒绝。
 
-Frontend/source tests:
+前端/source 测试：
 
-- Settings UI references non-CLI routes.
-- MCP section exposes add/edit/delete controls.
-- Plugin section exposes import/enable/disable/remove controls.
-- Skills and commands sections expose create/edit/delete controls.
-- Runtime config section masks secrets.
-- Hooks section links to existing hooks pages.
+- 设置 UI 使用非 CLI 路由。
+- MCP 区块暴露新增、编辑、删除控件。
+- 插件区块暴露导入、启用、停用、移除控件。
+- Skills 和 Commands 区块暴露创建、编辑、删除控件。
+- 运行配置区块遮罩密钥。
+- Hooks 区块跳转到现有 hooks 页面。
 
-Build:
+构建验证：
 
 - `npm run build`
 
-## Rollout Plan
+## 实施顺序
 
-Implement Phase 2 in smaller slices:
+第二阶段按小块实施：
 
-1. Runtime config service and UI.
-2. MCP management UI on top of Phase 1 service.
-3. Plugin management service extensions and UI actions.
-4. Capability catalog service for skills and commands.
-5. Skills and commands management UI.
-6. Hooks settings integration.
-7. Final verification and manual acceptance guide.
+1. 运行配置服务和 UI。
+2. 基于第一阶段服务完成 MCP 管理 UI。
+3. 扩展插件管理服务和 UI 操作。
+4. 增加 skills 和 commands 的能力目录服务。
+5. 完成 skills 和 commands 管理 UI。
+6. 整合 hooks 设置入口。
+7. 最终验证和手动验收说明。
 
-Each slice should be reviewable and independently testable.
+每个小块都应该可以单独评审和测试。
 
-## Acceptance Criteria
+## 验收标准
 
-Phase 2 is complete when:
+第二阶段完成时应满足：
 
-- A user can configure API/base URL/models from Web.
-- A user can add/edit/delete MCP servers from Web without CLI.
-- A user can import a local plugin directory from Web.
-- A user can enable/disable both Lite and CLI-discovered plugins from Web where safe.
-- A user can remove Lite-managed plugins from Web.
-- A user can list, create, edit, and delete user/project skills.
-- A user can list, create, edit, and delete user/project commands.
-- Plugin-provided skills/commands/hooks are visible and marked read-only.
-- Hooks management is reachable from Claude settings.
-- Existing CLI configuration remains readable and compatible.
-- No core management action spawns `claude`.
-
+- 用户可以在网页里配置 API、Base URL 和模型。
+- 用户可以不通过 CLI，在网页里新增、编辑、删除 MCP。
+- 用户可以在网页里导入本地插件目录。
+- 用户可以在安全范围内启用/停用 Lite 和 CLI 发现插件。
+- 用户可以在网页里移除 Lite 管理插件。
+- 用户可以列出、创建、编辑、删除 user/project skills。
+- 用户可以列出、创建、编辑、删除 user/project commands。
+- 插件提供的 skills、commands、hooks 可见，并标记为只读。
+- Claude 设置里可以进入 hooks 管理。
+- 现有 CLI 配置保持可读和兼容。
+- 核心管理操作不调用 `claude` 命令。
