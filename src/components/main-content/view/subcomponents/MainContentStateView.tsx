@@ -1,4 +1,4 @@
-import { Folder } from 'lucide-react';
+import { Folder, Settings } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { MainContentStateViewProps } from '../../types/types';
 import MobileMenuButton from './MobileMenuButton';
@@ -45,6 +45,16 @@ export default function MainContentStateView({ mode, isMobile, onMenuClick }: Ma
               <p className="text-sm text-primary">
                 <strong>{t('mainContent.tip')}:</strong> {isMobile ? t('mainContent.createProjectMobile') : t('mainContent.createProjectDesktop')}
               </p>
+            </div>
+            <div className="mt-3 flex justify-center">
+              <button
+                type="button"
+                onClick={() => window.openSettings?.('agents:account')}
+                className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-accent"
+              >
+                <Settings className="h-4 w-4" />
+                配置 Claude 连接
+              </button>
             </div>
           </div>
         </div>

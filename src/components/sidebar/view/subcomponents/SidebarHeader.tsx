@@ -149,51 +149,55 @@ export default function SidebarHeader({
       </div>
 
       {/* Desktop search bar */}
-      {showProjectToolbar && projectsCount > 0 && !isLoading && (
+      {showProjectToolbar && !isLoading && (
         <div className="hidden px-3 pb-2 pt-2 md:block">
           <div className="flex items-center gap-2">
-            <div className="nav-search-combo flex min-w-0 flex-1 items-center rounded-xl px-1">
-              <Select
-                className="w-[74px] flex-shrink-0"
-                value={searchMode}
-                options={searchModeOptions}
-                onValueChange={(value) => onSearchModeChange(value as SidebarSearchMode)}
-                ariaLabel={t('tooltips.search')}
-                triggerClassName="h-9 rounded-l-[10px] rounded-r-none border-0 bg-transparent px-3 text-foreground shadow-none focus-visible:ring-0"
-                contentClassName="rounded-xl"
-                size="sm"
-              />
-              <div className="nav-search-combo-divider h-5 w-px flex-shrink-0" />
-              <div className="relative min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
-                <Input
-                  ref={desktopSearchInputRef}
-                  type="text"
-                  placeholder={searchPlaceholder}
-                  value={searchFilter}
-                  onChange={(event) => onSearchFilterChange(event.target.value)}
-                  onFocus={() => setIsDesktopSearchFocused(true)}
-                  onBlur={() => setIsDesktopSearchFocused(false)}
-                  aria-label={`${searchModeLabel}${t('tooltips.search')}`}
-                  className="h-9 rounded-l-none rounded-r-[10px] border-0 bg-transparent pl-9 pr-8 text-sm shadow-none transition-all duration-200 placeholder:text-muted-foreground/40 focus-visible:ring-0 focus-visible:ring-offset-0"
+            {projectsCount > 0 ? (
+              <div className="nav-search-combo flex min-w-0 flex-1 items-center rounded-xl px-1">
+                <Select
+                  className="w-[74px] flex-shrink-0"
+                  value={searchMode}
+                  options={searchModeOptions}
+                  onValueChange={(value) => onSearchModeChange(value as SidebarSearchMode)}
+                  ariaLabel={t('tooltips.search')}
+                  triggerClassName="h-9 rounded-l-[10px] rounded-r-none border-0 bg-transparent px-3 text-foreground shadow-none focus-visible:ring-0"
+                  contentClassName="rounded-xl"
+                  size="sm"
                 />
-                {searchFilter && (
-                  <button
-                    onMouseDown={(event) => {
-                      event.preventDefault();
-                    }}
-                    onClick={() => {
-                      onClearSearchFilter();
-                      desktopSearchInputRef.current?.focus();
-                    }}
-                    aria-label={t('tooltips.clearSearch')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-0.5 hover:bg-accent"
-                  >
-                    <X className="h-3 w-3 text-muted-foreground" />
-                  </button>
-                )}
+                <div className="nav-search-combo-divider h-5 w-px flex-shrink-0" />
+                <div className="relative min-w-0 flex-1">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
+                  <Input
+                    ref={desktopSearchInputRef}
+                    type="text"
+                    placeholder={searchPlaceholder}
+                    value={searchFilter}
+                    onChange={(event) => onSearchFilterChange(event.target.value)}
+                    onFocus={() => setIsDesktopSearchFocused(true)}
+                    onBlur={() => setIsDesktopSearchFocused(false)}
+                    aria-label={`${searchModeLabel}${t('tooltips.search')}`}
+                    className="h-9 rounded-l-none rounded-r-[10px] border-0 bg-transparent pl-9 pr-8 text-sm shadow-none transition-all duration-200 placeholder:text-muted-foreground/40 focus-visible:ring-0 focus-visible:ring-offset-0"
+                  />
+                  {searchFilter && (
+                    <button
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                      }}
+                      onClick={() => {
+                        onClearSearchFilter();
+                        desktopSearchInputRef.current?.focus();
+                      }}
+                      aria-label={t('tooltips.clearSearch')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-0.5 hover:bg-accent"
+                    >
+                      <X className="h-3 w-3 text-muted-foreground" />
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="min-w-0 flex-1" />
+            )}
             <div className="flex items-center gap-2">
               {!isDesktopSearchFocused && desktopActionSlots.searchBar.includes('refresh') && (
                 <Button

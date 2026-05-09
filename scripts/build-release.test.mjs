@@ -59,7 +59,7 @@ test('package.json exposes an x64 Windows Lite zip script', async () => {
 
   assert.equal(
     packageJson.scripts['release:windows-lite:x64:zip'],
-    'npm run release:windows-lite:x64 && node scripts/archive-release.mjs --target=x64'
+    'node scripts/bump-release-version.mjs && npm run build && npm run release:windows-lite:x64 && node scripts/archive-release.mjs --target=x64'
   );
 });
 
@@ -74,7 +74,7 @@ test('package.json exposes an arm64 Mac Lite zip script', async () => {
   );
   assert.equal(
     packageJson.scripts['release:mac-lite:arm64:zip'],
-    'npm run release:mac-lite:arm64 && LITE_DISTRIBUTION=mac node scripts/archive-release.mjs --target=arm64'
+    'node scripts/bump-release-version.mjs && npm run build && npm run release:mac-lite:arm64 && LITE_DISTRIBUTION=mac node scripts/archive-release.mjs --target=arm64'
   );
 });
 

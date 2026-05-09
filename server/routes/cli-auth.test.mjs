@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 
-import { checkClaudeCredentials, updateClaudeSettingsEnv } from './cli-auth.js';
+import { checkClaudeCredentials, readClaudeSettingsEnv, updateClaudeSettingsEnv } from './cli-auth.js';
 
 test('checkClaudeCredentials prefers ANTHROPIC_API_KEY from process env', async () => {
   const result = await checkClaudeCredentials({
@@ -107,4 +107,39 @@ test('updateClaudeSettingsEnv rejects empty or unsupported settings', async () =
     }),
     /No supported Claude settings were provided/,
   );
+});
+
+test('readClaudeSettingsEnv returns non-secret settings and masks configured secrets', async () => {
+  const homeDir = await mkdtemp(path.join(os.tmpdir(), 'cli-auth-read-settings-home-'));
+  await mkdir(path.join(homeDir, '.claude'), { recursive: true });
+  await writeFile(
+    path.join(homeDir, '.claude', 'settings.json'),
+    JSON.stringify({
+      env: {
+        ANTHROPIC_API_KEY: 'sk-test',
+        ANTHROPIC_AUTH_TOKEN: 'auth-token',
+        ANTHROPIC_BASE_URL: 'https://example.test',
+        ANTHROPIC_MODEL: 'default-model',
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: 'haiku-model',
+        ANTHROPIC_DEFAULT_SONNET_MODEL: 'sonnet-model',
+        ANTHROPIC_DEFAULT_OPUS_MODEL: 'opus-model',
+        ANTHROPIC_REASONING_MODEL: 'reasoning-model',
+        UNSUPPORTED_KEY: 'drop-me',
+      },
+    }),
+    'utf8',
+  );
+
+  const result = await readClaudeSettingsEnv({ homeDir });
+
+  assert.equal(result.success, true);
+  assert.deepEqual(result.configuredSecretKeys.sort(), ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN']);
+  assert.deepEqual(result.env, {
+    ANTHROPIC_BASE_URL: 'https://example.test',
+    ANTHROPIC_MODEL: 'default-model',
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: 'haiku-model',
+    ANTHROPIC_DEFAULT_SONNET_MODEL: 'sonnet-model',
+    ANTHROPIC_DEFAULT_OPUS_MODEL: 'opus-model',
+    ANTHROPIC_REASONING_MODEL: 'reasoning-model',
+  });
 });

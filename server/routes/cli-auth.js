@@ -20,6 +20,11 @@ const CLAUDE_SETTINGS_ENV_KEYS = new Set([
   'API_TIMEOUT_MS',
 ]);
 
+const SECRET_CLAUDE_SETTINGS_ENV_KEYS = new Set([
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+]);
+
 function getClaudeSettingsPath(homeDir = os.homedir()) {
   return path.join(homeDir, '.claude', 'settings.json');
 }
@@ -116,6 +121,48 @@ function normalizeSettingsEnv(input) {
   );
 }
 
+export async function readClaudeSettingsEnv({
+  homeDir = os.homedir(),
+  readFile = fs.readFile,
+} = {}) {
+  const settingsPath = getClaudeSettingsPath(homeDir);
+  let settings = {};
+
+  try {
+    settings = JSON.parse(await readFile(settingsPath, 'utf8'));
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+      settings = {};
+    }
+  } catch {
+    settings = {};
+  }
+
+  const env = settings.env && typeof settings.env === 'object' && !Array.isArray(settings.env)
+    ? settings.env
+    : {};
+  const visibleEnv = {};
+  const configuredSecretKeys = [];
+
+  for (const [key, value] of Object.entries(env)) {
+    if (!CLAUDE_SETTINGS_ENV_KEYS.has(key) || typeof value !== 'string' || !value.trim()) {
+      continue;
+    }
+
+    if (SECRET_CLAUDE_SETTINGS_ENV_KEYS.has(key)) {
+      configuredSecretKeys.push(key);
+    } else {
+      visibleEnv[key] = value;
+    }
+  }
+
+  return {
+    success: true,
+    settingsPath,
+    env: visibleEnv,
+    configuredSecretKeys,
+  };
+}
+
 export async function updateClaudeSettingsEnv({
   env,
   homeDir = os.homedir(),
@@ -179,6 +226,17 @@ router.get('/claude/status', async (_req, res) => {
       email: null,
       method: null,
       cliInstalled: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+router.get('/claude/settings', async (_req, res) => {
+  try {
+    res.json(await readClaudeSettingsEnv());
+  } catch (error) {
+    res.status(500).json({
+      success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
     });
   }
