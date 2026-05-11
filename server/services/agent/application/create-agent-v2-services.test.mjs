@@ -473,6 +473,32 @@ test('abortSession aborts a live session without looking up the latest run', asy
   });
 });
 
+test('listLiveSessions delegates to the runtime live session list', async () => {
+  const liveSessions = [
+    { sessionId: 'sess-live-1' },
+    { sessionId: 'sess-live-2' },
+  ];
+  const services = createAgentV2Services({
+    repo: createInMemoryAgentV2Repository(),
+    runtime: {
+      listLiveSessions() {
+        return liveSessions;
+      },
+    },
+  });
+
+  assert.deepEqual(services.listLiveSessions(), liveSessions);
+});
+
+test('listLiveSessions returns an empty list when runtime does not support it', async () => {
+  const services = createAgentV2Services({
+    repo: createInMemoryAgentV2Repository(),
+    runtime: {},
+  });
+
+  assert.deepEqual(services.listLiveSessions(), []);
+});
+
 test('getSessionHistory delegates to the canonical session history service', async () => {
   const repo = createInMemoryAgentV2Repository();
   const calls = [];

@@ -4,6 +4,10 @@
     "account": "账户",
     "permissions": "权限",
     "mcpServers": "MCP 服务器",
+    "plugins": "插件",
+    "skills": "技能",
+    "commands": "命令",
+    "hooks": "钩子",
     "appearance": "外观"
   },
   "account": {
@@ -417,6 +421,16 @@
     "readOnlyHelp": {
       "line1": "CC UI 不再通过应用层开关或表单管理 Claude MCP。聊天运行时会按官方方式，从项目 .mcp.json 与 Claude 官方配置文件中发现 MCP 服务器。",
       "line2": "如需新增、删除或禁用 Claude MCP，请直接修改官方配置文件，再回到这里刷新查看发现结果。"
+    },
+    "plugins": {
+      "title": "插件",
+      "description": "通过非 CLI 配置安装并提供给 Claude Agent SDK 运行时的本地扩展",
+      "reloadButton": "重新加载",
+      "loading": "正在加载插件...",
+      "empty": "暂无插件",
+      "enabled": "已启用",
+      "disabled": "已停用",
+      "sdkResolved": "SDK 已加载"
     },
     "addButton": "添加 MCP 服务器",
     "empty": "未配置 MCP 服务器",

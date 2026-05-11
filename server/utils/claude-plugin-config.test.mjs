@@ -122,3 +122,90 @@ test('loadClaudePluginsSync honors project-local enabledPlugins overrides', asyn
     await rm(tempProject, { recursive: true, force: true });
   }
 });
+
+test('loadClaudePluginsSync resolves enabled Lite registry plugins without CLI install records', async () => {
+  const tempHome = await mkdtemp(path.join(os.tmpdir(), 'claude-plugin-config-'));
+  const ccuiDir = path.join(tempHome, '.ccui');
+
+  await mkdir(ccuiDir, { recursive: true });
+  await writeFile(
+    path.join(ccuiDir, 'lite-registry.json'),
+    JSON.stringify({
+      plugins: [
+        { id: 'lite-plugin', path: '/tmp/plugins/lite/enabled', enabled: true },
+      ],
+    }),
+  );
+
+  try {
+    assert.deepEqual(loadClaudePluginsSync({ homeDir: tempHome }), [
+      { type: 'local', path: '/tmp/plugins/lite/enabled' },
+    ]);
+  } finally {
+    await rm(tempHome, { recursive: true, force: true });
+  }
+});
+
+test('loadClaudePluginsSync skips disabled Lite registry plugins', async () => {
+  const tempHome = await mkdtemp(path.join(os.tmpdir(), 'claude-plugin-config-'));
+  const ccuiDir = path.join(tempHome, '.ccui');
+
+  await mkdir(ccuiDir, { recursive: true });
+  await writeFile(
+    path.join(ccuiDir, 'lite-registry.json'),
+    JSON.stringify({
+      plugins: [
+        { id: 'lite-disabled', path: '/tmp/plugins/lite/disabled', enabled: false },
+      ],
+    }),
+  );
+
+  try {
+    assert.deepEqual(loadClaudePluginsSync({ homeDir: tempHome }), []);
+  } finally {
+    await rm(tempHome, { recursive: true, force: true });
+  }
+});
+
+test('loadClaudePluginsSync deduplicates CLI and Lite plugins by path', async () => {
+  const tempHome = await mkdtemp(path.join(os.tmpdir(), 'claude-plugin-config-'));
+  const claudeDir = path.join(tempHome, '.claude');
+  const pluginsDir = path.join(claudeDir, 'plugins');
+  const ccuiDir = path.join(tempHome, '.ccui');
+
+  await mkdir(pluginsDir, { recursive: true });
+  await mkdir(ccuiDir, { recursive: true });
+  await writeFile(
+    path.join(claudeDir, 'settings.json'),
+    JSON.stringify({ enabledPlugins: { 'superpowers@claude-plugins-official': true } }),
+  );
+  await writeFile(
+    path.join(pluginsDir, 'installed_plugins.json'),
+    JSON.stringify({
+      version: 2,
+      plugins: {
+        'superpowers@claude-plugins-official': [
+          { scope: 'user', installPath: '/tmp/plugins/shared' },
+        ],
+      },
+    }),
+  );
+  await writeFile(
+    path.join(ccuiDir, 'lite-registry.json'),
+    JSON.stringify({
+      plugins: [
+        { id: 'lite-same-path', path: '/tmp/plugins/shared', enabled: true },
+        { id: 'lite-other-path', path: '/tmp/plugins/lite/other', enabled: true },
+      ],
+    }),
+  );
+
+  try {
+    assert.deepEqual(loadClaudePluginsSync({ homeDir: tempHome }), [
+      { type: 'local', path: '/tmp/plugins/shared' },
+      { type: 'local', path: '/tmp/plugins/lite/other' },
+    ]);
+  } finally {
+    await rm(tempHome, { recursive: true, force: true });
+  }
+});

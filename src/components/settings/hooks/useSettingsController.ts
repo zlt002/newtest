@@ -8,7 +8,7 @@ import type {
   ClaudePermissionsState,
   CodeEditorSettingsState,
   ProjectSortOrder,
-  SettingsMainTab,
+  SettingsTabId,
 } from '../types/types';
 import {
   DEFAULT_CLAUDE_PERMISSIONS,
@@ -51,7 +51,7 @@ export function useSettingsController({ isOpen, initialTab }: UseSettingsControl
   const { isDarkMode, toggleDarkMode } = useTheme() as ThemeContextValue;
   const closeTimerRef = useRef<number | null>(null);
 
-  const [activeTab, setActiveTab] = useState<SettingsMainTab>(() => normalizeMainTab(initialTab));
+  const [activeTab, setActiveTab] = useState<SettingsTabId>(() => normalizeMainTab(initialTab));
   const [saveStatus, setSaveStatus] = useState<'success' | 'error' | null>(null);
   const [projectSortOrder, setProjectSortOrder] = useState<ProjectSortOrder>(DEFAULT_PROJECT_SORT_ORDER);
   const [claudePermissions, setClaudePermissions] = useState<ClaudePermissionsState>({

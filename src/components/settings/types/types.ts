@@ -1,8 +1,18 @@
 import type { Dispatch, SetStateAction } from 'react';
 
 export type SettingsMainTab = 'agents' | 'appearance' | 'git';
+export type SettingsTabId =
+  | 'agents:account'
+  | 'agents:permissions'
+  | 'agents:mcp'
+  | 'agents:plugins'
+  | 'agents:skills'
+  | 'agents:commands'
+  | 'agents:hooks'
+  | 'appearance'
+  | 'git';
 export type AgentProvider = 'claude';
-export type AgentCategory = 'account' | 'permissions' | 'mcp';
+export type AgentCategory = 'account' | 'permissions' | 'mcp' | 'plugins' | 'skills' | 'commands' | 'hooks';
 export type ProjectSortOrder = 'name' | 'date';
 export type SaveStatus = 'success' | 'error' | null;
 export type CodexPermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions';

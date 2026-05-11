@@ -234,16 +234,28 @@ async function readCommandCatalog(entry, session) {
 
 async function loadCommandCatalog(entry, session) {
   if (!entry.commandCatalogPromise) {
-    entry.commandCatalogPromise = readCommandCatalog(entry, session)
+    const generation = entry.commandCatalogGeneration || 0;
+    const promise = readCommandCatalog(entry, session)
       .then((catalog) => {
-        entry.commandCatalog = catalog;
+        if (entry.commandCatalogGeneration === generation && entry.commandCatalogPromise === promise) {
+          entry.commandCatalog = catalog;
+        }
         return catalog;
       })
       .finally(() => {
-        entry.commandCatalogPromise = null;
+        if (entry.commandCatalogGeneration === generation && entry.commandCatalogPromise === promise) {
+          entry.commandCatalogPromise = null;
+        }
       });
+    entry.commandCatalogPromise = promise;
   }
   return entry.commandCatalogPromise;
+}
+
+function invalidateCommandCatalog(entry) {
+  entry.commandCatalogGeneration = (entry.commandCatalogGeneration || 0) + 1;
+  entry.commandCatalog = null;
+  entry.commandCatalogPromise = null;
 }
 
 function isCatalogEmpty(catalog) {
@@ -313,7 +325,7 @@ function createTrackedSession(session, entry, pool) {
       return session.sessionId;
     },
     async refreshCommandCatalog() {
-      entry.commandCatalog = null;
+      invalidateCommandCatalog(entry);
       return await loadCommandCatalog(entry, session);
     },
     async getContextUsage() {
@@ -322,6 +334,34 @@ function createTrackedSession(session, entry, pool) {
       }
 
       return await session.getContextUsage();
+    },
+    async reloadPlugins() {
+      if (typeof session.reloadPlugins !== 'function') {
+        throw new Error('Plugin reload is not supported by this Claude Agent SDK session');
+      }
+
+      const result = await session.reloadPlugins();
+      invalidateCommandCatalog(entry);
+      entry.initializationData = {
+        ...(entry.initializationData && typeof entry.initializationData === 'object'
+          ? entry.initializationData
+          : {}),
+        ...(Array.isArray(result?.commands)
+          ? {
+            slashCommands: normalizeCommandEntries(result.commands)
+              .map((command) => normalizeSlashCommandName(command.name))
+              .filter(Boolean),
+          }
+          : {}),
+        ...(Array.isArray(result?.skills)
+          ? {
+            skills: normalizeCommandEntries(result.skills)
+              .map((skill) => normalizeSlashCommandName(skill.name))
+              .filter(Boolean),
+          }
+          : {}),
+      };
+      return result;
     },
     async send(message) {
       entry.status = 'active';
@@ -389,6 +429,7 @@ export function createClaudeV2SessionPool(sdk = ClaudeAgentSDK) {
       writer: null,
       commandCatalog: null,
       commandCatalogPromise: null,
+      commandCatalogGeneration: 0,
       initializationData: null,
     };
     const probeSession = sdk.unstable_v2_createSession(buildSessionOptions(options, pool, entry));
@@ -414,6 +455,7 @@ export function createClaudeV2SessionPool(sdk = ClaudeAgentSDK) {
         writer: options.writer || null,
         commandCatalog: null,
         commandCatalogPromise: null,
+        commandCatalogGeneration: 0,
         initializationData: null,
       };
       const session = sdk.unstable_v2_createSession(buildSessionOptions(options, pool, entry));
@@ -447,6 +489,7 @@ export function createClaudeV2SessionPool(sdk = ClaudeAgentSDK) {
         writer: options.writer || null,
         commandCatalog: null,
         commandCatalogPromise: null,
+        commandCatalogGeneration: 0,
         initializationData: null,
       };
       const session = sdk.unstable_v2_resumeSession(
@@ -462,6 +505,11 @@ export function createClaudeV2SessionPool(sdk = ClaudeAgentSDK) {
     getLiveSession(sessionId) {
       const entry = getEntry(pool, sessionId);
       return isLiveSessionEntry(entry) ? entry.session : null;
+    },
+    listLiveSessions() {
+      return [...pool.sessions.values()]
+        .filter(isLiveSessionEntry)
+        .map((entry) => entry.session);
     },
     hasLiveSession(sessionId) {
       return Boolean(this.getLiveSession(sessionId));

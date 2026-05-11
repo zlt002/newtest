@@ -190,6 +190,79 @@ test('session pool exposes the live SDK context usage breakdown', async () => {
   assert.deepEqual(await created.getContextUsage(), contextUsage);
 });
 
+test('tracked session exposes reloadPlugins when SDK session supports it', async () => {
+  const reloadResult = {
+    commands: [],
+    agents: [],
+    plugins: [{ name: 'Demo', path: '/tmp/demo' }],
+    mcpServers: [],
+    error_count: 0,
+  };
+  const fakeSdk = {
+    unstable_v2_createSession() {
+      return {
+        async send() {},
+        async *stream() {},
+        async reloadPlugins() {
+          return reloadResult;
+        },
+        get sessionId() {
+          return 'sess-reload';
+        },
+        close() {},
+      };
+    },
+    unstable_v2_resumeSession() {
+      throw new Error('resume should not be called for a live session');
+    },
+  };
+
+  const pool = createClaudeV2SessionPool(fakeSdk);
+  const session = pool.create({ cwd: '/Users/demo/html' });
+
+  assert.deepEqual(await session.reloadPlugins(), reloadResult);
+});
+
+test('session pool lists only live tracked sessions', async () => {
+  const fakeSdk = {
+    unstable_v2_createSession() {
+      return {
+        async send() {},
+        async *stream() {
+          yield { type: 'system', subtype: 'init', session_id: 'sess-live-list' };
+        },
+        get sessionId() {
+          return 'sess-live-list';
+        },
+        close() {},
+      };
+    },
+    unstable_v2_resumeSession(sessionId) {
+      return {
+        async send() {
+          throw new Error('boom');
+        },
+        async *stream() {},
+        get sessionId() {
+          return sessionId;
+        },
+        close() {},
+      };
+    },
+  };
+
+  const pool = createClaudeV2SessionPool(fakeSdk);
+  const live = pool.create({ cwd: '/Users/demo/html' });
+  for await (const _message of live.stream()) {
+    // bind live session id
+  }
+
+  const failed = pool.resume('sess-failed-list', { cwd: '/Users/demo/html' });
+  await assert.rejects(failed.send('hello'));
+
+  assert.deepEqual(pool.listLiveSessions(), [live]);
+});
+
 test('session pool passes hooks into unstable_v2_createSession', () => {
   let capturedOptions = null;
   const hooks = {
@@ -866,6 +939,81 @@ test('session pool de-duplicates concurrent cold command catalog reads', async (
     skills: [],
   });
   assert.equal(secondCatalog, firstCatalog);
+});
+
+test('session reloadPlugins prevents an old pending command catalog read from overwriting the refreshed cache', async () => {
+  let resolveOldCatalog;
+  let commandCatalogCalls = 0;
+  const fakeSdk = {
+    unstable_v2_createSession() {
+      return {
+        commandCatalog: () => {
+          commandCatalogCalls += 1;
+          if (commandCatalogCalls === 1) {
+            return new Promise((resolve) => {
+              resolveOldCatalog = resolve;
+            });
+          }
+          return Promise.resolve({
+            localUi: [],
+            runtime: [{ name: '/plan', description: 'Plan', argumentHint: '' }],
+            skills: [{ name: 'fresh-skill', description: 'Fresh skill' }],
+          });
+        },
+        async reloadPlugins() {
+          return {
+            commands: ['/plan'],
+            skills: ['fresh-skill'],
+            agents: [],
+            plugins: [],
+            mcpServers: [],
+            error_count: 0,
+          };
+        },
+        async send() {},
+        async *stream() {
+          yield { type: 'system', subtype: 'init', session_id: 'sess-reload-pending-catalog' };
+        },
+        get sessionId() {
+          return 'sess-reload-pending-catalog';
+        },
+        close() {},
+      };
+    },
+    unstable_v2_resumeSession() {
+      throw new Error('not used');
+    },
+  };
+
+  const pool = createClaudeV2SessionPool(fakeSdk);
+  const session = pool.create({ cwd: '/tmp/project' });
+  for await (const _message of session.stream()) {
+    // wait until session init completes
+  }
+
+  const oldRead = pool.getCommandCatalog('sess-reload-pending-catalog');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(commandCatalogCalls, 1);
+
+  await session.reloadPlugins();
+  const refreshedCatalog = await pool.getCommandCatalog('sess-reload-pending-catalog');
+
+  resolveOldCatalog({
+    localUi: [],
+    runtime: [{ name: '/brainstorming', description: 'Brainstorm', argumentHint: '' }],
+    skills: [{ name: 'old-skill', description: 'Old skill' }],
+  });
+  await oldRead;
+
+  const cachedCatalog = await pool.getCommandCatalog('sess-reload-pending-catalog');
+
+  assert.deepEqual(refreshedCatalog, {
+    localUi: [],
+    runtime: [{ name: '/plan', description: 'Plan', argumentHint: '' }],
+    skills: [{ name: 'fresh-skill', description: 'Fresh skill' }],
+  });
+  assert.equal(cachedCatalog, refreshedCatalog);
+  assert.equal(commandCatalogCalls, 2);
 });
 
 test('session pool falls back to listSlashCommands and normalizes the catalog shape', async () => {

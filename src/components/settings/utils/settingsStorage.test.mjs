@@ -9,12 +9,16 @@ import {
   readClaudePermissions,
 } from './settingsStorage.ts';
 
-test('normalizeMainTab keeps the agents tab available', () => {
-  assert.equal(normalizeMainTab('agents'), 'agents');
+test('normalizeMainTab maps the legacy agents tab to the permissions settings entry', () => {
+  assert.equal(normalizeMainTab('agents'), 'agents:permissions');
 });
 
-test('normalizeMainTab falls back deprecated tools tab to agents', () => {
-  assert.equal(normalizeMainTab('tools'), 'agents');
+test('normalizeMainTab falls back deprecated tools tab to the permissions settings entry', () => {
+  assert.equal(normalizeMainTab('tools'), 'agents:permissions');
+});
+
+test('normalizeMainTab keeps flattened agent settings entries available', () => {
+  assert.equal(normalizeMainTab('agents:commands'), 'agents:commands');
 });
 
 test('mergeClaudeSettingsForSave preserves existing permission settings', () => {

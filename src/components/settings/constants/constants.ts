@@ -19,7 +19,7 @@ export const SETTINGS_MAIN_TABS: SettingsMainTab[] = [
 ];
 
 export const AGENT_PROVIDERS: AgentProvider[] = ['claude'];
-export const AGENT_CATEGORIES: AgentCategory[] = ['account', 'permissions', 'mcp'];
+export const AGENT_CATEGORIES: AgentCategory[] = ['account', 'permissions', 'mcp', 'plugins', 'skills', 'commands', 'hooks'];
 
 export const DEFAULT_PROJECT_SORT_ORDER: ProjectSortOrder = 'date';
 export const DEFAULT_SAVE_STATUS = null;

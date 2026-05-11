@@ -10,6 +10,13 @@ import type { SettingsProps } from '../types/types';
 
 const parseSettingsTarget = (target = 'appearance') => {
   const [mainTab, section] = String(target).split(':');
+  if (mainTab === 'agents' && section) {
+    return {
+      mainTab: `agents:${section}`,
+      section,
+    };
+  }
+
   return {
     mainTab,
     section: section || null,
@@ -45,8 +52,8 @@ function Settings({
   }
 
   return (
-    <div className="modal-backdrop fixed inset-0 z-[9999] flex items-center justify-center bg-background/80 backdrop-blur-sm md:p-4">
-      <div className="flex h-full w-full flex-col overflow-hidden border border-border bg-background shadow-2xl md:h-[90vh] md:max-w-4xl md:rounded-xl">
+    <div className="modal-backdrop fixed inset-0 z-[9999] flex items-center justify-center bg-background/80 backdrop-blur-sm md:p-3">
+      <div className="flex h-full w-full flex-col overflow-hidden border border-border bg-background shadow-2xl md:h-[94vh] md:w-[96vw] md:max-w-none md:rounded-xl">
         {/* Header */}
         <div className="flex flex-shrink-0 items-center justify-between border-b border-border px-4 py-3 md:px-5">
           <h2 className="text-base font-semibold text-foreground">{t('title')}</h2>
@@ -72,12 +79,12 @@ function Settings({
           {/* Content */}
           <main data-scroll-container="true" className="ui-scrollbar flex-1 overflow-y-auto">
             <div key={activeTab} className="settings-content-enter space-y-6 p-4 pb-safe-area-inset-bottom md:space-y-8 md:p-6">
-              {activeTab === 'agents' && (
+              {activeTab.startsWith('agents:') && (
                 <AgentsSettingsTab
                   claudePermissions={claudePermissions}
                   onClaudePermissionsChange={setClaudePermissions}
                   selectedProjectPath={selectedProjectPath}
-                  initialCategory={parsedTarget.section}
+                  initialCategory={activeTab.slice('agents:'.length)}
                   projects={projects}
                 />
               )}

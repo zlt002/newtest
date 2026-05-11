@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import { getLiteRegistryPath, litePluginsToSdkPlugins } from './lite-registry.js';
+
 function readJsonFileSync(filePath) {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -40,6 +42,11 @@ function readInstalledPluginsSync(homeDir) {
   const payload = readJsonFileSync(installedPluginsPath);
   const plugins = payload?.plugins;
   return plugins && typeof plugins === 'object' && !Array.isArray(plugins) ? plugins : {};
+}
+
+function readLitePluginsSync(homeDir) {
+  const payload = readJsonFileSync(getLiteRegistryPath(homeDir));
+  return Array.isArray(payload?.plugins) ? payload.plugins : [];
 }
 
 function pickInstallRecord(records, projectPath) {
@@ -93,6 +100,19 @@ export function loadClaudePluginsSync({ projectPath, homeDir = os.homedir() } = 
   const seenPaths = new Set();
   const resolvedPlugins = [];
 
+  const addSdkPlugin = (plugin) => {
+    const pluginPath = typeof plugin?.path === 'string' ? plugin.path.trim() : '';
+    if (!pluginPath || seenPaths.has(pluginPath)) {
+      return;
+    }
+
+    seenPaths.add(pluginPath);
+    resolvedPlugins.push({
+      type: 'local',
+      path: pluginPath,
+    });
+  };
+
   for (const [pluginId, enabled] of Object.entries(enabledPlugins)) {
     if (!enabled) {
       continue;
@@ -100,15 +120,11 @@ export function loadClaudePluginsSync({ projectPath, homeDir = os.homedir() } = 
 
     const installRecord = pickInstallRecord(installedPlugins[pluginId], projectPath);
     const installPath = typeof installRecord?.installPath === 'string' ? installRecord.installPath.trim() : '';
-    if (!installPath || seenPaths.has(installPath)) {
-      continue;
-    }
+    addSdkPlugin({ type: 'local', path: installPath });
+  }
 
-    seenPaths.add(installPath);
-    resolvedPlugins.push({
-      type: 'local',
-      path: installPath,
-    });
+  for (const plugin of litePluginsToSdkPlugins(readLitePluginsSync(homeDir))) {
+    addSdkPlugin(plugin);
   }
 
   return resolvedPlugins;

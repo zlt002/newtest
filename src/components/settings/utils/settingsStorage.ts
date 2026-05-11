@@ -1,6 +1,4 @@
-import type { ClaudePermissionMode } from '../types/types';
-
-type MainTab = 'agents' | 'appearance' | 'git';
+import type { ClaudePermissionMode, SettingsTabId } from '../types/types';
 
 interface ClaudePermissions {
   permissionMode: ClaudePermissionMode;
@@ -8,7 +6,17 @@ interface ClaudePermissions {
   disallowedTools: string[];
 }
 
-const KNOWN_MAIN_TABS: MainTab[] = ['agents', 'appearance', 'git'];
+const KNOWN_SETTINGS_TABS: SettingsTabId[] = [
+  'agents:account',
+  'agents:permissions',
+  'agents:mcp',
+  'agents:plugins',
+  'agents:skills',
+  'agents:commands',
+  'agents:hooks',
+  'appearance',
+  'git',
+];
 
 export const DEFAULT_CLAUDE_ALLOWED_TOOLS: string[] = [
   'Bash(git log:*)',
@@ -45,16 +53,20 @@ function normalizePermissionMode(mode: string): ClaudePermissionMode {
     : DEFAULT_CLAUDE_PERMISSIONS.permissionMode;
 }
 
-export function normalizeMainTab(tab: string): MainTab {
+export function normalizeMainTab(tab: string): SettingsTabId {
   if (tab === 'tools' || tab === 'api') {
-    return 'agents';
+    return 'agents:permissions';
+  }
+
+  if (tab === 'agents') {
+    return 'agents:permissions';
   }
 
   if (tab === 'settings' || tab === 'general') {
     return 'appearance';
   }
 
-  return KNOWN_MAIN_TABS.includes(tab as MainTab) ? (tab as MainTab) : 'appearance';
+  return KNOWN_SETTINGS_TABS.includes(tab as SettingsTabId) ? (tab as SettingsTabId) : 'appearance';
 }
 
 export function readClaudePermissions(value: string | null | undefined): ClaudePermissions {

@@ -5,6 +5,14 @@ import os from 'os';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { spawn } from 'child_process';
+import { getProjects } from '../projects.js';
+import {
+  createMcpServerConfig,
+  deleteMcpServerConfig,
+  toManagedMcpServers,
+  updateMcpServerConfig,
+  validateMcpServerConfig,
+} from '../utils/mcp-config-service.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -14,9 +22,21 @@ function isObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+async function getAllowedProjectPaths() {
+  const projects = await getProjects();
+  return projects
+    .map((project) => project.fullPath || project.path)
+    .filter((projectPath) => typeof projectPath === 'string' && projectPath.trim());
+}
+
+async function getAllowedProjectPathsForScope(scope) {
+  return scope === 'project' || scope === 'local' ? getAllowedProjectPaths() : null;
+}
+
 function toServerRecord(name, config, scope, options = {}) {
+  const idSource = options.sourcePath || options.projectPath || '';
   const server = {
-    id: scope === 'project' ? `project:${name}` : scope === 'local' ? `local:${name}` : name,
+    id: idSource ? `${scope}:${name}:${idSource}` : `${scope}:${name}`,
     name,
     type: 'stdio',
     scope,
@@ -59,28 +79,36 @@ export async function collectConfiguredMcpServers({
     path.join(homeDir, '.claude', 'settings.json'),
   ];
 
+  const configFiles = [];
   let configData = null;
   let configPath = null;
 
   for (const filepath of configPaths) {
     const parsed = await readJsonFileIfExists(filepath, fileSystem);
     if (parsed) {
-      configData = parsed;
-      configPath = filepath;
+      configFiles.push({ data: parsed, filepath });
+      if (!configData) {
+        configData = parsed;
+        configPath = filepath;
+      }
       console.log(`✅ Found Claude config at: ${filepath}`);
-      break;
+      continue;
     }
     console.log(`ℹ️ Config not found or invalid at: ${filepath}`);
   }
 
   const servers = [];
 
-  if (isObject(configData?.mcpServers)) {
-    const names = Object.keys(configData.mcpServers);
+  for (const { data, filepath } of configFiles) {
+    if (!isObject(data?.mcpServers)) {
+      continue;
+    }
+
+    const names = Object.keys(data.mcpServers);
     if (names.length > 0) {
-      console.log('🔍 Found user-scoped MCP servers:', names);
-      for (const [name, config] of Object.entries(configData.mcpServers)) {
-        servers.push(toServerRecord(name, config, 'user', { sourcePath: configPath }));
+      console.log(`🔍 Found user-scoped MCP servers in ${filepath}:`, names);
+      for (const [name, config] of Object.entries(data.mcpServers)) {
+        servers.push(toServerRecord(name, config, 'user', { sourcePath: filepath }));
       }
     }
   }
@@ -89,15 +117,19 @@ export async function collectConfiguredMcpServers({
     ? projectPath.trim()
     : null;
 
-  if (normalizedProjectPath && isObject(configData?.projects?.[normalizedProjectPath]?.mcpServers)) {
-    const projectConfig = configData.projects[normalizedProjectPath];
+  const localConfigFile = normalizedProjectPath
+    ? configFiles.find(({ data }) => isObject(data?.projects?.[normalizedProjectPath]?.mcpServers))
+    : null;
+
+  if (localConfigFile) {
+    const projectConfig = localConfigFile.data.projects[normalizedProjectPath];
     const names = Object.keys(projectConfig.mcpServers);
     if (names.length > 0) {
       console.log(`🔍 Found local-scoped MCP servers for ${normalizedProjectPath}:`, names);
       for (const [name, config] of Object.entries(projectConfig.mcpServers)) {
         servers.push(toServerRecord(name, config, 'local', {
           projectPath: normalizedProjectPath,
-          sourcePath: configPath,
+          sourcePath: localConfigFile.filepath,
         }));
       }
     }
@@ -124,7 +156,7 @@ export async function collectConfiguredMcpServers({
   }
 
   return {
-    hasClaudeConfig: Boolean(configData),
+    hasClaudeConfig: configFiles.length > 0,
     hasProjectConfig,
     configPath,
     projectConfigPath,
@@ -497,13 +529,106 @@ router.get('/config/read', async (req, res) => {
       configPath: result.configPath,
       projectConfigPath: result.projectConfigPath,
       projectPath: result.projectPath,
-      servers: result.servers,
+      servers: toManagedMcpServers(result.servers),
     });
   } catch (error) {
     console.error('Error reading Claude config:', error);
     res.status(500).json({ 
       error: 'Failed to read Claude configuration', 
       details: error.message 
+    });
+  }
+});
+
+// POST /api/mcp/config/validate - Validate an MCP server config without writing files
+router.post('/config/validate', async (req, res) => {
+  try {
+    const server = validateMcpServerConfig({
+      name: req.body?.name,
+      config: req.body?.config,
+    });
+
+    res.json({ success: true, server });
+  } catch (error) {
+    res.status(error.statusCode || 400).json({
+      success: false,
+      message: error.message,
+      error: error.message,
+    });
+  }
+});
+
+// POST /api/mcp/config - Create or replace an MCP server config without Claude CLI
+router.post('/config', async (req, res) => {
+  try {
+    const result = await createMcpServerConfig({
+      scope: req.body?.scope,
+      homeDir: os.homedir(),
+      projectPath: req.body?.projectPath,
+      allowedProjectPaths: await getAllowedProjectPathsForScope(req.body?.scope),
+      fileSystem: fs,
+      name: req.body?.name,
+      config: req.body?.config,
+    });
+
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('Error creating MCP server config:', error);
+    res.status(error.statusCode || 500).json({
+      error: 'Failed to create MCP server config',
+      message: error.message,
+      details: error.message,
+    });
+  }
+});
+
+// PATCH /api/mcp/config/:name - Update an MCP server config without Claude CLI
+router.patch('/config/:name', async (req, res) => {
+  try {
+    const result = await updateMcpServerConfig({
+      scope: req.body?.scope,
+      homeDir: os.homedir(),
+      projectPath: req.body?.projectPath,
+      sourcePath: req.body?.sourcePath,
+      allowedProjectPaths: await getAllowedProjectPathsForScope(req.body?.scope),
+      fileSystem: fs,
+      name: req.params.name,
+      config: req.body?.config,
+    });
+
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('Error updating MCP server config:', error);
+    res.status(error.statusCode || 500).json({
+      success: false,
+      error: error.message,
+      message: error.message,
+      details: error.message,
+    });
+  }
+});
+
+// DELETE /api/mcp/config/:name - Delete an MCP server config without Claude CLI
+router.delete('/config/:name', async (req, res) => {
+  try {
+    const result = await deleteMcpServerConfig({
+      scope: req.body?.scope || req.query?.scope,
+      homeDir: os.homedir(),
+      projectPath: req.body?.projectPath || req.query?.projectPath,
+      sourcePath: req.body?.sourcePath || req.query?.sourcePath,
+      allowedProjectPaths: await getAllowedProjectPathsForScope(req.body?.scope || req.query?.scope),
+      fileSystem: fs,
+      name: req.params.name,
+    });
+
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('Error deleting MCP server config:', error);
+    res.status(error.statusCode || 500).json({
+      success: false,
+      error: error.message,
+      message: error.message,
+      details: error.message,
     });
   }
 });

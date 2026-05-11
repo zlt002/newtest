@@ -40,13 +40,16 @@ import { promises as fsPromises } from 'fs';
 
 import { getProjects, clearProjectDirectoryCache } from './projects.js';
 import sessionManager from './sessionManager.js';
-import { defaultAgentV2Repository, defaultAgentV2Services } from './services/agent/default-services.js';
+import { defaultAgentV2Repository, defaultAgentV2Runtime, defaultAgentV2Services } from './services/agent/default-services.js';
 import { handleClaudeCommandWithAgentV2 } from './services/agent/application/handle-claude-command.js';
 import gitRoutes from './routes/git.js';
 import authRoutes from './routes/auth.js';
 import cliAuthRoutes from './routes/cli-auth.js';
 import mcpRoutes from './routes/mcp.js';
+import claudeConfigRoutes from './routes/claude-config.js';
+import capabilitiesRoutes from './routes/capabilities.js';
 import commandsRoutes from './routes/commands.js';
+import { createPluginRouter } from './routes/plugins.js';
 import settingsRoutes from './routes/settings.js';
 import { createAgentV2Router } from './routes/agent-v2.js';
 import { createClaudeHooksRouter, createDefaultClaudeHooksServices } from './hooks/claude-hooks-router.js';
@@ -341,8 +344,19 @@ app.use('/api/git', authenticateToken, gitRoutes);
 // MCP API Routes (protected)
 app.use('/api/mcp', authenticateToken, mcpRoutes);
 
+// Claude runtime config routes (protected)
+app.use('/api/claude-config', claudeConfigRoutes);
+
+// Capabilities catalog routes (protected)
+app.use('/api/capabilities', capabilitiesRoutes);
+
 // Commands API Routes (protected)
 app.use('/api/commands', authenticateToken, commandsRoutes);
+
+// Plugins API Routes (protected)
+app.use('/api/plugins', createPluginRouter({
+    runtime: defaultAgentV2Runtime,
+}));
 
 // Settings API Routes (protected)
 app.use('/api/settings', authenticateToken, settingsRoutes);

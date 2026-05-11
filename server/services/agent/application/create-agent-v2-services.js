@@ -872,6 +872,11 @@ export function createAgentV2Services({
     isSessionActive(sessionId) {
       return typeof runtime.isActive === 'function' ? runtime.isActive(sessionId) : false;
     },
+    listLiveSessions() {
+      return typeof runtime.listLiveSessions === 'function'
+        ? runtime.listLiveSessions()
+        : [];
+    },
     reconnectSessionWriter(sessionId, writer) {
       if (typeof runtime.updateWriter === 'function' && !runtime.updateWriter(sessionId, writer)) {
         return false;

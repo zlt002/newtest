@@ -1,22 +1,28 @@
-import { GitBranch, Palette } from 'lucide-react';
+import { FileCode2, GitBranch, KeyRound, Package, Palette, Server, ShieldCheck, TerminalSquare, Webhook } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../../../lib/utils';
 import { PillBar, Pill } from '../../../shared/view/ui';
-import type { SettingsMainTab } from '../types/types';
+import type { SettingsTabId } from '../types/types';
 
 type SettingsSidebarProps = {
-  activeTab: SettingsMainTab;
-  onChange: (tab: SettingsMainTab) => void;
+  activeTab: SettingsTabId;
+  onChange: (tab: SettingsTabId) => void;
 };
 
 type NavItem = {
-  id: SettingsMainTab;
+  id: SettingsTabId;
   labelKey: string;
   icon: typeof Palette;
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { id: 'agents', labelKey: 'mainTabs.agents', icon: Palette },
+  { id: 'agents:account', labelKey: 'tabs.account', icon: KeyRound },
+  { id: 'agents:permissions', labelKey: 'tabs.permissions', icon: ShieldCheck },
+  { id: 'agents:mcp', labelKey: 'tabs.mcpServers', icon: Server },
+  { id: 'agents:plugins', labelKey: 'tabs.plugins', icon: Package },
+  { id: 'agents:skills', labelKey: 'tabs.skills', icon: FileCode2 },
+  { id: 'agents:commands', labelKey: 'tabs.commands', icon: TerminalSquare },
+  { id: 'agents:hooks', labelKey: 'tabs.hooks', icon: Webhook },
   { id: 'appearance', labelKey: 'mainTabs.appearance', icon: Palette },
   { id: 'git', labelKey: 'mainTabs.git', icon: GitBranch },
 ];
